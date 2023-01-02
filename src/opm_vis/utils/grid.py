@@ -216,6 +216,9 @@ class Grid:
         ycorn = np.delete(ycorn, ind_nan, axis=0)
         zcorn = np.delete(zcorn, ind_nan, axis=0)
 
+        # Remove cells from list of active indices as well
+        self.act = [elem for i, elem in enumerate(self.act) if i not in ind_nan]
+
         # Gather corner points in array with shape (ncells, 4, 3)
         self.corn = np.stack((xcorn, ycorn, zcorn), axis=-1)
 
