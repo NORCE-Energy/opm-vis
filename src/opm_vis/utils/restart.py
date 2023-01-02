@@ -1,8 +1,9 @@
 """ Calculate various attributes from restart files """
-from glob import glob
-import warnings
 import datetime as dt
+import warnings
+from glob import glob
 
+import numpy as np
 from opm.io.ecl import ERst
 
 
@@ -195,3 +196,100 @@ class Report(_RestartFiles):
     def report_steps(self):
         """Return report steps"""
         return self.rsteps
+
+
+class Wells(_RestartFiles):
+    """
+    Well information from restart files
+    """
+
+    def __init__(self, paths):
+        # Call parent class __init__
+        super().__init__(paths)
+
+        # Organize well information for all report dates
+        self._well_info_all_report_steps()
+
+    def _well_info_all_report_steps(self):
+        """
+        Get coordinates and status for all wells at all report dates.
+
+        Notes
+        -----
+        Information on what is available in restart files can be found in OPM Flow manual appendices
+        or Eclipse file format manual
+        """
+        # Init. well info as a list with entry for each report date
+        self.well_info = [{} for erst in self.rst for _ in erst.report_steps]
+
+        # Loop over all restart files and report steps for each file and organize well information
+        # in dictionaries using well names as keys.
+        ind = 0
+        for erst in self.rst:
+            for rstep in erst.report_steps:
+                # Extract well names from ZWEL mnemonic
+                # NOTE: ZWEL = [well_name, well_list, last_action] for each well at report step
+                well_names = erst[("ZWEL", rstep)][::3]
+
+                # Information about the wells are located in IWEL and ICON. IWEL and ICON have
+                # specific lengths, and info for these can be found in INTEHEAD
+                niwelz = erst[("INTEHEAD", rstep)][24]
+                niconz = erst[("INTEHEAD", rstep)][32]
+                ncwmax = erst[("INTEHEAD", rstep)][17]
+                nwells = erst[("INTEHEAD", rstep)][16]
+
+                # Check that we have names for all wells found in INTEHEAD
+                assert len(well_names) == nwells, (
+                    f"Number of wells in ZWEL (={len(well_names)}) does not correspond to info"
+                    f" in INTEHEAD (={nwells})!"
+                )
+
+                # Information about the wells are located in IWEL and ICON, so we reshape those to
+                # a more easily accessible shape
+                iwel = np.reshape(erst[("IWEL", rstep)], (nwells, niwelz))
+                icon = np.reshape(erst[("ICON", rstep)], (nwells, ncwmax, niconz))
+
+                # Loop over wells and organize info in list as follows
+                # well_info = [i, j, k0, k1, ..., kend, status]
+                # NOTE: Suited for vertical wells at the moment: i, j are well head indices. Status
+                # is whether well is open or shut; could be modified to connection status (found in
+                # icon[_, _, 5])
+                self.well_info[ind] = {key: [] for key in well_names}
+                for i, name in enumerate(well_names):
+                    # i,j indices of well head
+                    self.well_info[ind][name].extend(iwel[i, :2].tolist())
+
+                    # k-indices for well connection
+                    self.well_info[ind][name].extend(icon[i, icon[i, :, 3] > 0, 3] - 1)
+
+                    # Well status (open/shut = True/False).
+                    # OBS: convert to Python bool instead of numpy.bool_
+                    self.well_info[ind][name].extend([bool(iwel[i, 10] > 0)])
+
+                # Increase internal well_info index counter
+                ind += 1
+
+    def __getitem__(self, rstep):
+        """
+        Get well info at inputted report step
+
+        Parameters
+        ----------
+        rstep : int
+            Report step
+
+        Returns
+        -------
+        dict
+            Dictionary with information for each well. List organized as [i, j, k0, k1, ..., kend, status]
+        """
+        # rstep is not necessarily equal to index of self.well_info since it is possible output
+        # restart arrays at any frequency (see, e.g., RPTRST keyword, and BASIC and FREQ mnemonics!)
+        # Start return index at zero and count up until we reach report step in some restart file.
+        ind = 0
+        for erst in self.rst:
+            if rstep in erst.report_steps:
+                ind += erst.report_steps.index(rstep)
+            else:
+                ind += len(erst.report_steps)
+        return self.well_info[ind]
