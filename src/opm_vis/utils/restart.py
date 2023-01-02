@@ -1,6 +1,7 @@
 """ Calculate various attributes from restart files """
 from glob import glob
 import warnings
+import datetime as dt
 
 from opm.io.ecl import ERst
 
@@ -135,3 +136,68 @@ class RestartFiles:
 
         # Raise error if report step does not exist in restart files
         raise ValueError(f"Report step {rstep} was not found in restart files!")
+
+
+class Report(RestartFiles):
+    """
+    Class to organize and handle report dates/steps from restart files
+    """
+
+    def __init__(self, paths):
+        # Instantiate Erst class for restart files using parent class
+        super().__init__(paths)
+
+        # Extract report dates and report steps from restart files
+        self._report_dates_and_steps()
+
+    def _report_dates_and_steps(self):
+        # Read report steps and associated dates from the restart file(s). The date is stored in
+        # INTEHEAD record, items 65 - 67 (note, Python indexing in code below).
+        # OBS: we ignore hours, minutes and seconds here, but for future reference they are located
+        # in items 207, 208 and 411, respectively.
+        self.rsteps = []
+        self.rdates = []
+        for erst in self.rst:
+            # Report steps in current file, which we also add to list of all report steps
+            rsteps_unrst = erst.report_steps
+            self.rsteps += erst.report_steps
+
+            # Loop over report steps and get report dates as datetime object
+            for rstep in rsteps_unrst:
+                self.rdates.extend(
+                    [
+                        dt.datetime(
+                            day=erst[("INTEHEAD", rstep)][64],
+                            month=erst[("INTEHEAD", rstep)][65],
+                            year=erst[("INTEHEAD", rstep)][66],
+                        )
+                    ]
+                )
+
+        # Sort report dates in ascending order of report steps (in case restart files list is
+        # not in ordered)
+        # Index list of sorted rsteps
+        ind_sort = sorted(range(len(self.rsteps)), key=self.rsteps.__getitem__)
+
+        # Apply sorting to both report dates and steps
+        self.rsteps = [self.rsteps[i] for i in ind_sort]
+        self.rdates = [self.rdates[i] for i in ind_sort]
+
+    def __str__(self):
+        """
+        Print an table of report dates and steps if called by Python print method
+        """
+        # Print table with columns: report step // report dates
+        output_string = "Report step\tDate\n"
+        for i, date in enumerate(self.rdates):
+            output_string += f'{self.rsteps[i]}\t\t{date.strftime("%d.%m.%Y")}\n'
+
+        return output_string
+
+    def report_dates(self):
+        """Return report dates"""
+        return self.rdates
+
+    def report_steps(self):
+        """Return report steps"""
+        return self.rsteps
