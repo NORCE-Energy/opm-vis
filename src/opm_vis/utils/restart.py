@@ -27,8 +27,8 @@ _IGNORE = [
     "ENDSOL",
 ]
 
-
-class RestartFiles:
+# pylint: disable=too-few-public-methods
+class _RestartFiles:
     """
     Top class for initiating and reading restart files
     """
@@ -36,18 +36,6 @@ class RestartFiles:
     def __init__(self, paths):
         """
         Init. class by instantiating ERst classes for each restart file in input folders
-
-        Parameters
-        ----------
-        paths : list
-            List of paths with restart files
-        """
-        # Instantiate Erst class for restart files
-        self._instantiate_restart_files(paths)
-
-    def _instantiate_restart_files(self, paths):
-        """
-        Instantiate ERst classes for restart files in paths
 
         Parameters
         ----------
@@ -90,6 +78,12 @@ class RestartFiles:
             # Instantiate ERst class for each file in path
             if restart_files:
                 self.rst.extend([ERst(file) for file in restart_files])
+
+
+class Reader(_RestartFiles):
+    """
+    Class for reading restart files (mainly). Initialization in parent class.
+    """
 
     def read(self, keyword, rstep, act=None):
         """
@@ -138,7 +132,7 @@ class RestartFiles:
         raise ValueError(f"Report step {rstep} was not found in restart files!")
 
 
-class Report(RestartFiles):
+class Report(_RestartFiles):
     """
     Class to organize and handle report dates/steps from restart files
     """
