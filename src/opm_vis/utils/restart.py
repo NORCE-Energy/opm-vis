@@ -126,8 +126,7 @@ class RestartReader(_RestartFiles):
         #  Loop over restart files to find info at correct report step
         for erst in self.rst:
             if rstep in erst.report_steps:
-                print([key[0] for key in erst.arrays(rstep) if key[0] not in _IGNORE])
-                return
+                return [key[0] for key in erst.arrays(rstep) if key[0] not in _IGNORE]
 
         # Raise error if report step does not exist in restart files
         raise ValueError(f"Report step {rstep} was not found in restart files!")

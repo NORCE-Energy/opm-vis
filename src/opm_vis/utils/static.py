@@ -60,4 +60,4 @@ class InitReader(_InitFile):
         """
         See keywords that are available in .INIT file
         """
-        print([key[0] for key in self.init.get_list_of_arrays()])
+        return [key[0] for key in self.init.get_list_of_arrays()]
