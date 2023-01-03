@@ -31,7 +31,7 @@ _IGNORE = [
 # pylint: disable=too-few-public-methods
 class _RestartFiles:
     """
-    Top class for initiating and reading restart files
+    Top class for ERst wrapper
     """
 
     def __init__(self, paths):
@@ -81,7 +81,7 @@ class _RestartFiles:
                 self.rst.extend([ERst(file) for file in restart_files])
 
 
-class Reader(_RestartFiles):
+class RestartReader(_RestartFiles):
     """
     Class for reading restart files (mainly). Initialization in parent class.
     """
@@ -281,7 +281,8 @@ class Wells(_RestartFiles):
         Returns
         -------
         dict
-            Dictionary with information for each well. List organized as [i, j, k0, k1, ..., kend, status]
+            Dictionary with information for each well. List organized as [i, j, k0, k1, ..., kend,
+            status]
         """
         # rstep is not necessarily equal to index of self.well_info since it is possible output
         # restart arrays at any frequency (see, e.g., RPTRST keyword, and BASIC and FREQ mnemonics!)
