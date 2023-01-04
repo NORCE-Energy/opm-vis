@@ -58,7 +58,7 @@ class _RestartFiles:
                     warnings.warn(
                         f"Multiple .UNRST files in {path}. Importing {glob(path + '*.UNRST')[0]}."
                     )
-                restart_files = glob(path + "*.UNRST")[0]
+                restart_files = [glob(path + "*.UNRST")[0]]
 
             # Are there no files in the folder? Warn and continue
             elif not glob(path + "*.UNRST") and not glob(path + "*.X*"):
@@ -70,7 +70,7 @@ class _RestartFiles:
                     warnings.warn(
                         f"Multiple .UNRST files in {path}. Importing {glob(path + '*.UNRST')[0]}"
                     )
-                restart_files = glob(path + "*.UNRST")[0]
+                restart_files = [glob(path + "*.UNRST")[0]]
 
             # .X files
             elif not glob(path + "*.UNRST") and glob(path + "*.X*"):
@@ -226,6 +226,10 @@ class Wells(_RestartFiles):
         ind = 0
         for erst in self.rst:
             for rstep in erst.report_steps:
+                # Report step 0 does not have well information
+                if rstep == 0:
+                    continue
+
                 # Extract well names from ZWEL mnemonic
                 # NOTE: ZWEL = [well_name, well_list, last_action] for each well at report step
                 well_names = erst[("ZWEL", rstep)][::3]
