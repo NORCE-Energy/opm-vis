@@ -1,4 +1,5 @@
 """ Grid methods for xyz plots """
+from glob import glob
 import warnings
 
 import numpy as np
@@ -35,13 +36,15 @@ class Grid:
         self.slice_dim = slice_dim
         self.slice_ind = slice_ind
 
-        # Initialize internal variables
-        self.local_cell_ind = None
-        self.corn = None
-        self.cent = None
-
         # Instantiate Egrid class
-        self.egrid = EGrid(path)
+        if glob(path + "*.EGRID"):
+            if len(glob(path + "*.EGRID")) > 1:
+                warnings.warn(
+                    f"Multiple .EGRID files in {path}. Importing {glob(path + '*.EGRID')[0]}."
+                )
+            self.egrid = EGrid(glob(path + "*.EGRID")[0])
+        else:
+            raise FileNotFoundError(f"No .EGRID file found in {path}!")
 
         # Grid dimensions
         if slice_dim == "i":
