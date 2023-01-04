@@ -78,7 +78,7 @@ class Slice3DCollection:
         self.ax_.set_ylim(min_coll[:, 1].min(), max_coll[:, 1].max())
         self.ax_.set_zlim(min_coll[:, 2].min(), max_coll[:, 2].max())
 
-    def plot(self, rstep, keyword):
+    def plot(self, rstep, keyword, **kwargs):
         """
         Plot keyword at one report step.
 
@@ -98,7 +98,7 @@ class Slice3DCollection:
         max_coll = np.zeros((len(self.slice_coll), 3))
         for i, slc in enumerate(self.slice_coll):
             # Generated data comes in form of a Matplotlib Poly3DCollection
-            polyc = slc.generate(keyword, rstep)
+            polyc = slc.generate(keyword, rstep, **kwargs)
 
             # Add polyc to axes collection
             self.add_collection(polyc)
@@ -116,7 +116,7 @@ class Slice3DCollection:
         # Invert z-axis
         self.ax_.invert_zaxis()
 
-    def gif(self, keyword):
+    def gif(self, keyword, **kwargs):
         """
         Generate gif
 
@@ -133,7 +133,7 @@ class Slice3DCollection:
         rsteps = self.slice_coll[0].report.report_steps()
 
         # Setup plot function to fit with FuncAnimation
-        plot_func = partial(self.plot, keyword=keyword)
+        plot_func = partial(self.plot, keyword=keyword, **kwargs)
 
         # Set up Matplotlib animation
         self.anim = animation.FuncAnimation(self.fig, plot_func, frames=rsteps)
@@ -177,7 +177,7 @@ class Slice3D:
         self.report = Report(paths)
         self.wells = Wells(paths)
 
-    def generate(self, keyword, rstep):
+    def generate(self, keyword, rstep, **kwargs):
         """
         Generate data from keyword at one report step
 
@@ -200,7 +200,7 @@ class Slice3D:
         data = self.restart.read(keyword, rstep, act_ind)
 
         # Generate 3D polygon collection
-        polyc = Poly3DCollection(self.grid.cell_corners())
+        polyc = Poly3DCollection(self.grid.cell_corners(), **kwargs)
 
         # Insert data in polygon collection
         polyc.set_array(data)
