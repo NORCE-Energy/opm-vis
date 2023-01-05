@@ -27,15 +27,49 @@ class Slice3DCollection:
         slice_coll : Slice3D
             List of Slice3D objects
         """
-        # Initialize matplotlib figure
-        self.fig = plt.figure()
-        self.ax_ = self.fig.add_subplot(projection="3d")
-
         # Internalize input
         self.slice_coll = slice_coll
 
+        # Initialize matplotlib figure
+        self.fig = plt.figure()
+        self.ax_ = self.fig.add_subplot(projection="3d")
+        self.ax_.view_init(elev=30, azim=60)
+
+        # Set labels
+        self.set_labels()
+
+        # Set limits
+        self.set_lims()
+
+        # Invert z-axis
+        self.ax_.invert_zaxis()
+
         # Internal variables
         self.anim = None
+
+    def set_title(self, rstep, addition=None):
+        """
+        Add title to figure
+
+        Parameters
+        ----------
+        rstep : int
+            Report step
+        addition : str, optional
+            Addition to title, by default None
+        """
+        # Report date for title
+        rdate = self.slice_coll[0].report.report_date(rstep)
+
+        # Title
+        title = rdate.strftime("%d.%m.%Y")
+
+        # Add string to end
+        if addition is not None:
+            title += addition
+
+        # Add title to figure
+        self.fig.suptitle(title)
 
     def set_labels(self):
         """Set labels to Easting, Northing, and depth"""
@@ -62,18 +96,18 @@ class Slice3DCollection:
         # Add polygon collection to matplotlib axes
         self.ax_.add_collection(polyc)
 
-    def set_lims(self, min_coll, max_coll):
+    def set_lims(self):
         """
         Set x-, y-, and z-limits such that all slices are visible
-
-        Parameters
-        ----------
-        min_coll : ndarray
-            Minimum coordinates for each slice
-        max_coll : ndarray
-            Minimum coordinates for each slice
         """
-        # Use matplotlib autoscaling
+        # Find min/max values over all slices
+        min_coll = np.zeros((len(self.slice_coll), 3))
+        max_coll = np.zeros((len(self.slice_coll), 3))
+        for i, slc in enumerate(self.slice_coll):
+            min_coll[i, :] = slc.min()
+            max_coll[i, :] = slc.max()
+
+        # Set limits
         self.ax_.set_xlim(min_coll[:, 0].min(), max_coll[:, 0].max())
         self.ax_.set_ylim(min_coll[:, 1].min(), max_coll[:, 1].max())
         self.ax_.set_zlim(min_coll[:, 2].min(), max_coll[:, 2].max())
@@ -94,27 +128,15 @@ class Slice3DCollection:
         Use show or save_plot to show plot on screen or save to file.
         """
         # Generate data for each slice and add to axes collection
-        min_coll = np.zeros((len(self.slice_coll), 3))
-        max_coll = np.zeros((len(self.slice_coll), 3))
-        for i, slc in enumerate(self.slice_coll):
+        for slc in self.slice_coll:
             # Generated data comes in form of a Matplotlib Poly3DCollection
             polyc = slc.generate(keyword, rstep, **kwargs)
 
             # Add polyc to axes collection
             self.add_collection(polyc)
 
-            # Find min/max coordinates for slices
-            min_coll[i, :] = slc.min()
-            max_coll[i, :] = slc.max()
-
-        # Set labels
-        self.set_labels()
-
-        # Set limits
-        self.set_lims(min_coll, max_coll)
-
-        # Invert z-axis
-        self.ax_.invert_zaxis()
+        # Set title
+        self.set_title(rstep)
 
     def gif(self, keyword, **kwargs):
         """
