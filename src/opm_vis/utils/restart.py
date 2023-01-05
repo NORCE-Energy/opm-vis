@@ -188,6 +188,10 @@ class Report(_RestartFiles):
 
         return output_string
 
+    def report_date(self, rstep):
+        """Return report date at on report step"""
+        return self.rdates[self.rsteps.index(rstep)]
+
     def report_dates(self):
         """Return report dates"""
         return self.rdates
