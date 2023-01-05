@@ -1,6 +1,6 @@
 """Module for plotting/gif-generation of slices"""
 from functools import partial
-from typing import List
+from typing import List, Tuple
 
 from matplotlib import animation
 import matplotlib.pyplot as plt
@@ -18,7 +18,7 @@ class Slice3DCollection:
     plotting/gif generation
     """
 
-    def __init__(self, slice_coll: List["Slice3D"]):
+    def __init__(self, slice_info: List[Tuple[str, int]], paths: List[str]):
         """
         Initialize class by setting up figure/axes.
 
@@ -27,8 +27,12 @@ class Slice3DCollection:
         slice_coll : Slice3D
             List of Slice3D objects
         """
-        # Internalize input
-        self.slice_coll = slice_coll
+        # Generate collection of slices
+        self.slice_coll = [Slice3D(dim, ind, paths) for dim, ind in slice_info]
+
+        # Instantiate report and well classes
+        self.report = Report(paths)
+        self.wells = Wells(paths)
 
         # Initialize matplotlib figure
         self.fig = plt.figure()
@@ -59,7 +63,7 @@ class Slice3DCollection:
             Addition to title, by default None
         """
         # Report date for title
-        rdate = self.slice_coll[0].report.report_date(rstep)
+        rdate = self.report.report_date(rstep)
 
         # Title
         title = rdate.strftime("%d.%m.%Y")
@@ -104,8 +108,8 @@ class Slice3DCollection:
         min_coll = np.zeros((len(self.slice_coll), 3))
         max_coll = np.zeros((len(self.slice_coll), 3))
         for i, slc in enumerate(self.slice_coll):
-            min_coll[i, :] = slc.min()
-            max_coll[i, :] = slc.max()
+            min_coll[i, :] = slc.cell_corners_min()
+            max_coll[i, :] = slc.cell_corners_max()
 
         # Set limits
         self.ax_.set_xlim(min_coll[:, 0].min(), max_coll[:, 0].max())
@@ -152,7 +156,7 @@ class Slice3DCollection:
         Use show or save_gif to show gif on screen or save to file.
         """
         # All report steps
-        rsteps = self.slice_coll[0].report.report_steps()
+        rsteps = self.report.report_steps()
 
         # Setup plot function to fit with FuncAnimation
         plot_func = partial(self.plot, keyword=keyword, **kwargs)
@@ -171,7 +175,7 @@ class Slice3D:
     Class for setting up a slice for 3D plot.
     """
 
-    def __init__(self, path, slice_dim, slice_ind, restart_paths=None):
+    def __init__(self, slice_dim: str, slice_ind: int, paths: List[str]):
         """
         Initialize slice by instantiating all helper classes
 
@@ -186,18 +190,10 @@ class Slice3D:
         restart_paths : list, optional
             Folder with files from restart runs, by default None
         """
-        # Instantiate static parameters help classes
-        self.grid = Grid(path, slice_ind, slice_dim)
-        self.init = InitReader(path)
-
-        # Instantiate restart file help classes
-        if restart_paths is not None:
-            paths = [path] + restart_paths
-        else:
-            paths = [path]
+        # Instantiate help classes
+        self.grid = Grid(paths[0], slice_ind, slice_dim)
+        self.init = InitReader(paths[0])
         self.restart = RestartReader(paths)
-        self.report = Report(paths)
-        self.wells = Wells(paths)
 
     def generate(self, keyword, rstep, **kwargs):
         """
@@ -230,7 +226,7 @@ class Slice3D:
         # Return polygon collection
         return polyc
 
-    def min(self):
+    def cell_corners_min(self):
         """
         Minimum values for slice
 
@@ -242,7 +238,7 @@ class Slice3D:
         # Min values for each coordinate in slice
         return self.grid.cell_corners().min(axis=(0, 1))
 
-    def max(self):
+    def cell_corners_max(self):
         """
         Maximum values for slice
 
