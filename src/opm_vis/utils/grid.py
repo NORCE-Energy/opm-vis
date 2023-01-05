@@ -1,8 +1,10 @@
 """ Grid methods for xyz plots """
 from glob import glob
 import warnings
+from typing import Union, Any, Literal, List
 
 import numpy as np
+from numpy.typing import NDArray
 from opm.io.ecl import EGrid
 
 
@@ -16,12 +18,12 @@ _INDICES = {
 # pylint: disable=unsubscriptable-object,too-many-instance-attributes
 # EGrid is a pybind class, so until stubs (.pyi files) are made, pylint unsubscriptable-object
 # errors will pop up.
-class Grid:
+class GridSlice:
     """
     Grid calculations from OPM EGRID file.
     """
 
-    def __init__(self, path, slice_ind, slice_dim):
+    def __init__(self, path: str, slice_dim: str, slice_ind: int) -> None:
         """
         Initialize EGrid class from input path
 
@@ -29,8 +31,10 @@ class Grid:
         ----------
         path : str
             Path to .EGRID file
-        grid_slice : str
+        slice_dim : str
             'i', 'j, or 'k' slice of 3D grid
+        slice_ind : int
+            Index of slice
         """
         # Internalize input
         self.slice_dim = slice_dim
@@ -69,7 +73,7 @@ class Grid:
         self._cell_centers()
 
     # pylint: disable=too-many-locals
-    def is_aligned(self):
+    def is_aligned(self) -> Union[Any, Literal[False]]:
         """
         Check if (i, j, k) coordinate system is aligned with (x, y, z) coordinate system
 
@@ -153,13 +157,14 @@ class Grid:
 
         return aligned
 
-    def _active_indices(self):
+    def _active_indices(self) -> List[int]:
         """
         Get active indices for a slice
 
         Returns
         -------
-        List of active indices for grid slice
+        act : List[int]
+            List of active indices for grid slice
         """
         # Initialize active indices list
         act = []
@@ -185,7 +190,7 @@ class Grid:
 
         return act
 
-    def _cell_corners(self):
+    def _cell_corners(self) -> None:
         """
         Pick out cell corners for slice from corner point grid
         """
@@ -225,7 +230,7 @@ class Grid:
         # Gather corner points in array with shape (ncells, 4, 3)
         self.corn = np.stack((xcorn, ycorn, zcorn), axis=-1)
 
-    def _cell_centers(self):
+    def _cell_centers(self) -> None:
         """
         Calculate cell centers of slice (i.e., cell face centers)
         """
@@ -238,14 +243,35 @@ class Grid:
         # Use average of cell corners as approximation for cell center
         self.cent = np.mean(self.corn, axis=1)
 
-    def cell_corners(self):
-        """Return cell corners"""
+    def cell_corners(self) -> NDArray[Any]:
+        """
+        Return cell corners of slice
+
+        Returns
+        -------
+        NDArray[Any]
+            Cell corners with shape = (ncells, 4, 3)
+        """
         return self.corn
 
-    def cell_centers(self):
-        """Return cell centers"""
+    def cell_centers(self) -> NDArray[Any]:
+        """
+        Return cell centers
+
+        Returns
+        -------
+        NDArray[Any]
+            Cell centers with shape = (ncells, 3)
+        """
         return self.cent
 
-    def active_indices(self):
-        """Return active indices"""
+    def active_indices(self) -> List[int]:
+        """
+        Return active indices
+
+        Returns
+        -------
+        List[int]
+            List of active cells for slice
+        """
         return self.act

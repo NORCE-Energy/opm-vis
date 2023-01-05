@@ -1,13 +1,13 @@
 """Module for plotting/gif-generation of slices"""
 from functools import partial
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from matplotlib import animation
 import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-from opm_vis.utils.grid import Grid
+from opm_vis.utils.grid import GridSlice
 from opm_vis.utils.restart import Report, RestartReader, Wells
 from opm_vis.utils.static import InitReader
 
@@ -18,14 +18,17 @@ class Slice3DCollection:
     plotting/gif generation
     """
 
-    def __init__(self, slice_info: List[Tuple[str, int]], paths: List[str]):
+    def __init__(self, slice_info: List[Tuple[str, int]], paths: List[str]) -> None:
         """
         Initialize class by setting up figure/axes.
 
         Parameters
         ----------
-        slice_coll : Slice3D
-            List of Slice3D objects
+        slice_info : List[Tuple[str, int]]
+            Info to generate slices: [(dimension=i, j, or k, index)]
+        paths : List[str]
+            List of paths to OPM files. First entry considered to be the main folder; rest of
+            entries are folders with restart runs.
         """
         # Generate collection of slices
         self.slice_coll = [Slice3D(dim, ind, paths) for dim, ind in slice_info]
@@ -51,7 +54,7 @@ class Slice3DCollection:
         # Internal variables
         self.anim = None
 
-    def set_title(self, rstep, addition=None):
+    def set_title(self, rstep: int, addition: Optional[str] = None) -> None:
         """
         Add title to figure
 
@@ -59,8 +62,8 @@ class Slice3DCollection:
         ----------
         rstep : int
             Report step
-        addition : str, optional
-            Addition to title, by default None
+        addition : Optional[str], optional
+            Adding string to end of title, by default None
         """
         # Report date for title
         rdate = self.report.report_date(rstep)
@@ -75,14 +78,14 @@ class Slice3DCollection:
         # Add title to figure
         self.fig.suptitle(title)
 
-    def set_labels(self):
+    def set_labels(self) -> None:
         """Set labels to Easting, Northing, and depth"""
         # Set defaults
         self.ax_.set_xlabel("E(x) [m]")
         self.ax_.set_ylabel("N(y) [m]")
         self.ax_.set_zlabel("Depth(z) [m]")
 
-    def add_collection(self, polyc):
+    def add_collection(self, polyc: Poly3DCollection) -> None:
         """
         Alias to axes.add_collection in matplotlib
 
@@ -100,7 +103,7 @@ class Slice3DCollection:
         # Add polygon collection to matplotlib axes
         self.ax_.add_collection(polyc)
 
-    def set_lims(self):
+    def set_lims(self) -> None:
         """
         Set x-, y-, and z-limits such that all slices are visible
         """
@@ -116,7 +119,7 @@ class Slice3DCollection:
         self.ax_.set_ylim(min_coll[:, 1].min(), max_coll[:, 1].max())
         self.ax_.set_zlim(min_coll[:, 2].min(), max_coll[:, 2].max())
 
-    def plot(self, rstep, keyword, **kwargs):
+    def plot(self, rstep: int, keyword: str, **kwargs) -> None:
         """
         Plot keyword at one report step.
 
@@ -126,6 +129,8 @@ class Slice3DCollection:
             Report step
         keyword : str
             OPM keyword to plot
+        kwargs: optional
+            Optional arguments passed to Poly3DCollection
 
         Notes
         -----
@@ -142,7 +147,7 @@ class Slice3DCollection:
         # Set title
         self.set_title(rstep)
 
-    def gif(self, keyword, **kwargs):
+    def gif(self, keyword: str, **kwargs) -> None:
         """
         Generate gif
 
@@ -164,7 +169,7 @@ class Slice3DCollection:
         # Set up Matplotlib animation
         self.anim = animation.FuncAnimation(self.fig, plot_func, frames=rsteps)
 
-    def show(self):
+    def show(self) -> None:
         """Show figure on screen"""
         plt.show()
         plt.close("all")
@@ -175,27 +180,26 @@ class Slice3D:
     Class for setting up a slice for 3D plot.
     """
 
-    def __init__(self, slice_dim: str, slice_ind: int, paths: List[str]):
+    def __init__(self, slice_dim: str, slice_ind: int, paths: List[str]) -> None:
         """
         Initialize slice by instantiating all helper classes
 
         Parameters
         ----------
-        path : str
-            Main folder
         slice_dim : str
-            Dimension to slice
+            Dimension to slice : i, j, or k
         slice_ind : int
-            Index to slice through
-        restart_paths : list, optional
-            Folder with files from restart runs, by default None
+            Index of slice
+        paths : List[str]
+            List of paths to OPM files. First entry considered to be the main folder; rest of
+            entries are folders with restart runs.
         """
         # Instantiate help classes
-        self.grid = Grid(paths[0], slice_ind, slice_dim)
+        self.grid = GridSlice(paths[0], slice_dim, slice_ind)
         self.init = InitReader(paths[0])
         self.restart = RestartReader(paths)
 
-    def generate(self, keyword, rstep, **kwargs):
+    def generate(self, keyword: str, rstep: int, **kwargs) -> Poly3DCollection:
         """
         Generate data from keyword at one report step
 
@@ -205,6 +209,8 @@ class Slice3D:
             OPM keyword
         rstep : int
             Report step
+        kwargs: optional
+            Optional arguments passed to Poly3DCollection
 
         Returns
         -------

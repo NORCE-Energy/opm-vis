@@ -2,8 +2,10 @@
 import datetime as dt
 import warnings
 from glob import glob
+from typing import List, Optional, Any, Dict
 
 import numpy as np
+from numpy.typing import NDArray
 from opm.io.ecl import ERst
 
 
@@ -34,14 +36,15 @@ class _RestartFiles:
     Top class for ERst wrapper
     """
 
-    def __init__(self, paths):
+    def __init__(self, paths: List[str]) -> None:
         """
         Init. class by instantiating ERst classes for each restart file in input folders
 
         Parameters
         ----------
-        paths : list
-            List of paths with restart files
+        paths : List[str]
+            List of paths with restart files. Main folder is in paths[0]; rest of entries, if any,
+            are folders with simulator restart runs.
         """
         # Instantiate OPM restart class. Need to search paths for .UNRST or .X files
         self.rst = []
@@ -86,7 +89,9 @@ class RestartReader(_RestartFiles):
     Class for reading restart files (mainly). Initialization in parent class.
     """
 
-    def read(self, keyword, rstep, act=None):
+    def read(
+        self, keyword: str, rstep: int, act: Optional[List[int]] = None
+    ) -> NDArray[Any]:
         """
         Read restart file at report step and return array for active indices.
 
@@ -97,7 +102,7 @@ class RestartReader(_RestartFiles):
             inputed in RST-type mnemonics).
         rstep : int
             Report step.
-        act : list, optional
+        act : List[int], optional
             Active indices for output array. If act=None, whole array is outputted.
 
         Returns
@@ -114,7 +119,7 @@ class RestartReader(_RestartFiles):
         # Raise error if report step does not exist in restart files
         raise ValueError(f"Report step {rstep} was not found in restart files!")
 
-    def available_keywords(self, rstep):
+    def available_keywords(self, rstep: int) -> List[str]:
         """
         Available keyword at report step
 
@@ -122,6 +127,11 @@ class RestartReader(_RestartFiles):
         ----------
         rstep : int
             Report step
+
+        Returns
+        -------
+        List[str]
+            List of available keywords
         """
         #  Loop over restart files to find info at correct report step
         for erst in self.rst:
@@ -137,14 +147,26 @@ class Report(_RestartFiles):
     Class to organize and handle report dates/steps from restart files
     """
 
-    def __init__(self, paths):
+    def __init__(self, paths: List[str]) -> None:
+        """
+        Initialize by organizing report steps and dates.
+
+        Parameters
+        ----------
+        paths : List[str]
+            List of paths with restart files. Main folder is in paths[0]; rest of entries, if any,
+            are folders with simulator restart runs.
+        """
         # Instantiate Erst class for restart files using parent class
         super().__init__(paths)
 
         # Extract report dates and report steps from restart files
         self._report_dates_and_steps()
 
-    def _report_dates_and_steps(self):
+    def _report_dates_and_steps(self) -> None:
+        """
+        Organize report steps and dates from restart files.
+        """
         # Read report steps and associated dates from the restart file(s). The date is stored in
         # INTEHEAD record, items 65 - 67 (note, Python indexing in code below).
         # OBS: we ignore hours, minutes and seconds here, but for future reference they are located
@@ -177,9 +199,14 @@ class Report(_RestartFiles):
         self.rsteps = [self.rsteps[i] for i in ind_sort]
         self.rdates = [self.rdates[i] for i in ind_sort]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Print an table of report dates and steps if called by Python print method
+
+        Returns
+        -------
+        str
+            Table of report steps // report dates
         """
         # Print table with columns: report step // report dates
         output_string = "Report step\tDate\n"
@@ -188,16 +215,42 @@ class Report(_RestartFiles):
 
         return output_string
 
-    def report_date(self, rstep):
-        """Return report date at on report step"""
+    def report_date(self, rstep: int) -> dt.datetime:
+        """
+        Return report date at on report step
+
+        Parameters
+        ----------
+        rstep : int
+            Report step
+
+        Returns
+        -------
+        dt.datetime
+            Datetime object for report step
+        """
         return self.rdates[self.rsteps.index(rstep)]
 
-    def report_dates(self):
-        """Return report dates"""
+    def report_dates(self) -> List[dt.datetime]:
+        """
+        Return report dates
+
+        Returns
+        -------
+        List[dt.datetime]
+            List of report dates as datetime objects
+        """
         return self.rdates
 
-    def report_steps(self):
-        """Return report steps"""
+    def report_steps(self) -> List[int]:
+        """
+        Return report steps
+
+        Returns
+        -------
+        List[int]
+            List of report steps
+        """
         return self.rsteps
 
 
@@ -206,14 +259,23 @@ class Wells(_RestartFiles):
     Well information from restart files
     """
 
-    def __init__(self, paths):
+    def __init__(self, paths: List[str]) -> None:
+        """
+        Initialize by extracting all well information from restart files.
+
+        Parameters
+        ----------
+        paths : List[str]
+            List of paths with restart files. Main folder is in paths[0]; rest of entries, if any,
+            are folders with simulator restart runs.
+        """
         # Call parent class __init__
         super().__init__(paths)
 
         # Organize well information for all report dates
         self._well_info_all_report_steps()
 
-    def _well_info_all_report_steps(self):
+    def _well_info_all_report_steps(self) -> None:
         """
         Get coordinates and status for all wells at all report dates.
 
@@ -276,7 +338,7 @@ class Wells(_RestartFiles):
                 # Increase internal well_info index counter
                 ind += 1
 
-    def __getitem__(self, rstep):
+    def __getitem__(self, rstep: int) -> Dict[str, List[Any]]:
         """
         Get well info at inputted report step
 
