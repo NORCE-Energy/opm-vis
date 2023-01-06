@@ -1,4 +1,6 @@
 """Plot collection of slices"""
+import datetime as dt
+import warnings
 from functools import partial
 from typing import List, Optional, Tuple, Union
 
@@ -13,6 +15,7 @@ from opm_vis.plot.slice_poly import SlicePoly2D, SlicePoly3D
 from opm_vis.utils.restart import Report, Wells
 
 
+# pylint: disable=too-many-instance-attributes
 class _SlicePolyCollection:
     """
     Parent class for setting up a figure/axes, gathering collections of slices, and the actual
@@ -39,6 +42,7 @@ class _SlicePolyCollection:
         self.fig = fig
         self.ax_ = ax_
         self.slice_coll = slice_coll
+        self.paths = paths
 
         # Instantiate report and well classes
         self.report = Report(paths)
@@ -46,21 +50,20 @@ class _SlicePolyCollection:
 
         # Internal variables
         self.anim = None
+        self.rdates: List[dt.datetime] = []
+        self.keyword = ""
 
-    def set_title(self, rstep: int, addition: Optional[str] = None) -> None:
+    def set_title(self, rdate: dt.datetime, addition: Optional[str] = None) -> None:
         """
-        Add title to figure
+        Add title to figure based on report date and additional text if inputted.
 
         Parameters
         ----------
-        rstep : int
-            Report step
+        rstep : dt.datetime
+            Report date
         addition : Optional[str], optional
             Adding string to end of title, by default None
         """
-        # Report date for title
-        rdate = self.report.report_date(rstep)
-
         # Title
         title = rdate.strftime("%d.%m.%Y")
 
@@ -117,8 +120,15 @@ class _SlicePolyCollection:
             # Add polyc to axes collection
             self.add_collection(polyc)
 
+        # Add report date to plot list
+        rdate = self.report.report_date(rstep)
+        self.rdates.append(rdate)
+
+        # Save keyword
+        self.keyword = keyword
+
         # Set title
-        self.set_title(rstep)
+        self.set_title(rdate)
 
     def gif(self, keyword: str, **kwargs) -> None:
         """
@@ -135,6 +145,10 @@ class _SlicePolyCollection:
         """
         # All report steps
         rsteps = self.report.report_steps()
+        self.rdates = self.report.report_dates()
+
+        # Save keyword
+        self.keyword = keyword
 
         # Setup plot function to fit with FuncAnimation
         plot_func = partial(self.plot, keyword=keyword, **kwargs)
@@ -146,6 +160,72 @@ class _SlicePolyCollection:
         """Show figure on screen"""
         plt.show()
         plt.close("all")
+
+    def save_plot(self, file_format: Optional[str] = "png") -> None:
+        """
+        Save plot to file. File name is a combination of report date, OPM keyword, and slice info.
+
+        Parameters
+        ----------
+        file_format : Optional[str], optional
+            File format for save file. Must be a valid Matplotlib file format (see savefig
+            documentation), by default 'png'
+        """
+        # Check if any plot has been made
+        if not self.ax_.collections:
+            raise RuntimeError("No plot to save! Run plot() method first.")
+
+        # Check if multiple plots have been made
+        if len(self.ax_.collections) > 1:
+            warnings.warn(
+                f"{len(self.ax_.collections)} plots have been made. Will only save the last one!"
+            )
+
+        # Report date of plot
+        rdate_str = self.rdates[-1].strftime("%d-%m-%Y")
+
+        # Slice info
+        slice_info = ""
+        for i, slc in enumerate(self.slice_coll):
+            slice_info += f"{slc.slice_dim}{slc.slice_ind}"
+            if i < len(self.slice_coll) - 1:
+                slice_info += "_"
+
+        # Create save name
+        savename = (
+            f"{self.paths[0]}{self.keyword}_{rdate_str}_{slice_info}.{file_format}"
+        )
+
+        # Save file
+        self.fig.savefig(savename)
+        plt.close("all")
+
+    def save_gif(self) -> None:
+        """
+        Save plot movie to gif.
+        """
+        # Check if any gif have been made
+        if self.anim is None:
+            raise RuntimeError("No gif to save! Run gif() method first.")
+
+        # Instantiate gif writer
+        writer = animation.PillowWriter(fps=3)
+
+        # Date span included in gif
+        date_span = f"{self.rdates[0].strftime('%d-%m-%Y')}_{self.rdates[-1].strftime('%d-%m-%Y')}"
+
+        # Slice info
+        slice_info = ""
+        for i, slc in enumerate(self.slice_coll):
+            slice_info += f"{slc.slice_dim}{slc.slice_ind}"
+            if i < len(self.slice_coll) - 1:
+                slice_info += "_"
+
+        # Save name
+        savename = f"{self.paths[0]}{self.keyword}_{date_span}_{slice_info}.gif"
+
+        # Save gif
+        self.anim.save(savename, writer=writer)
 
 
 class SlicePoly3DCollection(_SlicePolyCollection):
