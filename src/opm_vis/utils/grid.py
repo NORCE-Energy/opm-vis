@@ -1,12 +1,12 @@
 """ Grid methods for xyz plots """
-from glob import glob
 import warnings
-from typing import Union, Any, Literal, List
+from abc import ABC, abstractmethod
+from glob import glob
+from typing import Any, List, Literal, Union
 
 import numpy as np
 from numpy.typing import NDArray
 from opm.io.ecl import EGrid
-
 
 # Global indices for slice quadrilateral
 _INDICES = {
@@ -18,9 +18,13 @@ _INDICES = {
 # pylint: disable=unsubscriptable-object,too-many-instance-attributes
 # EGrid is a pybind class, so until stubs (.pyi files) are made, pylint unsubscriptable-object
 # errors will pop up.
-class GridSlice:
+class _GridSlice(ABC):
     """
-    Grid calculations from OPM EGRID file.
+    Setup grid from OPM EGRID file. Actual calculations in child classes.
+
+    Warning
+    -------
+    Do not instantiate this class!
     """
 
     def __init__(self, path: str, slice_dim: str, slice_ind: int) -> None:
@@ -40,6 +44,11 @@ class GridSlice:
         self.slice_dim = slice_dim
         self.slice_ind = slice_ind
 
+        # Internal variables
+        self.act = []
+        self.corn = np.empty(0)
+        self.cent = np.empty(0)
+
         # Instantiate Egrid class
         if glob(path + "*.EGRID"):
             if len(glob(path + "*.EGRID")) > 1:
@@ -50,27 +59,18 @@ class GridSlice:
         else:
             raise FileNotFoundError(f"No .EGRID file found in {path}!")
 
-        # Grid dimensions
+        # Grid slice axis indices and dimension
         if slice_dim == "i":
-            self.nx1 = self.egrid.dimension[1]
-            self.nx2 = self.egrid.dimension[2]
+            self.slice_axis = [1, 2]
         elif slice_dim == "j":
-            self.nx1 = self.egrid.dimension[0]
-            self.nx2 = self.egrid.dimension[2]
+            self.slice_axis = [0, 2]
         elif slice_dim == "k":
-            self.nx1 = self.egrid.dimension[0]
-            self.nx2 = self.egrid.dimension[1]
+            self.slice_axis = [0, 1]
+        self.nx1 = self.egrid.dimension[self.slice_axis[0]]
+        self.nx2 = self.egrid.dimension[self.slice_axis[1]]
 
         # Check (i, j, k) coord. system is aligned with (x, y, z) coord. system
         self.aligned_grid = self.is_aligned()
-
-        # Active indices for slice
-        self.act = self._active_indices()
-        self.nact = len(self.act)
-
-        # Cell corner and centroid calculation
-        self._cell_corners()
-        self._cell_centers()
 
     # pylint: disable=too-many-locals
     def is_aligned(self) -> Union[Any, Literal[False]]:
@@ -157,18 +157,10 @@ class GridSlice:
 
         return aligned
 
-    def _active_indices(self) -> List[int]:
+    def _active_indices(self) -> None:
         """
         Get active indices for a slice
-
-        Returns
-        -------
-        act : List[int]
-            List of active indices for grid slice
         """
-        # Initialize active indices list
-        act = []
-
         # Loop over slice grid dimension
         for ind_1 in range(self.nx1):
             for ind_2 in range(self.nx2):
@@ -186,9 +178,7 @@ class GridSlice:
 
                 # Check if active index at (i,j,k) is an active cell, if so add to list
                 if act_index >= 0:
-                    act.append(act_index)
-
-        return act
+                    self.act.append(act_index)
 
     def _cell_corners(self) -> None:
         """
@@ -243,6 +233,54 @@ class GridSlice:
         # Use average of cell corners as approximation for cell center
         self.cent = np.mean(self.corn, axis=1)
 
+    def active_indices(self) -> List[int]:
+        """
+        Return active indices
+
+        Returns
+        -------
+        List[int]
+            List of active cells for slice
+        """
+        return self.act
+
+    @abstractmethod
+    def cell_corners(self) -> NDArray[Any]:
+        """
+        Return cell corners of slice
+
+        Returns
+        -------
+        NDArray[Any]
+            Cell corners with shape = (ncells, 4, 3)
+        """
+
+    @abstractmethod
+    def cell_centers(self) -> NDArray[Any]:
+        """
+        Return cell centers
+
+        Returns
+        -------
+        NDArray[Any]
+            Cell centers with shape = (ncells, 3)
+        """
+
+
+class GridSlice3D(_GridSlice):
+    """
+    Grid calculations for slice with 3D coordinates.
+    """
+
+    def __init__(self, path: str, slice_dim: str, slice_ind: int) -> None:
+        super().__init__(path, slice_dim, slice_ind)
+        # Active indices for slice
+        self._active_indices()
+
+        # Cell corner and centroid calculation
+        self._cell_corners()
+        self._cell_centers()
+
     def cell_corners(self) -> NDArray[Any]:
         """
         Return cell corners of slice
@@ -265,13 +303,34 @@ class GridSlice:
         """
         return self.cent
 
-    def active_indices(self) -> List[int]:
+
+class GridSlice2D(GridSlice3D):
+    """
+    Subclass of GridSlice3D for 2D projection of slice down to the slice dimension. In practice,
+    this means that ignore slice dimension from the 3D slice. Useful for, e.g., plotting 2D view of
+    slice (similar to pcolor or pcolormesh in Matplotlib).
+    """
+
+    def cell_corners(self) -> NDArray[Any]:
         """
-        Return active indices
+        Return cell corners of slice
 
         Returns
         -------
-        List[int]
-            List of active cells for slice
+        NDArray[Any]
+            Cell corners with shape = (ncells, 4, 3)
         """
-        return self.act
+        delete_axis = [ind for ind in [0, 1, 2] if ind not in self.slice_axis][0]
+        return np.delete(self.corn, delete_axis, axis=2)
+
+    def cell_centers(self) -> NDArray[Any]:
+        """
+        Return cell centers
+
+        Returns
+        -------
+        NDArray[Any]
+            Cell centers with shape = (ncells, 3)
+        """
+        delete_axis = [ind for ind in [0, 1, 2] if ind not in self.slice_axis][0]
+        return np.delete(self.cent, delete_axis, axis=1)
