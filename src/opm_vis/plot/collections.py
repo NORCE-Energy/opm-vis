@@ -175,12 +175,6 @@ class _SlicePolyCollection:
         if not self.ax_.collections:
             raise RuntimeError("No plot to save! Run plot() method first.")
 
-        # Check if multiple plots have been made
-        if len(self.ax_.collections) > 1:
-            warnings.warn(
-                f"{len(self.ax_.collections)} plots have been made. Will only save the last one!"
-            )
-
         # Report date of plot
         rdate_str = self.rdates[-1].strftime("%d-%m-%Y")
 
