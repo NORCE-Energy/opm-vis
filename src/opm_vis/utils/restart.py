@@ -285,7 +285,7 @@ class Wells(_RestartFiles):
         or Eclipse file format manual
         """
         # Init. well info as a list with entry for each report date
-        self.well_info = [{} for erst in self.rst for _ in erst.report_steps]
+        self._well_info = [{} for erst in self.rst for _ in erst.report_steps]
 
         # Loop over all restart files and report steps for each file and organize well information
         # in dictionaries using well names as keys.
@@ -323,17 +323,17 @@ class Wells(_RestartFiles):
                 # NOTE: Suited for vertical wells at the moment: i, j are well head indices. Status
                 # is whether well is open or shut; could be modified to connection status (found in
                 # icon[_, _, 5])
-                self.well_info[ind] = {key: [] for key in well_names}
+                self._well_info[ind] = {key: [] for key in well_names}
                 for i, name in enumerate(well_names):
                     # i,j indices of well head
-                    self.well_info[ind][name].extend(iwel[i, :2].tolist())
+                    self._well_info[ind][name].extend((iwel[i, :2] - 1).tolist())
 
                     # k-indices for well connection
-                    self.well_info[ind][name].extend(icon[i, icon[i, :, 3] > 0, 3] - 1)
+                    self._well_info[ind][name].extend(icon[i, icon[i, :, 3] > 0, 3] - 1)
 
                     # Well status (open/shut = True/False).
                     # OBS: convert to Python bool instead of numpy.bool_
-                    self.well_info[ind][name].extend([bool(iwel[i, 10] > 0)])
+                    self._well_info[ind][name].extend([bool(iwel[i, 10] > 0)])
 
                 # Increase internal well_info index counter
                 ind += 1
@@ -353,13 +353,17 @@ class Wells(_RestartFiles):
             Dictionary with information for each well. List organized as [i, j, k0, k1, ..., kend,
             status]
         """
-        # rstep is not necessarily equal to index of self.well_info since it is possible output
+        # rstep is not necessarily equal to index of self._well_info since it is possible output
         # restart arrays at any frequency (see, e.g., RPTRST keyword, and BASIC and FREQ mnemonics!)
-        # Start return index at zero and count up until we reach report step in some restart file.
+        # Start index at zero and count up until we reach report step in some restart file.
         ind = 0
         for erst in self.rst:
             if rstep in erst.report_steps:
                 ind += erst.report_steps.index(rstep)
             else:
                 ind += len(erst.report_steps)
-        return self.well_info[ind]
+        return self._well_info[ind]
+
+    def __iter__(self):
+        for elem in self._well_info:
+            yield elem
