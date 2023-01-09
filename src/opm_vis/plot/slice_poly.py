@@ -1,5 +1,6 @@
 """Module for generating slices for plotting"""
 from abc import ABC, abstractmethod
+from copy import copy
 from typing import Any, List, Union
 
 from matplotlib.collections import PolyCollection
@@ -7,7 +8,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from numpy.typing import NDArray
 
 from opm_vis.utils.grid import GridSlice2D, GridSlice3D, _GridSlice
-from opm_vis.utils.restart import RestartReader
+from opm_vis.utils.restart import RestartReader, Wells
 from opm_vis.utils.static import InitReader
 
 
@@ -38,6 +39,9 @@ class _SlicePoly(_GridSlice, ABC):
         _GridSlice.__init__(self, paths[0], slice_dim, slice_ind)
         self.init = InitReader(paths[0])
         self.restart = RestartReader(paths)
+
+        # Internal variables
+        self.wells = []  # see Wells class
 
     def generate(
         self, keyword: str, rstep: int, **kwargs
@@ -70,6 +74,52 @@ class _SlicePoly(_GridSlice, ABC):
 
         # Return polygon collection
         return polyc
+
+    def _filter_wells(self, paths: List[str]) -> None:
+        """
+        Filter wells that are present on slice; rest will be empty lists
+
+        Parameters
+        ----------
+        paths : List[str]
+            Path to restart files (passed to Wells initialization)
+        """
+        # Instantiate Wells class
+        self.wells = Wells(paths)
+
+        # Initialize new wells dictionary, with info that just exist on this slice. Slight change in
+        # well info list compared to list in Wells; we change from i,j,k to active indices:
+        # well_info = [act_ind_0, act_ind_1, ..., act_ind_end, status]
+        for well in self.wells:
+            for name, info in well.items():
+                well_info = []
+                # Append active cells if wells are present
+                if self.slice_dim == "k" and self.slice_ind in info[2:-1]:
+                    if (
+                        self.egrid.active_index(info[0], info[1], self.slice_ind)
+                        in self.active_indices()
+                    ):
+                        well_info.append(
+                            self.egrid.active_index(info[0], info[1], self.slice_ind)
+                        )
+                elif (self.slice_dim == "i" and info[0] == self.slice_ind) or (
+                    self.slice_dim == "j" and info[1] == self.slice_ind
+                ):
+                    for k in info[2:-1]:
+                        if (
+                            self.egrid.active_index(info[0], info[1], k)
+                            in self.active_indices()
+                        ):
+                            well_info.append(
+                                self.egrid.active_index(info[0], info[1], k)
+                            )
+                # If well info have been added to well_info list (meaning well exist in slice), we
+                # add the well status (open/shut bool) as well
+                if well_info:
+                    well_info.append(info[-1])
+
+                # Overwrite list for well with new info (or empty list if it's not present).
+                well[name] = copy(well_info)
 
     @abstractmethod
     def generate_poly(
@@ -129,6 +179,9 @@ class SlicePoly3D(_SlicePoly, GridSlice3D):
         super().__init__(paths, slice_dim, slice_ind)
         GridSlice3D.__init__(self, paths[0], slice_dim, slice_ind)
 
+        # Setup wells
+        self._filter_wells(paths)
+
     def generate_poly(self, data: NDArray[Any], **kwargs) -> Poly3DCollection:
         """
         Generate 3D polygon collection
@@ -178,6 +231,9 @@ class SlicePoly2D(_SlicePoly, GridSlice2D):
         # Instantiate help classes
         super().__init__(paths, slice_dim, slice_ind)
         GridSlice2D.__init__(self, paths[0], slice_dim, slice_ind)
+
+        # Setup wells
+        self._filter_wells(paths)
 
     def generate_poly(self, data: NDArray[Any], **kwargs) -> PolyCollection:
         """

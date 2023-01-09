@@ -2,7 +2,7 @@
 import datetime as dt
 import warnings
 from functools import partial
-from typing import List, Optional, Tuple, Union, Dict
+from typing import Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,7 +12,7 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from opm_vis.plot.slice_poly import SlicePoly2D, SlicePoly3D
-from opm_vis.utils.restart import Report, Wells
+from opm_vis.utils.restart import Report
 
 
 # pylint: disable=too-many-instance-attributes
@@ -52,7 +52,6 @@ class _SlicePolyCollection:
 
         # Instantiate report and well classes
         self.report = Report(paths)
-        self.wells = Wells(paths)
 
         # Internal variables
         self.anim = None
@@ -100,6 +99,58 @@ class _SlicePolyCollection:
 
         # Add polygon collection to matplotlib axes
         self.ax_.add_collection(polyc)
+
+    def plot_wells(self, rstep: int) -> None:
+        """
+        Plot wells in slices (if any) for a report step
+
+        Parameters
+        ----------
+        rstep : int
+            Report step
+        """
+        # Loop over slices
+        for slc in self.slice_coll:
+            # Loop over all wells in slice and plot
+            for name, well in slc.wells[rstep].items():
+                if well:
+                    # Cell center coordinates of well
+                    wcent = np.array(
+                        [
+                            slc.cell_centers()[slc.active_indices().index(ind)]
+                            for ind in well[:-1]
+                        ]
+                    )
+
+                    # Plot options. k-slices in 2D view is essentially a scatter plot; else for
+                    # other slices in 2D/3D we plot wells as a line.
+                    color = "k" if well[-1] else "r"
+                    if isinstance(slc, SlicePoly2D) and slc.slice_dim == "k":
+                        well_kwargs = {
+                            "marker": ".",
+                            "markersize": 10,
+                            "markeredgecolor": color,
+                            "markerfacecolor": color,
+                        }
+                    else:
+                        well_kwargs = {
+                            "linewidth": 2,
+                            "color": color,
+                        }
+
+                    # Use Axes/Axes3D plot method to display wells with name
+                    if isinstance(slc, SlicePoly2D):
+                        self.ax_.plot(wcent[:, 0], wcent[:, 1], **well_kwargs)
+                        self.ax_.annotate(
+                            name, (wcent[0, 0], wcent[0, 1]), c=color, ha="center"
+                        )
+                    else:
+                        self.ax_.plot(
+                            wcent[:, 0], wcent[:, 1], wcent[:, 2], **well_kwargs
+                        )
+                        self.ax_.text(
+                            wcent[0, 0], wcent[0, 1], wcent[0, 2], name, color=color
+                        )
 
     # pylint: disable=too-many-arguments
     def plot(
@@ -162,6 +213,9 @@ class _SlicePolyCollection:
         # Add all polyc to axes collection
         for polyc in polyc_rstep:
             self.add_collection(polyc)
+
+        # Plot wells
+        self.plot_wells(rstep)
 
         # Add report date to plot list
         rdate = self.report.report_date(rstep)
