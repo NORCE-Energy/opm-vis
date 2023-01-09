@@ -2,7 +2,7 @@
 import datetime as dt
 import warnings
 from functools import partial
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,6 +37,12 @@ class _SlicePolyCollection:
         paths : List[str]
             List of paths to OPM files. First entry considered to be the main folder; rest of
             entries are folders with restart runs.
+        fig : plt.Figure
+            Figure object
+        ax_ : plt.Axes
+            Axes insert slices in
+        silce_coll : list
+            List of SlicePoly3D/SlicePoly2D objects to use in plotting
         """
         # Internalize input
         self.fig = fig
@@ -80,8 +86,8 @@ class _SlicePolyCollection:
 
         Parameters
         ----------
-        polyc : Poly3DCollection
-            Collection of polygons for a slice
+        polyc : Poly3DCollection/PolyCollection
+            Collection of polygons for one slice
         """
         # Check if input is correct type
         if not isinstance(polyc, Poly3DCollection) and not isinstance(
@@ -95,7 +101,18 @@ class _SlicePolyCollection:
         # Add polygon collection to matplotlib axes
         self.ax_.add_collection(polyc)
 
-    def plot(self, rstep: int, keyword: str, **kwargs) -> None:
+    # pylint: disable=too-many-arguments
+    def plot(
+        self,
+        rstep: int,
+        keyword: str,
+        colorbar: bool = True,
+        equal_clim: bool = True,
+        polyc_dict: Optional[
+            Dict[int, Union[List[Poly3DCollection], List[PolyCollection]]]
+        ] = None,
+        **kwargs,
+    ) -> None:
         """
         Plot keyword at one report step.
 
@@ -105,19 +122,45 @@ class _SlicePolyCollection:
             Report step
         keyword : str
             OPM keyword to plot
+        colorbar : bool
+            Insert colorbar, by default True
+        equal_clim : bool
+            Equal colormap range for all slices, by default True
+        polyc_dict : dict, optional
+            Pre-generated slices (list of Poly3DCollection/PolyCollection), by default None.
         kwargs: optional
-            Optional arguments passed to Poly3DCollection
+            Optional arguments passed to Poly3DCollection/PolyCollection
 
         Notes
         -----
         Use show or save_plot to show plot on screen or save to file.
         """
-        # Generate data for each slice and add to axes collection
-        for slc in self.slice_coll:
-            # Generated data comes in form of a Matplotlib Poly3DCollection
-            polyc = slc.generate(keyword, rstep, **kwargs)
+        # If pre-generated polyc data have been inputted, we just add the correct one(s) for the
+        # current report step
+        if polyc_dict is not None:
+            polyc_rstep = polyc_dict[rstep]
 
-            # Add polyc to axes collection
+        # Else, generate data for each slice and add to axes collection
+        else:
+            polyc_rstep = [
+                slc.generate(keyword, rstep, **kwargs) for slc in self.slice_coll
+            ]
+
+        # Set equal color range if there are more than one slice.
+        if "clim" not in kwargs and equal_clim is True and len(polyc_rstep) > 1:
+            # First we need min/max across all slices
+            min_polyc = 0
+            max_polyc = 0
+            for polyc in polyc_rstep:
+                min_polyc = np.minimum(min_polyc, polyc.get_array().min())
+                max_polyc = np.maximum(max_polyc, polyc.get_array().max())
+
+            # Second, we set clim
+            for polyc in polyc_rstep:
+                polyc.set_clim(min_polyc, max_polyc)
+
+        # Add all polyc to axes collection
+        for polyc in polyc_rstep:
             self.add_collection(polyc)
 
         # Add report date to plot list
@@ -130,6 +173,19 @@ class _SlicePolyCollection:
         # Set title
         self.set_title(rdate)
 
+        # Set colorbar
+        if colorbar is True:
+            # Warn user if equal_clim is False, since colobar will be set according to first slice
+            if "clim" not in kwargs and equal_clim is False and len(polyc_rstep) > 1:
+                warnings.warn(
+                    "Multiple slices will be plotted, but colorbar is only valid for slice "
+                    f"({self.slice_coll[0].slice_dim}, {self.slice_coll[0].slice_ind})! "
+                    "Set equal_clim == True or a 'clim' to make the colorbar valid for all slices!"
+                )
+
+            # Following above warning, we only need to use the first slice
+            self.fig.colorbar(polyc_rstep[0], ax=self.ax_, label=keyword)
+
     def gif(self, keyword: str, **kwargs) -> None:
         """
         Generate gif
@@ -138,6 +194,8 @@ class _SlicePolyCollection:
         ----------
         keyword : str
             OPM keyword to plot
+        kwargs: optional
+            Optional arguments passed to Poly3DCollection/PolyCollection
 
         Notes
         -----
@@ -150,24 +208,83 @@ class _SlicePolyCollection:
         # Save keyword
         self.keyword = keyword
 
+        # Generate slices for all report dates to be able to set one colorbar for whole gif
+        polyc_dict = self._data_for_gif(rsteps, keyword, **kwargs)
+
+        # Set colorbar for gif
+        self.fig.colorbar(polyc_dict[rsteps[0]][0], ax=self.ax_, label=keyword)
+
         # Setup plot function to fit with FuncAnimation
-        plot_func = partial(self.plot, keyword=keyword, **kwargs)
+        plot_func = partial(
+            self.plot,
+            keyword=keyword,
+            colorbar=False,
+            equal_clim=False,
+            polyc_dict=polyc_dict,
+            **kwargs,
+        )
 
         # Set up Matplotlib animation
         self.anim = animation.FuncAnimation(self.fig, plot_func, frames=rsteps)
+
+    def _data_for_gif(
+        self, rsteps: List[int], keyword: str, **kwargs
+    ) -> Dict[int, Union[List[Poly3DCollection], List[PolyCollection]]]:
+        """
+        Pre-generate data for report steps.
+
+        Parameters
+        ----------
+        rsteps : List[int]
+            List of report steps to generate plot data for
+        keyword : str
+            OPM keyword to plot
+
+        Returns
+        -------
+        Dict[int, Union[List[Poly3DCollection], List[PolyCollection]]]
+            Dictionary of slice Poly3DCollection/PolyCollection with keyword data at report steps
+            (dictionary key)
+        """
+        # Initialize dict output
+        polyc_dict = {k: [] for k in rsteps}
+
+        # Generate data for each slice at each report step
+        for rstep in rsteps:
+            polyc_dict[rstep] = [
+                slc.generate(keyword, rstep, **kwargs) for slc in self.slice_coll
+            ]
+
+        # If clim have not been set in kwargs, we must loop over all polyc and set clim to min/max
+        # for all data
+        if "clim" not in kwargs:
+            # First loop round to get min/max for all slices in all report steps
+            min_polyc = 0
+            max_polyc = 0
+            for rstep in rsteps:
+                for polyc in polyc_dict[rstep]:
+                    min_polyc = np.minimum(min_polyc, polyc.get_array().min())
+                    max_polyc = np.maximum(max_polyc, polyc.get_array().max())
+
+            # Second loop round to set uniform clim for all slices in all report steps
+            for rstep in rsteps:
+                for polyc in polyc_dict[rstep]:
+                    polyc.set_clim(min_polyc, max_polyc)
+
+        return polyc_dict
 
     def show(self) -> None:
         """Show figure on screen"""
         plt.show()
         plt.close("all")
 
-    def save_plot(self, file_format: Optional[str] = "png") -> None:
+    def save_plot(self, file_format: str = "png") -> None:
         """
         Save plot to file. File name is a combination of report date, OPM keyword, and slice info.
 
         Parameters
         ----------
-        file_format : Optional[str], optional
+        file_format : str, optional
             File format for save file. Must be a valid Matplotlib file format (see savefig
             documentation), by default 'png'
         """
