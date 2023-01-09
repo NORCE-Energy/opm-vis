@@ -21,10 +21,6 @@ _INDICES = {
 class _GridSlice(ABC):
     """
     Setup grid from OPM EGRID file. Actual calculations in child classes.
-
-    Warning
-    -------
-    Do not instantiate this class!
     """
 
     def __init__(self, path: str, slice_dim: str, slice_ind: int) -> None:
@@ -252,7 +248,7 @@ class _GridSlice(ABC):
         Returns
         -------
         NDArray[Any]
-            Cell corners with shape = (ncells, 4, 3)
+            Cell corners with shape = (ncells, 4, *) with * = 2 for 2D and 3 for 3D
         """
 
     @abstractmethod
@@ -263,7 +259,7 @@ class _GridSlice(ABC):
         Returns
         -------
         NDArray[Any]
-            Cell centers with shape = (ncells, 3)
+            Cell centers with shape = (ncells, *) with * = 2 for 2D and 3 for 3D
         """
 
 
@@ -318,7 +314,7 @@ class GridSlice2D(GridSlice3D):
         Returns
         -------
         NDArray[Any]
-            Cell corners with shape = (ncells, 4, 3)
+            Cell corners with shape = (ncells, 4, 2)
         """
         delete_axis = [ind for ind in [0, 1, 2] if ind not in self.slice_axis][0]
         return np.delete(self.corn, delete_axis, axis=2)
@@ -330,7 +326,7 @@ class GridSlice2D(GridSlice3D):
         Returns
         -------
         NDArray[Any]
-            Cell centers with shape = (ncells, 3)
+            Cell centers with shape = (ncells, 2)
         """
         delete_axis = [ind for ind in [0, 1, 2] if ind not in self.slice_axis][0]
         return np.delete(self.cent, delete_axis, axis=1)
