@@ -296,6 +296,14 @@ class Wells(_RestartFiles):
                 if rstep == 0:
                     continue
 
+                # Check for well keywords in restart files
+                if (
+                    ("ZWELL" not in [key[0] for key in erst.arrays(rstep)])
+                    or ("ICON" not in [key[0] for key in erst.arrays(rstep)])
+                    or ("ICON" not in [key[0] for key in erst.arrays(rstep)])
+                ):
+                    continue
+
                 # Extract well names from ZWEL mnemonic
                 # NOTE: ZWEL = [well_name, well_list, last_action] for each well at report step
                 well_names = erst[("ZWEL", rstep)][::3]
