@@ -1,11 +1,10 @@
 """Module for generating slices for plotting"""
 from abc import ABC, abstractmethod
 from copy import copy
-from typing import Any, List, Union
+from typing import List, Union
 
 from matplotlib.collections import PolyCollection
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from numpy.typing import NDArray
 
 from opm_vis.utils.grid import GridSlice2D, GridSlice3D, _GridSlice
 from opm_vis.utils.restart import RestartReader, Wells
@@ -56,11 +55,11 @@ class _SlicePoly(_GridSlice, ABC):
         rstep : int
             Report step
         kwargs: optional
-            Optional arguments passed to Poly3DCollection
+            Optional arguments passed to Poly3DCollection/PolyCollection
 
         Returns
         -------
-        polyc : Poly3DCollection
+        polyc : Union[PolyCollection, Poly3DCollection]
             Matplotlib polygons with data from keyword
         """
         # Get active indices
@@ -69,8 +68,11 @@ class _SlicePoly(_GridSlice, ABC):
         # Read keyword
         data = self.restart.read(keyword, rstep, act_ind)
 
-        # Generate 3D polygon collection
-        polyc = self.generate_poly(data, **kwargs)
+        # Generate polygon collection
+        polyc = self.generate_poly(**kwargs)
+
+        # Insert data in polygon collection
+        polyc.set_array(data)
 
         # Return polygon collection
         return polyc
@@ -122,9 +124,7 @@ class _SlicePoly(_GridSlice, ABC):
                 well[name] = copy(well_info)
 
     @abstractmethod
-    def generate_poly(
-        self, data: NDArray[Any], **kwargs
-    ) -> Union[PolyCollection, Poly3DCollection]:
+    def generate_poly(self, **kwargs) -> Union[PolyCollection, Poly3DCollection]:
         """Dummy class. See child class generate_poly methods"""
 
     def cell_corners_min(self):
@@ -182,14 +182,15 @@ class SlicePoly3D(_SlicePoly, GridSlice3D):
         # Setup wells
         self._filter_wells(paths)
 
-    def generate_poly(self, data: NDArray[Any], **kwargs) -> Poly3DCollection:
+    def generate_poly(self, **kwargs) -> Poly3DCollection:
         """
         Generate 3D polygon collection
 
         Parameters
         ----------
-        data : ndarray
-            Face color data
+        kwargs: optional
+            Optional arguments passed to Poly3DCollection
+
 
         Returns
         -------
@@ -197,12 +198,7 @@ class SlicePoly3D(_SlicePoly, GridSlice3D):
             Collection of slice polygons to plot
         """
         # Instantiate Poly3DCollection with cell corners and optional arguments
-        polyc = Poly3DCollection(self.cell_corners(), **kwargs)
-
-        # Insert data in polygon collection
-        polyc.set_array(data)
-
-        return polyc
+        return Poly3DCollection(self.cell_corners(), **kwargs)
 
 
 class SlicePoly2D(_SlicePoly, GridSlice2D):
@@ -235,14 +231,14 @@ class SlicePoly2D(_SlicePoly, GridSlice2D):
         # Setup wells
         self._filter_wells(paths)
 
-    def generate_poly(self, data: NDArray[Any], **kwargs) -> PolyCollection:
+    def generate_poly(self, **kwargs) -> PolyCollection:
         """
         Generate 2D polygon collection
 
         Parameters
         ----------
-        data : ndarray
-            Face color data
+        kwargs: optional
+            Optional arguments passed to PolyCollection
 
         Returns
         -------
@@ -250,9 +246,4 @@ class SlicePoly2D(_SlicePoly, GridSlice2D):
             Collection of slice polygons to plot
         """
         # Instantiate PolyCollection with cell corners and optional arguments
-        polyc = PolyCollection(self.cell_corners(), **kwargs)
-
-        # Insert data in polygon collection
-        polyc.set_array(data)
-
-        return polyc
+        return PolyCollection(self.cell_corners(), **kwargs)

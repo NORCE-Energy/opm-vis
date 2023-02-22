@@ -240,6 +240,22 @@ class _SlicePolyCollection:
             # Following above warning, we only need to use the first slice
             self.fig.colorbar(polyc_rstep[0], ax=self.ax_, label=keyword)
 
+    def plot_grid(self, **kwargs) -> None:
+        """
+        Plot grid slice without any data
+
+        Parameters
+        ----------
+        kwargs: optional
+            Optional arguments passed to PolyCollection/Poly3DCollection
+        """
+        # Generate PolyCollection/Poly3DCollection with just the cell corners
+        polyc_grid = [slc.generate_poly(**kwargs) for slc in self.slice_coll]
+
+        # Add all polyc to axes collection
+        for polyc in polyc_grid:
+            self.add_collection(polyc)
+
     def gif(self, keyword: str, rsteps: Optional[List[int]] = None, **kwargs) -> None:
         """
         Generate gif
@@ -369,6 +385,30 @@ class _SlicePolyCollection:
         savename = (
             f"{self.paths[0]}{self.keyword}_{rdate_str}_{slice_info}.{file_format}"
         )
+
+        # Save file
+        self.fig.savefig(savename)
+        plt.close("all")
+
+    def save_grid_plot(self, file_format: str = "png") -> None:
+        """
+        Save plot of just the grid (no data)
+
+        Parameters
+        ----------
+        file_format : str, optional
+            File format for save file. Must be a valid Matplotlib file format (see savefig
+            documentation), by default 'png'
+        """
+        # Slice info
+        slice_info = ""
+        for i, slc in enumerate(self.slice_coll):
+            slice_info += f"{slc.slice_dim}{slc.slice_ind}"
+            if i < len(self.slice_coll) - 1:
+                slice_info += "_"
+
+        # Create save name
+        savename = f"{self.paths[0]}GRID_{slice_info}.{file_format}"
 
         # Save file
         self.fig.savefig(savename)
