@@ -240,7 +240,7 @@ class _SlicePolyCollection:
             # Following above warning, we only need to use the first slice
             self.fig.colorbar(polyc_rstep[0], ax=self.ax_, label=keyword)
 
-    def gif(self, keyword: str, **kwargs) -> None:
+    def gif(self, keyword: str, rsteps: Optional[List[int]] = None, **kwargs) -> None:
         """
         Generate gif
 
@@ -248,6 +248,8 @@ class _SlicePolyCollection:
         ----------
         keyword : str
             OPM keyword to plot
+        rsteps : List[int], optional
+            Subset of all report steps. If None, all report steps are included in gif.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -255,18 +257,25 @@ class _SlicePolyCollection:
         -----
         Use show or save_gif to show gif on screen or save to file.
         """
-        # All report steps
-        rsteps = self.report.report_steps()
-        self.rdates = self.report.report_dates()
+        # Which report steps and dates to include in gif
+        if rsteps is None:
+            # All report steps
+            rsteps_gif = self.report.report_steps()
+            self.rdates = self.report.report_dates()
+        else:
+            all_rsteps = self.report.report_steps()
+            all_rdates = self.report.report_dates()
+            rsteps_gif = list(range(rsteps[0], rsteps[1] + 1))
+            self.rdates = [all_rdates[all_rsteps.index(i)] for i in rsteps_gif]
 
         # Save keyword
         self.keyword = keyword
 
         # Generate slices for all report dates to be able to set one colorbar for whole gif
-        polyc_dict = self._data_for_gif(rsteps, keyword, **kwargs)
+        polyc_dict = self._data_for_gif(rsteps_gif, keyword, **kwargs)
 
         # Set colorbar for gif
-        self.fig.colorbar(polyc_dict[rsteps[0]][0], ax=self.ax_, label=keyword)
+        self.fig.colorbar(polyc_dict[rsteps_gif[0]][0], ax=self.ax_, label=keyword)
 
         # Setup plot function to fit with FuncAnimation
         plot_func = partial(
@@ -279,7 +288,7 @@ class _SlicePolyCollection:
         )
 
         # Set up Matplotlib animation
-        self.anim = animation.FuncAnimation(self.fig, plot_func, frames=rsteps)
+        self.anim = animation.FuncAnimation(self.fig, plot_func, frames=rsteps_gif)
 
     def _data_for_gif(
         self, rsteps: List[int], keyword: str, **kwargs
@@ -290,7 +299,7 @@ class _SlicePolyCollection:
         Parameters
         ----------
         rsteps : List[int]
-            List of report steps to generate plot data for
+            List of report steps to generate plot data
         keyword : str
             OPM keyword to plot
 
