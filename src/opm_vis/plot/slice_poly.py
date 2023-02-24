@@ -36,7 +36,7 @@ class _SlicePoly(_GridSlice, ABC):
         """
         # Instantiate help classes
         _GridSlice.__init__(self, paths[0], slice_dim, slice_ind)
-        self.init = InitReader(paths[0])
+        self.static = InitReader(paths[0])
         self.restart = RestartReader(paths)
 
         # Internal variables
@@ -66,7 +66,16 @@ class _SlicePoly(_GridSlice, ABC):
         act_ind = self.active_indices()
 
         # Read keyword
-        data = self.restart.read(keyword, rstep, act_ind)
+        if keyword in self.restart.available_keywords(rstep):
+            data = self.restart.read(keyword, rstep, act_ind)
+        elif keyword in [
+            key
+            for key in self.static.available_keywords()
+            if key not in self.restart.available_keywords(rstep)
+        ]:
+            data = self.static.read(keyword, act_ind)
+        else:
+            raise KeyError(f"{keyword} not in restart files or .INIT file!")
 
         # Generate polygon collection
         polyc = self.generate_poly(**kwargs)

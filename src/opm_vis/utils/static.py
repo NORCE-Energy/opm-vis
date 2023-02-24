@@ -6,6 +6,9 @@ from typing import List, Optional, Any
 from numpy.typing import NDArray
 from opm.util import EModel
 
+# List of keywords to ignore
+_IGNORE = ["INTEHEAD", "LOGIHEAD", "DOUBHEAD", "STARTSOL", "ENDSOL"]
+
 
 # pylint: disable=too-few-public-methods
 class _InitFile:
@@ -30,7 +33,7 @@ class _InitFile:
                 )
             self.init = EModel(glob(path + "*.INIT")[0])
         else:
-            raise FileNotFoundError(f"No .INIT file found in {path}!")
+            warnings.warn(f"No .INIT file found in {path}!")
 
 
 class InitReader(_InitFile):
@@ -67,4 +70,6 @@ class InitReader(_InitFile):
         List[str]
             Keywords available in .INIT file
         """
-        return [key[0] for key in self.init.get_list_of_arrays()]
+        return [
+            key[0] for key in self.init.get_list_of_arrays() if key[0] not in _IGNORE
+        ]
