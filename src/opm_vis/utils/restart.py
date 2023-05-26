@@ -30,6 +30,7 @@ _IGNORE = [
     "ENDSOL",
 ]
 
+
 # pylint: disable=too-few-public-methods
 class _RestartFiles:
     """
@@ -86,7 +87,7 @@ class _RestartFiles:
 
 class RestartReader(_RestartFiles):
     """
-    Class for reading restart files (mainly). Initialization in parent class.
+    Class for reading info from restart files. Initialization in parent class.
     """
 
     def read(
@@ -139,7 +140,39 @@ class RestartReader(_RestartFiles):
                 return [key[0] for key in erst.arrays(rstep) if key[0] not in _IGNORE]
 
         # Raise error if report step does not exist in restart files
-        raise ValueError(f"Report step {rstep} was not found in restart files!")
+        raise ValueError(f"Report step {rstep} was not found in restart file(s)!")
+
+    def intehead(self, item: int, rstep: int) -> int:
+        """
+        Lookup INTEHEAD information in restart file(s)
+
+        Parameters
+        ----------
+        item : int
+            Requested item in INTEHEAD
+        rstep : int
+            Report step
+
+        Returns
+        -------
+        info : int
+            Information from header
+        """
+        # Lookup in restart file
+        info = None
+        for erst in self.rst:
+            if rstep in erst.report_steps:
+                info = erst[("INTEHEAD", rstep)][item]
+
+        # If header info is not found, raise error
+        if info is None:
+            raise ValueError(f"INTEHEAD item {item} not found in restart file(s)!")
+
+        return info
+
+    def unit_convension(self) -> str:
+        """Return unit convension used in run"""
+        return ["metric", "field", "lab", "pvt-m"][self.intehead(2, 0) - 1]
 
 
 class Report(_RestartFiles):

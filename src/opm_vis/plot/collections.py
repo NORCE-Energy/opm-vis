@@ -13,6 +13,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from opm_vis.plot.slice_poly import SlicePoly2D, SlicePoly3D
 from opm_vis.utils.restart import Report
+from opm_vis.utils.units import Label
 
 
 # pylint: disable=too-many-instance-attributes
@@ -50,8 +51,12 @@ class _SlicePolyCollection:
         self.slice_coll = slice_coll
         self.paths = paths
 
-        # Instantiate report and well classes
+        # Instantiate Report class
         self.report = Report(paths)
+
+        # Instantiate Label class with correct unit_convension
+        unit_convension = self.slice_coll[0].restart.unit_convension()
+        self.label = Label(unit_convension)
 
         # Internal variables
         self.anim = None
@@ -238,7 +243,8 @@ class _SlicePolyCollection:
                 )
 
             # Following above warning, we only need to use the first slice
-            self.fig.colorbar(polyc_rstep[0], ax=self.ax_, label=keyword)
+            clabel = keyword + " [" + self.label(keyword) + "]"
+            self.fig.colorbar(polyc_rstep[0], ax=self.ax_, label=clabel)
 
     def plot_grid(self, **kwargs) -> None:
         """
@@ -291,7 +297,8 @@ class _SlicePolyCollection:
         polyc_dict = self._data_for_gif(rsteps_gif, keyword, **kwargs)
 
         # Set colorbar for gif
-        self.fig.colorbar(polyc_dict[rsteps_gif[0]][0], ax=self.ax_, label=keyword)
+        clabel = keyword + " [" + self.label(keyword) + "]"
+        self.fig.colorbar(polyc_dict[rsteps_gif[0]][0], ax=self.ax_, label=clabel)
 
         # Setup plot function to fit with FuncAnimation
         plot_func = partial(
