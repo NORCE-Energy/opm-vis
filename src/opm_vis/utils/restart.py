@@ -330,10 +330,8 @@ class Wells(_RestartFiles):
                     continue
 
                 # Check for well keywords in restart files
-                if (
-                    ("ZWELL" not in [key[0] for key in erst.arrays(rstep)])
-                    or ("ICON" not in [key[0] for key in erst.arrays(rstep)])
-                    or ("ICON" not in [key[0] for key in erst.arrays(rstep)])
+                if ("ZWEL" not in [key[0] for key in erst.arrays(rstep)]) or (
+                    "ICON" not in [key[0] for key in erst.arrays(rstep)]
                 ):
                     continue
 
