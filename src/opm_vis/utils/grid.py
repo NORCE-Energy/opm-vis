@@ -166,7 +166,7 @@ class _GridSlice(ABC):
 
         return aligned
 
-    def _active_indices(self) -> None:
+    def _compute_active_indices(self) -> None:
         """
         Get active indices for a slice
         """
@@ -280,7 +280,7 @@ class GridSlice3D(_GridSlice):
     def __init__(self, path: str, slice_dim: str, slice_ind: int) -> None:
         super().__init__(path, slice_dim, slice_ind)
         # Active indices for slice
-        self._active_indices()
+        self._compute_active_indices()
 
         # Cell corner and centroid calculation
         self._cell_corners()
