@@ -2,7 +2,7 @@
 import warnings
 from abc import ABC, abstractmethod
 from glob import glob
-from typing import Any, List, Literal, Union
+from typing import Any, List
 
 import numpy as np
 from numpy.typing import NDArray
@@ -72,8 +72,28 @@ class _GridSlice(ABC):
         # Check (i, j, k) coord. system is aligned with (x, y, z) coord. system
         self.aligned_grid = self.is_aligned()
 
+    def _active_index_from_end(self, i: int, j: int, k: int, axis: int, origin_axis: int) -> int:
+        """
+        Search for the first active cell along ``axis``, starting from the far end of the grid
+        and moving inward towards (but not past) ``origin_axis``.
+
+        Returns
+        -------
+        int
+            Active index of the first active cell found, or -1 if none exists between the far
+            end and the origin (inclusive).
+        """
+        idx = [i, j, k]
+        dim_size = self.egrid.dimension[axis]
+        for candidate in range(dim_size - 1, origin_axis - 1, -1):
+            idx[axis] = candidate
+            act = self.egrid.active_index(*idx)
+            if act >= 0:
+                return act
+        return -1
+
     # pylint: disable=too-many-locals
-    def is_aligned(self) -> Union[Any, Literal[False]]:
+    def is_aligned(self) -> bool:
         """
         Check if (i, j, k) coordinate system is aligned with (x, y, z) coordinate system
 
@@ -83,11 +103,6 @@ class _GridSlice(ABC):
         grid. Volume is calculated with scalar triple product of the vectors making up the
         parallelepiped.
         """
-        # Dimension of the grid
-        n_x = self.egrid.dimension[0]
-        n_y = self.egrid.dimension[1]
-        n_z = self.egrid.dimension[2]
-
         # Loop until we successful at making a parallelepiped from the grid. At each round of the
         # loop we try to make vectors from origin that are at least larger than one grid cell in
         # each direction. If this is not successful we change the origin to next active cell and
@@ -104,29 +119,22 @@ class _GridSlice(ABC):
             x_1, y_1, z_1 = self.egrid.xyz_from_active_index(origin)
             i, j, k = self.egrid.ijk_from_active_index(origin)
 
-            # Coordinates by inceasing i-index
-            search = 1
-            act = self.egrid.active_index(n_x - search, j, k)
-            while act < 0:
-                search += 1
-                act = self.egrid.active_index(n_x - search, j, k)
-            x_2, y_2, _ = self.egrid.xyz_from_active_index(act)
+            # Search for an active cell by increasing i-, j-, and k-index, without searching past
+            # the origin itself
+            act_i = self._active_index_from_end(i, j, k, axis=0, origin_axis=i)
+            act_j = self._active_index_from_end(i, j, k, axis=1, origin_axis=j)
+            act_k = self._active_index_from_end(i, j, k, axis=2, origin_axis=k)
 
-            # Coordinates by inceasing j-index
-            search = 1
-            act = self.egrid.active_index(i, n_y - search, k)
-            while act < 0:
-                search += 1
-                act = self.egrid.active_index(i, n_y - search, k)
-            x_3, y_3, _ = self.egrid.xyz_from_active_index(act)
+            # If no active cell was found along one of the axes, this origin cannot be used to
+            # build a parallelepiped; move on to the next origin
+            if act_i < 0 or act_j < 0 or act_k < 0:
+                iteration += 1
+                origin += 1
+                continue
 
-            # Coordinates by inceasing k-index
-            search = 1
-            act = self.egrid.active_index(i, j, n_z - search)
-            while act < 0:
-                search += 1
-                act = self.egrid.active_index(i, j, n_z - search)
-            _, _, z_2 = self.egrid.xyz_from_active_index(act)
+            x_2, y_2, _ = self.egrid.xyz_from_active_index(act_i)
+            x_3, y_3, _ = self.egrid.xyz_from_active_index(act_j)
+            _, _, z_2 = self.egrid.xyz_from_active_index(act_k)
 
             # Vectors making up the parallelepiped
             v_1 = np.array([x_2[0] - x_1[0], y_2[0] - y_1[0], 0])
