@@ -227,16 +227,17 @@ class Report(_RestartFiles):
         for erst in self.rst:
             # Report steps in current file, which we also add to list of all report steps
             rsteps_unrst = erst.report_steps
-            self.rsteps += erst.report_steps
+            self.rsteps += rsteps_unrst
 
             # Loop over report steps and get report dates as datetime object
             for rstep in rsteps_unrst:
+                intehead = erst[("INTEHEAD", rstep)]
                 self.rdates.extend(
                     [
                         dt.datetime(
-                            day=erst[("INTEHEAD", rstep)][64],
-                            month=erst[("INTEHEAD", rstep)][65],
-                            year=erst[("INTEHEAD", rstep)][66],
+                            day=intehead[64],
+                            month=intehead[65],
+                            year=intehead[66],
                         )
                     ]
                 )
@@ -360,10 +361,11 @@ class Wells(_RestartFiles):
 
                 # Information about the wells are located in IWEL and ICON. IWEL and ICON have
                 # specific lengths, and info for these can be found in INTEHEAD
-                niwelz = erst[("INTEHEAD", rstep)][24]
-                niconz = erst[("INTEHEAD", rstep)][32]
-                ncwmax = erst[("INTEHEAD", rstep)][17]
-                nwells = erst[("INTEHEAD", rstep)][16]
+                intehead = erst[("INTEHEAD", rstep)]
+                niwelz = intehead[24]
+                niconz = intehead[32]
+                ncwmax = intehead[17]
+                nwells = intehead[16]
 
                 # Check that we have names for all wells found in INTEHEAD
                 if len(well_names) != nwells:
