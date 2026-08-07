@@ -45,10 +45,16 @@ def restart_reader(restart_paths):
 
 
 @pytest.fixture(scope="module")
-def full_run_reader():
+def full_run_reader(tmp_path_factory):
     # SPE1CASE2 alone already spans the full 123 timesteps that the restart run
     # re-simulates the tail of, so it's the ground truth the stitched result must match.
-    return SummaryReader([str(DATA_DIR / "SPE1CASE2")])
+    # Isolated in its own directory for the same reason as restart_paths above: the
+    # "SPE1CASE2" prefix would otherwise also match SPE1CASE2_RESTART_60's files.
+    main_dir = tmp_path_factory.mktemp("full_run_data")
+    for ext in (".SMSPEC", ".UNSMRY"):
+        shutil.copy(DATA_DIR / f"SPE1CASE2{ext}", main_dir / f"CASE{ext}")
+
+    return SummaryReader([str(main_dir / "CASE")])
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +65,17 @@ def full_run_reader():
 def test_no_smspec_file_found_warns_and_skips_that_path(tmp_path):
     with pytest.warns(UserWarning, match="No .SMSPEC found"):
         sr = SummaryReader([CASE1, str(tmp_path / "MISSING")])
+
+    assert len(sr.smry) == 1
+
+
+def test_multiple_smspec_files_warns_and_loads_first(tmp_path):
+    for name in ("CASE1", "CASE2"):
+        shutil.copy(DATA_DIR / "SPE1CASE1.SMSPEC", tmp_path / f"{name}.SMSPEC")
+        shutil.copy(DATA_DIR / "SPE1CASE1.UNSMRY", tmp_path / f"{name}.UNSMRY")
+
+    with pytest.warns(UserWarning, match="Multiple .SMSPEC files"):
+        sr = SummaryReader([str(tmp_path / "CASE")])
 
     assert len(sr.smry) == 1
 

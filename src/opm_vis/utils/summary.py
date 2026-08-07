@@ -31,6 +31,10 @@ class SummaryReader:
             if not smspec:
                 warnings.warn(f"No .SMSPEC found in {path}! Skipping folder...")
             else:
+                if len(smspec) > 1:
+                    warnings.warn(
+                        f"Multiple .SMSPEC files in {path}. Importing {smspec[0]}."
+                    )
                 smry_path.append(smspec[0])
 
         # Instantiate ESmry class for each .SMSPEC file found
