@@ -8,8 +8,8 @@ from typing import Any
 from numpy.typing import NDArray
 from opm.util import EModel
 
-# List of keywords to ignore
-_IGNORE = ["INTEHEAD", "LOGIHEAD", "DOUBHEAD", "STARTSOL", "ENDSOL"]
+# Keywords to ignore
+_IGNORE = frozenset({"INTEHEAD", "LOGIHEAD", "DOUBHEAD", "STARTSOL", "ENDSOL"})
 
 
 # pylint: disable=too-few-public-methods
@@ -25,7 +25,7 @@ class _InitFile:
         Parameters
         ----------
         path : str
-            Path to .INIT file
+            Path prefix used to locate the .INIT file (glob pattern `path + "*.INIT"`)
         """
         # Check path for .INIT file and instantiate if it exist
         self.init = None
