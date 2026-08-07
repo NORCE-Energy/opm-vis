@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opm-vis"
+version = "0.1.0"
+description = "Visualization tools for OPM results"
+readme = "README.md"
+license = { file = "LICENSE.md" }
+requires-python = ">=3.9"
+authors = [
+    { name = "Svenn Tveit", email = "svtv@norceresearch.no" },
+]
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "opm",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
