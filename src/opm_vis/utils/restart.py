@@ -12,26 +12,28 @@ from numpy.typing import NDArray
 from opm.io.ecl import ERst
 
 
-_IGNORE = [
-    "INTEHEAD",
-    "LOGIHEAD",
-    "DOUBHEAD",
-    "IGRP",
-    "SGRP",
-    "XGRP",
-    "ZGRP",
-    "IWEL",
-    "SWEL",
-    "XWEL",
-    "ZWEL",
-    "ZWLS",
-    "IWLS",
-    "ICON",
-    "SCON",
-    "XCON",
-    "STARTSOL",
-    "ENDSOL",
-]
+_IGNORE = frozenset(
+    {
+        "INTEHEAD",
+        "LOGIHEAD",
+        "DOUBHEAD",
+        "IGRP",
+        "SGRP",
+        "XGRP",
+        "ZGRP",
+        "IWEL",
+        "SWEL",
+        "XWEL",
+        "ZWEL",
+        "ZWLS",
+        "IWLS",
+        "ICON",
+        "SCON",
+        "XCON",
+        "STARTSOL",
+        "ENDSOL",
+    }
+)
 
 
 # pylint: disable=too-few-public-methods
