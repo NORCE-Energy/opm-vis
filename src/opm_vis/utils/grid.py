@@ -221,7 +221,7 @@ class _GridSlice(ABC):
         Calculate cell centers of slice (i.e., cell face centers)
         """
         # Check if corner points have been calculated
-        if self.corn is None:
+        if self.corn.size == 0:
             raise ValueError(
                 "Corner points have not been calculated before cell centers for slice!"
             )
