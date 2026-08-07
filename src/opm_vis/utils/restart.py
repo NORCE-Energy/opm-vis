@@ -1,34 +1,38 @@
 """ Calculate various attributes from restart files """
+from __future__ import annotations
+
 import datetime as dt
 import warnings
 from glob import glob
-from typing import List, Optional, Any, Dict
+from typing import Any, Iterator
 
 import numpy as np
 from numpy.typing import NDArray
 from opm.io.ecl import ERst
 
 
-_IGNORE = [
-    "INTEHEAD",
-    "LOGIHEAD",
-    "DOUBHEAD",
-    "IGRP",
-    "SGRP",
-    "XGRP",
-    "ZGRP",
-    "IWEL",
-    "SWEL",
-    "XWEL",
-    "ZWEL",
-    "ZWLS",
-    "IWLS",
-    "ICON",
-    "SCON",
-    "XCON",
-    "STARTSOL",
-    "ENDSOL",
-]
+_IGNORE = frozenset(
+    {
+        "INTEHEAD",
+        "LOGIHEAD",
+        "DOUBHEAD",
+        "IGRP",
+        "SGRP",
+        "XGRP",
+        "ZGRP",
+        "IWEL",
+        "SWEL",
+        "XWEL",
+        "ZWEL",
+        "ZWLS",
+        "IWLS",
+        "ICON",
+        "SCON",
+        "XCON",
+        "STARTSOL",
+        "ENDSOL",
+    }
+)
 
 
 # pylint: disable=too-few-public-methods
@@ -37,13 +41,13 @@ class _RestartFiles:
     Top class for ERst wrapper
     """
 
-    def __init__(self, paths: List[str]) -> None:
+    def __init__(self, paths: list[str]) -> None:
         """
         Init. class by instantiating ERst classes for each restart file in input folders
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths with restart files. Main folder is in paths[0]; rest of entries, if any,
             are folders with simulator restart runs.
         """
@@ -53,36 +57,53 @@ class _RestartFiles:
             # Init. restart file list for current search path
             restart_files = []
 
+            unrst_files = glob(path + "*.UNRST")
+            x_files = glob(path + "*.X*")
+
             # Are there UNRST and X files in same folder? We load the UNRST file and issue warning
-            if glob(path + "*.UNRST") and glob(path + "*.X*"):
+            if unrst_files and x_files:
                 warnings.warn(
                     f"There are .UNRST and .X files in {path}. We load the UNRST file!"
                 )
-                if len(glob(path + "*.UNRST")) > 1:
+                if len(unrst_files) > 1:
                     warnings.warn(
-                        f"Multiple .UNRST files in {path}. Importing {glob(path + '*.UNRST')[0]}."
+                        f"Multiple .UNRST files in {path}. Importing {unrst_files[0]}."
                     )
-                restart_files = [glob(path + "*.UNRST")[0]]
+                restart_files = [unrst_files[0]]
 
             # Are there no files in the folder? Warn and continue
-            elif not glob(path + "*.UNRST") and not glob(path + "*.X*"):
+            elif not unrst_files and not x_files:
                 warnings.warn(f"No .UNRST or .X files found {path}! Skipping folder...")
 
             # .UNRST file
-            elif glob(path + "*.UNRST") and not glob(path + "*.X*"):
-                if len(glob(path + "*.UNRST")) > 1:
+            elif unrst_files and not x_files:
+                if len(unrst_files) > 1:
                     warnings.warn(
-                        f"Multiple .UNRST files in {path}. Importing {glob(path + '*.UNRST')[0]}"
+                        f"Multiple .UNRST files in {path}. Importing {unrst_files[0]}"
                     )
-                restart_files = [glob(path + "*.UNRST")[0]]
+                restart_files = [unrst_files[0]]
 
             # .X files
-            elif not glob(path + "*.UNRST") and glob(path + "*.X*"):
-                restart_files = glob(path + "*.X*")
+            elif not unrst_files and x_files:
+                restart_files = x_files
 
             # Instantiate ERst class for each file in path
             if restart_files:
                 self.rst.extend([ERst(file) for file in restart_files])
+
+        # Build a lookup from report step to its (erst index, local index within that erst) and
+        # the absolute offset of each erst's report steps in a flattened list. erst.report_steps
+        # is a property that recomputes on every access, so we read it once per erst here and
+        # reuse it everywhere else instead of re-querying and re-scanning it on every lookup.
+        self._step_index: dict[int, tuple[int, int]] = {}
+        self._erst_step_offsets: list[int] = []
+        offset = 0
+        for erst_idx, erst in enumerate(self.rst):
+            self._erst_step_offsets.append(offset)
+            report_steps = erst.report_steps
+            for local_idx, rstep in enumerate(report_steps):
+                self._step_index.setdefault(rstep, (erst_idx, local_idx))
+            offset += len(report_steps)
 
 
 class RestartReader(_RestartFiles):
@@ -91,7 +112,7 @@ class RestartReader(_RestartFiles):
     """
 
     def read(
-        self, keyword: str, rstep: int, act: Optional[List[int]] = None
+        self, keyword: str, rstep: int, act: list[int] | None = None
     ) -> NDArray[Any]:
         """
         Read restart file at report step and return array for active indices.
@@ -103,7 +124,7 @@ class RestartReader(_RestartFiles):
             inputed in RST-type mnemonics).
         rstep : int
             Report step.
-        act : List[int], optional
+        act : list[int] | None, optional
             Active indices for output array. If act=None, whole array is outputted.
 
         Returns
@@ -111,16 +132,16 @@ class RestartReader(_RestartFiles):
         out : ndarray
             Array with keyword variables at report step.
         """
-        # Loop over restart files to find array at correct report step
-        for erst in self.rst:
-            if rstep in erst.report_steps:
-                out = erst[(keyword, rstep)]
-                return out[act] if act is not None else out
+        # Look up which restart file holds the requested report step
+        location = self._step_index.get(rstep)
+        if location is None:
+            raise ValueError(f"Report step {rstep} was not found in restart files!")
 
-        # Raise error if report step does not exist in restart files
-        raise ValueError(f"Report step {rstep} was not found in restart files!")
+        erst_idx, _ = location
+        out = self.rst[erst_idx][(keyword, rstep)]
+        return out[act] if act is not None else out
 
-    def available_keywords(self, rstep: int) -> List[str]:
+    def available_keywords(self, rstep: int) -> list[str]:
         """
         Available keyword at report step
 
@@ -131,16 +152,18 @@ class RestartReader(_RestartFiles):
 
         Returns
         -------
-        List[str]
+        list[str]
             List of available keywords
         """
-        #  Loop over restart files to find info at correct report step
-        for erst in self.rst:
-            if rstep in erst.report_steps:
-                return [key[0] for key in erst.arrays(rstep) if key[0] not in _IGNORE]
+        # Look up which restart file holds the requested report step
+        location = self._step_index.get(rstep)
+        if location is None:
+            raise ValueError(f"Report step {rstep} was not found in restart file(s)!")
 
-        # Raise error if report step does not exist in restart files
-        raise ValueError(f"Report step {rstep} was not found in restart file(s)!")
+        erst_idx, _ = location
+        return [
+            key[0] for key in self.rst[erst_idx].arrays(rstep) if key[0] not in _IGNORE
+        ]
 
     def intehead(self, item: int, rstep: int) -> int:
         """
@@ -158,20 +181,16 @@ class RestartReader(_RestartFiles):
         info : int
             Information from header
         """
-        # Lookup in restart file
-        info = None
-        for erst in self.rst:
-            if rstep in erst.report_steps:
-                info = erst[("INTEHEAD", rstep)][item]
-
-        # If header info is not found, raise error
-        if info is None:
+        # Look up which restart file holds the requested report step
+        location = self._step_index.get(rstep)
+        if location is None:
             raise ValueError(f"INTEHEAD item {item} not found in restart file(s)!")
 
-        return info
+        erst_idx, _ = location
+        return self.rst[erst_idx][("INTEHEAD", rstep)][item]
 
-    def unit_convension(self) -> str:
-        """Return unit convension used in run"""
+    def unit_convention(self) -> str:
+        """Return unit convention used in run"""
         return ["metric", "field", "lab", "pvt-m"][self.intehead(2, 0) - 1]
 
 
@@ -180,13 +199,13 @@ class Report(_RestartFiles):
     Class to organize and handle report dates/steps from restart files
     """
 
-    def __init__(self, paths: List[str]) -> None:
+    def __init__(self, paths: list[str]) -> None:
         """
         Initialize by organizing report steps and dates.
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths with restart files. Main folder is in paths[0]; rest of entries, if any,
             are folders with simulator restart runs.
         """
@@ -209,16 +228,17 @@ class Report(_RestartFiles):
         for erst in self.rst:
             # Report steps in current file, which we also add to list of all report steps
             rsteps_unrst = erst.report_steps
-            self.rsteps += erst.report_steps
+            self.rsteps += rsteps_unrst
 
             # Loop over report steps and get report dates as datetime object
             for rstep in rsteps_unrst:
+                intehead = erst[("INTEHEAD", rstep)]
                 self.rdates.extend(
                     [
                         dt.datetime(
-                            day=erst[("INTEHEAD", rstep)][64],
-                            month=erst[("INTEHEAD", rstep)][65],
-                            year=erst[("INTEHEAD", rstep)][66],
+                            day=intehead[64],
+                            month=intehead[65],
+                            year=intehead[66],
                         )
                     ]
                 )
@@ -231,6 +251,11 @@ class Report(_RestartFiles):
         # Apply sorting to both report dates and steps
         self.rsteps = [self.rsteps[i] for i in ind_sort]
         self.rdates = [self.rdates[i] for i in ind_sort]
+
+        # Lookup for report_date() so repeated calls don't rescan self.rsteps
+        self._rstep_to_date: dict[int, dt.datetime] = {}
+        for rstep, rdate in zip(self.rsteps, self.rdates):
+            self._rstep_to_date.setdefault(rstep, rdate)
 
     def __str__(self) -> str:
         """
@@ -262,26 +287,26 @@ class Report(_RestartFiles):
         dt.datetime
             Datetime object for report step
         """
-        return self.rdates[self.rsteps.index(rstep)]
+        return self._rstep_to_date[rstep]
 
-    def report_dates(self) -> List[dt.datetime]:
+    def report_dates(self) -> list[dt.datetime]:
         """
         Return report dates
 
         Returns
         -------
-        List[dt.datetime]
+        list[dt.datetime]
             List of report dates as datetime objects
         """
         return self.rdates
 
-    def report_steps(self) -> List[int]:
+    def report_steps(self) -> list[int]:
         """
         Return report steps
 
         Returns
         -------
-        List[int]
+        list[int]
             List of report steps
         """
         return self.rsteps
@@ -292,13 +317,13 @@ class Wells(_RestartFiles):
     Well information from restart files
     """
 
-    def __init__(self, paths: List[str]) -> None:
+    def __init__(self, paths: list[str]) -> None:
         """
         Initialize by extracting all well information from restart files.
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths with restart files. Main folder is in paths[0]; rest of entries, if any,
             are folders with simulator restart runs.
         """
@@ -327,12 +352,13 @@ class Wells(_RestartFiles):
             for rstep in erst.report_steps:
                 # Report step 0 does not have well information
                 if rstep == 0:
+                    ind += 1
                     continue
 
                 # Check for well keywords in restart files
-                if ("ZWEL" not in [key[0] for key in erst.arrays(rstep)]) or (
-                    "ICON" not in [key[0] for key in erst.arrays(rstep)]
-                ):
+                available_keys = {key[0] for key in erst.arrays(rstep)}
+                if "ZWEL" not in available_keys or "ICON" not in available_keys:
+                    ind += 1
                     continue
 
                 # Extract well names from ZWEL mnemonic
@@ -341,16 +367,18 @@ class Wells(_RestartFiles):
 
                 # Information about the wells are located in IWEL and ICON. IWEL and ICON have
                 # specific lengths, and info for these can be found in INTEHEAD
-                niwelz = erst[("INTEHEAD", rstep)][24]
-                niconz = erst[("INTEHEAD", rstep)][32]
-                ncwmax = erst[("INTEHEAD", rstep)][17]
-                nwells = erst[("INTEHEAD", rstep)][16]
+                intehead = erst[("INTEHEAD", rstep)]
+                niwelz = intehead[24]
+                niconz = intehead[32]
+                ncwmax = intehead[17]
+                nwells = intehead[16]
 
                 # Check that we have names for all wells found in INTEHEAD
-                assert len(well_names) == nwells, (
-                    f"Number of wells in ZWEL (={len(well_names)}) does not correspond to info"
-                    f" in INTEHEAD (={nwells})!"
-                )
+                if len(well_names) != nwells:
+                    raise ValueError(
+                        f"Number of wells in ZWEL (={len(well_names)}) does not correspond to info"
+                        f" in INTEHEAD (={nwells})!"
+                    )
 
                 # Information about the wells are located in IWEL and ICON, so we reshape those to
                 # a more easily accessible shape
@@ -368,7 +396,9 @@ class Wells(_RestartFiles):
                     self._well_info[ind][name].extend((iwel[i, :2] - 1).tolist())
 
                     # k-indices for well connection
-                    self._well_info[ind][name].extend(icon[i, icon[i, :, 3] > 0, 3] - 1)
+                    self._well_info[ind][name].extend(
+                        (icon[i, icon[i, :, 3] > 0, 3] - 1).tolist()
+                    )
 
                     # Well status (open/shut = True/False).
                     # OBS: convert to Python bool instead of numpy.bool_
@@ -377,7 +407,7 @@ class Wells(_RestartFiles):
                 # Increase internal well_info index counter
                 ind += 1
 
-    def __getitem__(self, rstep: int) -> Dict[str, List[Any]]:
+    def __getitem__(self, rstep: int) -> dict[str, list[Any]]:
         """
         Get well info at inputted report step
 
@@ -394,15 +424,9 @@ class Wells(_RestartFiles):
         """
         # rstep is not necessarily equal to index of self._well_info since it is possible output
         # restart arrays at any frequency (see, e.g., RPTRST keyword, and BASIC and FREQ mnemonics!)
-        # Start index at zero and count up until we reach report step in some restart file.
-        ind = 0
-        for erst in self.rst:
-            if rstep in erst.report_steps:
-                ind += erst.report_steps.index(rstep)
-            else:
-                ind += len(erst.report_steps)
-        return self._well_info[ind]
+        erst_idx, local_idx = self._step_index[rstep]
+        return self._well_info[self._erst_step_offsets[erst_idx] + local_idx]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[dict[str, list[Any]]]:
         for elem in self._well_info:
             yield elem

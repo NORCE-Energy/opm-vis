@@ -1,13 +1,15 @@
 """ Static parameters from INIT files """
+from __future__ import annotations
+
 from glob import glob
 import warnings
-from typing import List, Optional, Any
+from typing import Any
 
 from numpy.typing import NDArray
 from opm.util import EModel
 
-# List of keywords to ignore
-_IGNORE = ["INTEHEAD", "LOGIHEAD", "DOUBHEAD", "STARTSOL", "ENDSOL"]
+# Keywords to ignore
+_IGNORE = frozenset({"INTEHEAD", "LOGIHEAD", "DOUBHEAD", "STARTSOL", "ENDSOL"})
 
 
 # pylint: disable=too-few-public-methods
@@ -23,15 +25,17 @@ class _InitFile:
         Parameters
         ----------
         path : str
-            Path to .INIT file
+            Path prefix used to locate the .INIT file (glob pattern `path + "*.INIT"`)
         """
         # Check path for .INIT file and instantiate if it exist
-        if glob(path + "*.INIT"):
-            if len(glob(path + "*.INIT")) > 1:
+        self.init = None
+        init_files = glob(path + "*.INIT")
+        if init_files:
+            if len(init_files) > 1:
                 warnings.warn(
-                    f"Multiple .INIT files in {path}. Importing {glob(path + '*.INIT')[0]}."
+                    f"Multiple .INIT files in {path}. Importing {init_files[0]}."
                 )
-            self.init = EModel(glob(path + "*.INIT")[0])
+            self.init = EModel(init_files[0])
         else:
             warnings.warn(f"No .INIT file found in {path}!")
 
@@ -41,7 +45,11 @@ class InitReader(_InitFile):
     Class for reading .INIT files. Initialization in parent class.
     """
 
-    def read(self, keyword: str, act: Optional[List[int]] = None) -> NDArray[Any]:
+    # Cache for available_keywords(): the .INIT file's keyword list can't change
+    # after construction, so there's no need to recompute it on every call.
+    _keywords: list[str] | None = None
+
+    def read(self, keyword: str, act: list[int] | None = None) -> NDArray[Any]:
         """
         Read .INIT file and return array for active indices.
 
@@ -49,7 +57,7 @@ class InitReader(_InitFile):
         ----------
         keyword : str
             Keyword for static parameters in OPM
-        act : List[int], optional
+        act : list[int] | None, optional
             Active indices for output array. If act=None, whole array is outputted.
 
         Returns
@@ -57,19 +65,29 @@ class InitReader(_InitFile):
         out : ndarray
             Array with static parameters
         """
-        return (
-            self.init.get(keyword)[act] if act is not None else self.init.get(keyword)
-        )
+        if self.init is None:
+            raise ValueError("No .INIT file was found; cannot read static parameters!")
 
-    def available_keywords(self) -> List[str]:
+        out = self.init.get(keyword)
+        return out[act] if act is not None else out
+
+    def available_keywords(self) -> list[str]:
         """
         List of keywords that are available in .INIT file
 
         Returns
         -------
-        List[str]
+        list[str]
             Keywords available in .INIT file
         """
-        return [
-            key[0] for key in self.init.get_list_of_arrays() if key[0] not in _IGNORE
-        ]
+        if self._keywords is None:
+            if self.init is None:
+                raise ValueError(
+                    "No .INIT file was found; cannot list available keywords!"
+                )
+            self._keywords = [
+                key[0]
+                for key in self.init.get_list_of_arrays()
+                if key[0] not in _IGNORE
+            ]
+        return self._keywords

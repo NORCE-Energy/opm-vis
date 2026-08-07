@@ -157,6 +157,6 @@ class Label:
 
         return label
 
-    def unit_convension(self) -> str:
-        """Return unit conversion"""
+    def unit_convention(self) -> str:
+        """Return unit convention"""
         return self.unit_type

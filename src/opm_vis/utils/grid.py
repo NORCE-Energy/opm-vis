@@ -2,7 +2,7 @@
 import warnings
 from abc import ABC, abstractmethod
 from glob import glob
-from typing import Any, List, Literal, Union
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -14,6 +14,9 @@ _INDICES = {
     "j": [0, 1, 5, 4],
     "k": [0, 2, 3, 1],
 }
+
+# Grid dimension axis (0=x/i, 1=y/j, 2=z/k) corresponding to each slice dimension
+_SLICE_AXIS = {"i": 0, "j": 1, "k": 2}
 
 # pylint: disable=unsubscriptable-object,too-many-instance-attributes
 # EGrid is a pybind class, so until stubs (.pyi files) are made, pylint unsubscriptable-object
@@ -46,12 +49,13 @@ class _GridSlice(ABC):
         self.cent = np.empty(0)
 
         # Instantiate Egrid class
-        if glob(path + "*.EGRID"):
-            if len(glob(path + "*.EGRID")) > 1:
+        egrid_files = glob(path + "*.EGRID")
+        if egrid_files:
+            if len(egrid_files) > 1:
                 warnings.warn(
-                    f"Multiple .EGRID files in {path}. Importing {glob(path + '*.EGRID')[0]}."
+                    f"Multiple .EGRID files in {path}. Importing {egrid_files[0]}."
                 )
-            self.egrid = EGrid(glob(path + "*.EGRID")[0])
+            self.egrid = EGrid(egrid_files[0])
         else:
             raise FileNotFoundError(f"No .EGRID file found in {path}!")
 
@@ -62,14 +66,46 @@ class _GridSlice(ABC):
             self.slice_axis = [0, 2]
         elif slice_dim == "k":
             self.slice_axis = [0, 1]
+        else:
+            raise TypeError(
+                f'{slice_dim} slice dimension is not valid! Choose "i", "j", or "k"'
+            )
         self.nx1 = self.egrid.dimension[self.slice_axis[0]]
         self.nx2 = self.egrid.dimension[self.slice_axis[1]]
+
+        # Check slice_ind is within grid bounds along the slice dimension
+        n_slice = self.egrid.dimension[_SLICE_AXIS[slice_dim]]
+        if not 0 <= slice_ind < n_slice:
+            raise ValueError(
+                f"slice_ind={slice_ind} is out of bounds for slice_dim='{slice_dim}'; "
+                f"grid has {n_slice} cells along this axis (valid range: 0-{n_slice - 1})"
+            )
 
         # Check (i, j, k) coord. system is aligned with (x, y, z) coord. system
         self.aligned_grid = self.is_aligned()
 
+    def _active_index_from_end(self, i: int, j: int, k: int, axis: int, origin_axis: int) -> int:
+        """
+        Search for the first active cell along ``axis``, starting from the far end of the grid
+        and moving inward towards (but not past) ``origin_axis``.
+
+        Returns
+        -------
+        int
+            Active index of the first active cell found, or -1 if none exists between the far
+            end and the origin (inclusive).
+        """
+        idx = [i, j, k]
+        dim_size = self.egrid.dimension[axis]
+        for candidate in range(dim_size - 1, origin_axis - 1, -1):
+            idx[axis] = candidate
+            act = self.egrid.active_index(*idx)
+            if act >= 0:
+                return act
+        return -1
+
     # pylint: disable=too-many-locals
-    def is_aligned(self) -> Union[Any, Literal[False]]:
+    def is_aligned(self) -> bool:
         """
         Check if (i, j, k) coordinate system is aligned with (x, y, z) coordinate system
 
@@ -79,11 +115,6 @@ class _GridSlice(ABC):
         grid. Volume is calculated with scalar triple product of the vectors making up the
         parallelepiped.
         """
-        # Dimension of the grid
-        n_x = self.egrid.dimension[0]
-        n_y = self.egrid.dimension[1]
-        n_z = self.egrid.dimension[2]
-
         # Loop until we successful at making a parallelepiped from the grid. At each round of the
         # loop we try to make vectors from origin that are at least larger than one grid cell in
         # each direction. If this is not successful we change the origin to next active cell and
@@ -100,29 +131,22 @@ class _GridSlice(ABC):
             x_1, y_1, z_1 = self.egrid.xyz_from_active_index(origin)
             i, j, k = self.egrid.ijk_from_active_index(origin)
 
-            # Coordinates by inceasing i-index
-            search = 1
-            act = self.egrid.active_index(n_x - search, j, k)
-            while act < 0:
-                search += 1
-                act = self.egrid.active_index(n_x - search, j, k)
-            x_2, y_2, _ = self.egrid.xyz_from_active_index(act)
+            # Search for an active cell by increasing i-, j-, and k-index, without searching past
+            # the origin itself
+            act_i = self._active_index_from_end(i, j, k, axis=0, origin_axis=i)
+            act_j = self._active_index_from_end(i, j, k, axis=1, origin_axis=j)
+            act_k = self._active_index_from_end(i, j, k, axis=2, origin_axis=k)
 
-            # Coordinates by inceasing j-index
-            search = 1
-            act = self.egrid.active_index(i, n_y - search, k)
-            while act < 0:
-                search += 1
-                act = self.egrid.active_index(i, n_y - search, k)
-            x_3, y_3, _ = self.egrid.xyz_from_active_index(act)
+            # If no active cell was found along one of the axes, this origin cannot be used to
+            # build a parallelepiped; move on to the next origin
+            if act_i < 0 or act_j < 0 or act_k < 0:
+                iteration += 1
+                origin += 1
+                continue
 
-            # Coordinates by inceasing k-index
-            search = 1
-            act = self.egrid.active_index(i, j, n_z - search)
-            while act < 0:
-                search += 1
-                act = self.egrid.active_index(i, j, n_z - search)
-            _, _, z_2 = self.egrid.xyz_from_active_index(act)
+            x_2, y_2, _ = self.egrid.xyz_from_active_index(act_i)
+            x_3, y_3, _ = self.egrid.xyz_from_active_index(act_j)
+            _, _, z_2 = self.egrid.xyz_from_active_index(act_k)
 
             # Vectors making up the parallelepiped
             v_1 = np.array([x_2[0] - x_1[0], y_2[0] - y_1[0], 0])
@@ -153,7 +177,7 @@ class _GridSlice(ABC):
 
         return aligned
 
-    def _active_indices(self) -> None:
+    def _compute_active_indices(self) -> None:
         """
         Get active indices for a slice
         """
@@ -165,12 +189,8 @@ class _GridSlice(ABC):
                     act_index = self.egrid.active_index(self.slice_ind, ind_1, ind_2)
                 elif self.slice_dim == "j":
                     act_index = self.egrid.active_index(ind_1, self.slice_ind, ind_2)
-                elif self.slice_dim == "k":
-                    act_index = self.egrid.active_index(ind_1, ind_2, self.slice_ind)
                 else:
-                    raise TypeError(
-                        f'{self.slice_dim} slice dimension is not valid! Choose "i", "j", or "k"'
-                    )
+                    act_index = self.egrid.active_index(ind_1, ind_2, self.slice_ind)
 
                 # Check if active index at (i,j,k) is an active cell, if so add to list
                 if act_index >= 0:
@@ -201,17 +221,17 @@ class _GridSlice(ABC):
             zcorn[i, :] = [cell_corn_z[ind] for ind in local_ind]
 
         # If any rows contain np.nan, we remove those rows
-        ind_nan_x = np.unique(np.where(np.isnan(xcorn))[0])
-        ind_nan_y = np.unique(np.where(np.isnan(ycorn))[0])
-        ind_nan_z = np.unique(np.where(np.isnan(zcorn))[0])
-        ind_nan = np.unique(np.hstack((ind_nan_x, ind_nan_y, ind_nan_z)))
-
-        xcorn = np.delete(xcorn, ind_nan, axis=0)
-        ycorn = np.delete(ycorn, ind_nan, axis=0)
-        zcorn = np.delete(zcorn, ind_nan, axis=0)
+        nan_row = (
+            np.isnan(xcorn).any(axis=1)
+            | np.isnan(ycorn).any(axis=1)
+            | np.isnan(zcorn).any(axis=1)
+        )
+        xcorn = xcorn[~nan_row]
+        ycorn = ycorn[~nan_row]
+        zcorn = zcorn[~nan_row]
 
         # Remove cells from list of active indices as well
-        self.act = [elem for i, elem in enumerate(self.act) if i not in ind_nan]
+        self.act = [elem for elem, is_nan in zip(self.act, nan_row) if not is_nan]
 
         # Gather corner points in array with shape (ncells, 4, 3)
         self.corn = np.stack((xcorn, ycorn, zcorn), axis=-1)
@@ -221,7 +241,7 @@ class _GridSlice(ABC):
         Calculate cell centers of slice (i.e., cell face centers)
         """
         # Check if corner points have been calculated
-        if self.corn is None:
+        if self.corn.size == 0:
             raise ValueError(
                 "Corner points have not been calculated before cell centers for slice!"
             )
@@ -229,13 +249,13 @@ class _GridSlice(ABC):
         # Use average of cell corners as approximation for cell center
         self.cent = np.mean(self.corn, axis=1)
 
-    def active_indices(self) -> List[int]:
+    def active_indices(self) -> list[int]:
         """
         Return active indices
 
         Returns
         -------
-        List[int]
+        list[int]
             List of active cells for slice
         """
         return self.act
@@ -271,7 +291,7 @@ class GridSlice3D(_GridSlice):
     def __init__(self, path: str, slice_dim: str, slice_ind: int) -> None:
         super().__init__(path, slice_dim, slice_ind)
         # Active indices for slice
-        self._active_indices()
+        self._compute_active_indices()
 
         # Cell corner and centroid calculation
         self._cell_corners()

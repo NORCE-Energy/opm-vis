@@ -2,7 +2,6 @@
 import datetime as dt
 import warnings
 from glob import glob
-from typing import List
 
 import numpy as np
 from numpy.typing import NDArray
@@ -14,13 +13,13 @@ class SummaryReader:
     ESmry wrapper class
     """
 
-    def __init__(self, paths: List[str]) -> None:
+    def __init__(self, paths: list[str]) -> None:
         """
         Init. class by instantiating ESmry classes for each .SMSPEC file in input folders
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths with .SMSPEC files. Main folder is in paths[0]; rest of entries, if any,
             are folders with simulator restart runs.
         """
@@ -32,6 +31,10 @@ class SummaryReader:
             if not smspec:
                 warnings.warn(f"No .SMSPEC found in {path}! Skipping folder...")
             else:
+                if len(smspec) > 1:
+                    warnings.warn(
+                        f"Multiple .SMSPEC files in {path}. Importing {smspec[0]}."
+                    )
                 smry_path.append(smspec[0])
 
         # Instantiate ESmry class for each .SMSPEC file found
@@ -46,37 +49,49 @@ class SummaryReader:
         Create a consistent list of times (as datetime objects) in case of simulation restarts. In
         addition, a list of indices are created to be sure we read correct time series data from
         correct files (in the correct path).
+
+        Notes
+        -----
+        A restart run's TIME axis starts at the point it restarted from and re-simulates
+        everything from there onward, so once a later file's first timestep is reached, it and
+        everything after it supersede whatever was kept from earlier files for that same stretch
+        of time - regardless of which earlier file(s) contributed it. Truncating by comparison
+        (rather than requiring an exact timestamp match) also keeps the series strictly
+        chronological even if a restart's first reported step doesn't land on exactly the same
+        timestep as the run it restarts from.
         """
+        # No .SMSPEC files were found in any of the input paths - nothing to stitch together
+        if not self.smry:
+            self.time = []
+            self.time_ind = []
+            return
+
         # Start date should be the same in any file
         start_date = self.smry[0].start_date
 
-        # Loop over summary files and get time as datetimes together with indices (for concatenating
-        # time series across simulation restarts)
-        self.time = []
-        self.time_ind = [[] for _ in self.smry]
+        # Accumulate (datetime, file index, local index) triples for every timestep that ends up
+        # in the final stitched series, in chronological/file order.
+        entries = []
         for i, smry in enumerate(self.smry):
             # TIME keyword is in days; convert to datetime objects
             time_unsmry = [
                 start_date + dt.timedelta(days=float(t)) for t in smry["TIME"]
             ]
-            self.time_ind[i] = list(range(len(time_unsmry)))
 
-            # Check for overlapping time between different .SMSPEC files (i.e. when simulation has
-            # been restarted)
-            if i > 0:
-                _, ind, _ = np.intersect1d(self.time, time_unsmry, return_indices=True)
+            # A restart's first reported step supersedes everything from that point onward that
+            # was kept so far, wherever it came from - drop it before appending this file's data.
+            if entries and time_unsmry:
+                restart_point = time_unsmry[0]
+                entries = [entry for entry in entries if entry[0] < restart_point]
 
-                # If overlap, stitch the times and indices together
-                if ind.size > 0:
-                    self.time_ind[i - 1] = [
-                        k for k in range(len(self.time[:-1])) if k not in ind
-                    ]
-                    self.time = [
-                        ent for j, ent in enumerate(self.time[:-1]) if j not in ind
-                    ]
+            entries.extend(
+                (time, i, local_ind) for local_ind, time in enumerate(time_unsmry)
+            )
 
-            # Add datetimes at the end of current list
-            self.time.extend(time_unsmry)
+        self.time = [entry[0] for entry in entries]
+        self.time_ind = [[] for _ in self.smry]
+        for _, file_ind, local_ind in entries:
+            self.time_ind[file_ind].append(local_ind)
 
     def read(self, keyword: str) -> NDArray:
         """
@@ -92,6 +107,9 @@ class SummaryReader:
         NDArray
             Time series
         """
+        if not self.smry:
+            raise ValueError("No .SMSPEC file was found; cannot read summary data!")
+
         # Read mnemonic from correct path (in case of multiple paths) and extend a time series list
         time_series = []
         for i, smry in enumerate(self.smry):
@@ -99,25 +117,28 @@ class SummaryReader:
 
         return np.array(time_series)
 
-    def available_keywords(self) -> List[str]:
+    def available_keywords(self) -> list[str]:
         """
         Return available summary keywords
 
         Returns
         -------
-        List[str]
+        list[str]
             List of summary keywords
         """
+        if not self.smry:
+            raise ValueError("No .SMSPEC file was found; cannot list available keywords!")
+
         # Assume the same keywords exist in all .SMPEC files
         return self.smry[0].keys()
 
-    def summary_dates(self) -> List[dt.datetime]:
+    def summary_dates(self) -> list[dt.datetime]:
         """
         Return all dates in time series.
 
         Returns
         -------
-        List[dt.datetime]
+        list[dt.datetime]
             List of summary dates
 
         Notes
