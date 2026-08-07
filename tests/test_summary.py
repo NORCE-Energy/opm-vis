@@ -63,6 +63,15 @@ def test_no_smspec_file_found_warns_and_skips_that_path(tmp_path):
     assert len(sr.smry) == 1
 
 
+def test_no_smspec_files_found_in_any_path_leaves_reader_empty(tmp_path):
+    with pytest.warns(UserWarning, match="No .SMSPEC found"):
+        sr = SummaryReader([str(tmp_path / "MISSING")])
+
+    assert sr.smry == []
+    assert sr.time == []
+    assert sr.time_ind == []
+
+
 # ---------------------------------------------------------------------------
 # SummaryReader.read / available_keywords / summary_dates - single run
 # ---------------------------------------------------------------------------
@@ -75,8 +84,24 @@ def test_read_returns_full_array_for_keyword(reader):
     np.testing.assert_allclose(fopr[0], 20000.0)
 
 
+def test_read_raises_when_no_smspec_file_was_found(tmp_path):
+    with pytest.warns(UserWarning, match="No .SMSPEC found"):
+        sr = SummaryReader([str(tmp_path / "MISSING")])
+
+    with pytest.raises(ValueError, match="No .SMSPEC file was found"):
+        sr.read("FOPR")
+
+
 def test_available_keywords_lists_dataset_keywords(reader):
     assert "FOPR" in reader.available_keywords()
+
+
+def test_available_keywords_raises_when_no_smspec_file_was_found(tmp_path):
+    with pytest.warns(UserWarning, match="No .SMSPEC found"):
+        sr = SummaryReader([str(tmp_path / "MISSING")])
+
+    with pytest.raises(ValueError, match="No .SMSPEC file was found"):
+        sr.available_keywords()
 
 
 def test_summary_dates_match_dataset(reader):
@@ -85,6 +110,13 @@ def test_summary_dates_match_dataset(reader):
     assert len(dates) == 123
     assert dates[0] == dt.datetime(2015, 1, 2)
     assert dates[-1] == dt.datetime(2024, 12, 29)
+
+
+def test_summary_dates_returns_empty_list_when_no_smspec_file_was_found(tmp_path):
+    with pytest.warns(UserWarning, match="No .SMSPEC found"):
+        sr = SummaryReader([str(tmp_path / "MISSING")])
+
+    assert sr.summary_dates() == []
 
 
 # ---------------------------------------------------------------------------

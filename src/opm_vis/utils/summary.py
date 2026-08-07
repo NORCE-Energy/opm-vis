@@ -56,6 +56,12 @@ class SummaryReader:
         chronological even if a restart's first reported step doesn't land on exactly the same
         timestep as the run it restarts from.
         """
+        # No .SMSPEC files were found in any of the input paths - nothing to stitch together
+        if not self.smry:
+            self.time = []
+            self.time_ind = []
+            return
+
         # Start date should be the same in any file
         start_date = self.smry[0].start_date
 
@@ -97,6 +103,9 @@ class SummaryReader:
         NDArray
             Time series
         """
+        if not self.smry:
+            raise ValueError("No .SMSPEC file was found; cannot read summary data!")
+
         # Read mnemonic from correct path (in case of multiple paths) and extend a time series list
         time_series = []
         for i, smry in enumerate(self.smry):
@@ -113,6 +122,9 @@ class SummaryReader:
         list[str]
             List of summary keywords
         """
+        if not self.smry:
+            raise ValueError("No .SMSPEC file was found; cannot list available keywords!")
+
         # Assume the same keywords exist in all .SMPEC files
         return self.smry[0].keys()
 
