@@ -46,12 +46,13 @@ class _GridSlice(ABC):
         self.cent = np.empty(0)
 
         # Instantiate Egrid class
-        if glob(path + "*.EGRID"):
-            if len(glob(path + "*.EGRID")) > 1:
+        egrid_files = glob(path + "*.EGRID")
+        if egrid_files:
+            if len(egrid_files) > 1:
                 warnings.warn(
-                    f"Multiple .EGRID files in {path}. Importing {glob(path + '*.EGRID')[0]}."
+                    f"Multiple .EGRID files in {path}. Importing {egrid_files[0]}."
                 )
-            self.egrid = EGrid(glob(path + "*.EGRID")[0])
+            self.egrid = EGrid(egrid_files[0])
         else:
             raise FileNotFoundError(f"No .EGRID file found in {path}!")
 
