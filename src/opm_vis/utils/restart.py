@@ -189,8 +189,8 @@ class RestartReader(_RestartFiles):
         erst_idx, _ = location
         return self.rst[erst_idx][("INTEHEAD", rstep)][item]
 
-    def unit_convension(self) -> str:
-        """Return unit convension used in run"""
+    def unit_convention(self) -> str:
+        """Return unit convention used in run"""
         return ["metric", "field", "lab", "pvt-m"][self.intehead(2, 0) - 1]
 
 

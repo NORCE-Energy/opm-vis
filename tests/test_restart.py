@@ -105,8 +105,8 @@ def test_intehead_raises_for_missing_report_step(reader):
         reader.intehead(16, 999)
 
 
-def test_unit_convension_for_field_units(reader):
-    assert reader.unit_convension() == "field"
+def test_unit_convention_for_field_units(reader):
+    assert reader.unit_convention() == "field"
 
 
 # ---------------------------------------------------------------------------

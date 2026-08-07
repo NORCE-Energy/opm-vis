@@ -55,9 +55,9 @@ class _SlicePolyCollection:
         # Instantiate Report class
         self.report = Report(paths)
 
-        # Instantiate Label class with correct unit_convension
-        unit_convension = self.slice_coll[0].restart.unit_convension()
-        self.label = Label(unit_convension)
+        # Instantiate Label class with correct unit_convention
+        unit_convention = self.slice_coll[0].restart.unit_convention()
+        self.label = Label(unit_convention)
 
         # Internal variables
         self.anim = None
