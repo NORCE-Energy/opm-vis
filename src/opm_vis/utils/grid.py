@@ -209,17 +209,17 @@ class _GridSlice(ABC):
             zcorn[i, :] = [cell_corn_z[ind] for ind in local_ind]
 
         # If any rows contain np.nan, we remove those rows
-        ind_nan_x = np.unique(np.where(np.isnan(xcorn))[0])
-        ind_nan_y = np.unique(np.where(np.isnan(ycorn))[0])
-        ind_nan_z = np.unique(np.where(np.isnan(zcorn))[0])
-        ind_nan = np.unique(np.hstack((ind_nan_x, ind_nan_y, ind_nan_z)))
-
-        xcorn = np.delete(xcorn, ind_nan, axis=0)
-        ycorn = np.delete(ycorn, ind_nan, axis=0)
-        zcorn = np.delete(zcorn, ind_nan, axis=0)
+        nan_row = (
+            np.isnan(xcorn).any(axis=1)
+            | np.isnan(ycorn).any(axis=1)
+            | np.isnan(zcorn).any(axis=1)
+        )
+        xcorn = xcorn[~nan_row]
+        ycorn = ycorn[~nan_row]
+        zcorn = zcorn[~nan_row]
 
         # Remove cells from list of active indices as well
-        self.act = [elem for i, elem in enumerate(self.act) if i not in ind_nan]
+        self.act = [elem for elem, is_nan in zip(self.act, nan_row) if not is_nan]
 
         # Gather corner points in array with shape (ncells, 4, 3)
         self.corn = np.stack((xcorn, ycorn, zcorn), axis=-1)
