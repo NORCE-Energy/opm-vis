@@ -329,12 +329,13 @@ class Wells(_RestartFiles):
             for rstep in erst.report_steps:
                 # Report step 0 does not have well information
                 if rstep == 0:
+                    ind += 1
                     continue
 
                 # Check for well keywords in restart files
-                if ("ZWEL" not in [key[0] for key in erst.arrays(rstep)]) or (
-                    "ICON" not in [key[0] for key in erst.arrays(rstep)]
-                ):
+                available_keys = {key[0] for key in erst.arrays(rstep)}
+                if "ZWEL" not in available_keys or "ICON" not in available_keys:
+                    ind += 1
                     continue
 
                 # Extract well names from ZWEL mnemonic
