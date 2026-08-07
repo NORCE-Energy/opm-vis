@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 import warnings
 from glob import glob
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 from numpy.typing import NDArray
@@ -55,32 +56,35 @@ class _RestartFiles:
             # Init. restart file list for current search path
             restart_files = []
 
+            unrst_files = glob(os.path.join(path, "*.UNRST"))
+            x_files = glob(os.path.join(path, "*.X*"))
+
             # Are there UNRST and X files in same folder? We load the UNRST file and issue warning
-            if glob(path + "*.UNRST") and glob(path + "*.X*"):
+            if unrst_files and x_files:
                 warnings.warn(
                     f"There are .UNRST and .X files in {path}. We load the UNRST file!"
                 )
-                if len(glob(path + "*.UNRST")) > 1:
+                if len(unrst_files) > 1:
                     warnings.warn(
-                        f"Multiple .UNRST files in {path}. Importing {glob(path + '*.UNRST')[0]}."
+                        f"Multiple .UNRST files in {path}. Importing {unrst_files[0]}."
                     )
-                restart_files = [glob(path + "*.UNRST")[0]]
+                restart_files = [unrst_files[0]]
 
             # Are there no files in the folder? Warn and continue
-            elif not glob(path + "*.UNRST") and not glob(path + "*.X*"):
+            elif not unrst_files and not x_files:
                 warnings.warn(f"No .UNRST or .X files found {path}! Skipping folder...")
 
             # .UNRST file
-            elif glob(path + "*.UNRST") and not glob(path + "*.X*"):
-                if len(glob(path + "*.UNRST")) > 1:
+            elif unrst_files and not x_files:
+                if len(unrst_files) > 1:
                     warnings.warn(
-                        f"Multiple .UNRST files in {path}. Importing {glob(path + '*.UNRST')[0]}"
+                        f"Multiple .UNRST files in {path}. Importing {unrst_files[0]}"
                     )
-                restart_files = [glob(path + "*.UNRST")[0]]
+                restart_files = [unrst_files[0]]
 
             # .X files
-            elif not glob(path + "*.UNRST") and glob(path + "*.X*"):
-                restart_files = glob(path + "*.X*")
+            elif not unrst_files and x_files:
+                restart_files = x_files
 
             # Instantiate ERst class for each file in path
             if restart_files:
@@ -165,6 +169,7 @@ class RestartReader(_RestartFiles):
         for erst in self.rst:
             if rstep in erst.report_steps:
                 info = erst[("INTEHEAD", rstep)][item]
+                break
 
         # If header info is not found, raise error
         if info is None:
@@ -350,10 +355,11 @@ class Wells(_RestartFiles):
                 nwells = erst[("INTEHEAD", rstep)][16]
 
                 # Check that we have names for all wells found in INTEHEAD
-                assert len(well_names) == nwells, (
-                    f"Number of wells in ZWEL (={len(well_names)}) does not correspond to info"
-                    f" in INTEHEAD (={nwells})!"
-                )
+                if len(well_names) != nwells:
+                    raise ValueError(
+                        f"Number of wells in ZWEL (={len(well_names)}) does not correspond to info"
+                        f" in INTEHEAD (={nwells})!"
+                    )
 
                 # Information about the wells are located in IWEL and ICON, so we reshape those to
                 # a more easily accessible shape
@@ -371,7 +377,9 @@ class Wells(_RestartFiles):
                     self._well_info[ind][name].extend((iwel[i, :2] - 1).tolist())
 
                     # k-indices for well connection
-                    self._well_info[ind][name].extend(icon[i, icon[i, :, 3] > 0, 3] - 1)
+                    self._well_info[ind][name].extend(
+                        (icon[i, icon[i, :, 3] > 0, 3] - 1).tolist()
+                    )
 
                     # Well status (open/shut = True/False).
                     # OBS: convert to Python bool instead of numpy.bool_
@@ -406,6 +414,6 @@ class Wells(_RestartFiles):
                 ind += len(erst.report_steps)
         return self._well_info[ind]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[dict[str, list[Any]]]:
         for elem in self._well_info:
             yield elem
