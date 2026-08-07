@@ -90,6 +90,20 @@ class _RestartFiles:
             if restart_files:
                 self.rst.extend([ERst(file) for file in restart_files])
 
+        # Build a lookup from report step to its (erst index, local index within that erst) and
+        # the absolute offset of each erst's report steps in a flattened list. erst.report_steps
+        # is a property that recomputes on every access, so we read it once per erst here and
+        # reuse it everywhere else instead of re-querying and re-scanning it on every lookup.
+        self._step_index: dict[int, tuple[int, int]] = {}
+        self._erst_step_offsets: list[int] = []
+        offset = 0
+        for erst_idx, erst in enumerate(self.rst):
+            self._erst_step_offsets.append(offset)
+            report_steps = erst.report_steps
+            for local_idx, rstep in enumerate(report_steps):
+                self._step_index.setdefault(rstep, (erst_idx, local_idx))
+            offset += len(report_steps)
+
 
 class RestartReader(_RestartFiles):
     """
@@ -117,14 +131,14 @@ class RestartReader(_RestartFiles):
         out : ndarray
             Array with keyword variables at report step.
         """
-        # Loop over restart files to find array at correct report step
-        for erst in self.rst:
-            if rstep in erst.report_steps:
-                out = erst[(keyword, rstep)]
-                return out[act] if act is not None else out
+        # Look up which restart file holds the requested report step
+        location = self._step_index.get(rstep)
+        if location is None:
+            raise ValueError(f"Report step {rstep} was not found in restart files!")
 
-        # Raise error if report step does not exist in restart files
-        raise ValueError(f"Report step {rstep} was not found in restart files!")
+        erst_idx, _ = location
+        out = self.rst[erst_idx][(keyword, rstep)]
+        return out[act] if act is not None else out
 
     def available_keywords(self, rstep: int) -> list[str]:
         """
@@ -140,13 +154,15 @@ class RestartReader(_RestartFiles):
         list[str]
             List of available keywords
         """
-        #  Loop over restart files to find info at correct report step
-        for erst in self.rst:
-            if rstep in erst.report_steps:
-                return [key[0] for key in erst.arrays(rstep) if key[0] not in _IGNORE]
+        # Look up which restart file holds the requested report step
+        location = self._step_index.get(rstep)
+        if location is None:
+            raise ValueError(f"Report step {rstep} was not found in restart file(s)!")
 
-        # Raise error if report step does not exist in restart files
-        raise ValueError(f"Report step {rstep} was not found in restart file(s)!")
+        erst_idx, _ = location
+        return [
+            key[0] for key in self.rst[erst_idx].arrays(rstep) if key[0] not in _IGNORE
+        ]
 
     def intehead(self, item: int, rstep: int) -> int:
         """
@@ -164,18 +180,13 @@ class RestartReader(_RestartFiles):
         info : int
             Information from header
         """
-        # Lookup in restart file
-        info = None
-        for erst in self.rst:
-            if rstep in erst.report_steps:
-                info = erst[("INTEHEAD", rstep)][item]
-                break
-
-        # If header info is not found, raise error
-        if info is None:
+        # Look up which restart file holds the requested report step
+        location = self._step_index.get(rstep)
+        if location is None:
             raise ValueError(f"INTEHEAD item {item} not found in restart file(s)!")
 
-        return info
+        erst_idx, _ = location
+        return self.rst[erst_idx][("INTEHEAD", rstep)][item]
 
     def unit_convension(self) -> str:
         """Return unit convension used in run"""
@@ -405,14 +416,8 @@ class Wells(_RestartFiles):
         """
         # rstep is not necessarily equal to index of self._well_info since it is possible output
         # restart arrays at any frequency (see, e.g., RPTRST keyword, and BASIC and FREQ mnemonics!)
-        # Start index at zero and count up until we reach report step in some restart file.
-        ind = 0
-        for erst in self.rst:
-            if rstep in erst.report_steps:
-                ind += erst.report_steps.index(rstep)
-            else:
-                ind += len(erst.report_steps)
-        return self._well_info[ind]
+        erst_idx, local_idx = self._step_index[rstep]
+        return self._well_info[self._erst_step_offsets[erst_idx] + local_idx]
 
     def __iter__(self) -> Iterator[dict[str, list[Any]]]:
         for elem in self._well_info:
