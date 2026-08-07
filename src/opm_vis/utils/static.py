@@ -28,12 +28,14 @@ class _InitFile:
             Path to .INIT file
         """
         # Check path for .INIT file and instantiate if it exist
-        if glob(path + "*.INIT"):
-            if len(glob(path + "*.INIT")) > 1:
+        self.init = None
+        init_files = glob(path + "*.INIT")
+        if init_files:
+            if len(init_files) > 1:
                 warnings.warn(
-                    f"Multiple .INIT files in {path}. Importing {glob(path + '*.INIT')[0]}."
+                    f"Multiple .INIT files in {path}. Importing {init_files[0]}."
                 )
-            self.init = EModel(glob(path + "*.INIT")[0])
+            self.init = EModel(init_files[0])
         else:
             warnings.warn(f"No .INIT file found in {path}!")
 
@@ -59,9 +61,11 @@ class InitReader(_InitFile):
         out : ndarray
             Array with static parameters
         """
-        return (
-            self.init.get(keyword)[act] if act is not None else self.init.get(keyword)
-        )
+        if self.init is None:
+            raise ValueError("No .INIT file was found; cannot read static parameters!")
+
+        out = self.init.get(keyword)
+        return out[act] if act is not None else out
 
     def available_keywords(self) -> list[str]:
         """
@@ -72,6 +76,9 @@ class InitReader(_InitFile):
         list[str]
             Keywords available in .INIT file
         """
+        if self.init is None:
+            raise ValueError("No .INIT file was found; cannot list available keywords!")
+
         return [
             key[0] for key in self.init.get_list_of_arrays() if key[0] not in _IGNORE
         ]
