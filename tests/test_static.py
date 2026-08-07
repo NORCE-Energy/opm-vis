@@ -104,3 +104,19 @@ def test_available_keywords_raises_when_no_init_file_was_found(tmp_path):
 
     with pytest.raises(ValueError, match="No .INIT file was found"):
         ir.available_keywords()
+
+
+def test_available_keywords_caches_after_first_call():
+    calls = []
+
+    class _CountingStubInit:
+        def get_list_of_arrays(self):
+            calls.append(1)
+            return [("PORO", None)]
+
+    ir = object.__new__(InitReader)
+    ir.init = _CountingStubInit()
+
+    assert ir.available_keywords() == ["PORO"]
+    assert ir.available_keywords() == ["PORO"]
+    assert len(calls) == 1

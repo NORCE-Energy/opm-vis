@@ -45,6 +45,10 @@ class InitReader(_InitFile):
     Class for reading .INIT files. Initialization in parent class.
     """
 
+    # Cache for available_keywords(): the .INIT file's keyword list can't change
+    # after construction, so there's no need to recompute it on every call.
+    _keywords: list[str] | None = None
+
     def read(self, keyword: str, act: list[int] | None = None) -> NDArray[Any]:
         """
         Read .INIT file and return array for active indices.
@@ -76,9 +80,14 @@ class InitReader(_InitFile):
         list[str]
             Keywords available in .INIT file
         """
-        if self.init is None:
-            raise ValueError("No .INIT file was found; cannot list available keywords!")
-
-        return [
-            key[0] for key in self.init.get_list_of_arrays() if key[0] not in _IGNORE
-        ]
+        if self._keywords is None:
+            if self.init is None:
+                raise ValueError(
+                    "No .INIT file was found; cannot list available keywords!"
+                )
+            self._keywords = [
+                key[0]
+                for key in self.init.get_list_of_arrays()
+                if key[0] not in _IGNORE
+            ]
+        return self._keywords
