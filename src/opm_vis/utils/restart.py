@@ -251,6 +251,11 @@ class Report(_RestartFiles):
         self.rsteps = [self.rsteps[i] for i in ind_sort]
         self.rdates = [self.rdates[i] for i in ind_sort]
 
+        # Lookup for report_date() so repeated calls don't rescan self.rsteps
+        self._rstep_to_date: dict[int, dt.datetime] = {}
+        for rstep, rdate in zip(self.rsteps, self.rdates):
+            self._rstep_to_date.setdefault(rstep, rdate)
+
     def __str__(self) -> str:
         """
         Print an table of report dates and steps if called by Python print method
@@ -281,7 +286,7 @@ class Report(_RestartFiles):
         dt.datetime
             Datetime object for report step
         """
-        return self.rdates[self.rsteps.index(rstep)]
+        return self._rstep_to_date[rstep]
 
     def report_dates(self) -> list[dt.datetime]:
         """
