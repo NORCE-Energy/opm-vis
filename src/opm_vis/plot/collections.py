@@ -1,8 +1,9 @@
 """Plot collection of slices"""
+from __future__ import annotations
+
 import datetime as dt
 import warnings
 from functools import partial
-from typing import Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,17 +26,17 @@ class _SlicePolyCollection:
 
     def __init__(
         self,
-        paths: List[str],
+        paths: list[str],
         fig: Figure,
         ax_: plt.Axes,
-        slice_coll: Union[List[SlicePoly3D], List[SlicePoly2D]],
+        slice_coll: list[SlicePoly3D] | list[SlicePoly2D],
     ) -> None:
         """
         Initialize class by setting up figure and instantiate helper classes.
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths to OPM files. First entry considered to be the main folder; rest of
             entries are folders with restart runs.
         fig : plt.Figure
@@ -60,10 +61,10 @@ class _SlicePolyCollection:
 
         # Internal variables
         self.anim = None
-        self.rdates: List[dt.datetime] = []
+        self.rdates: list[dt.datetime] = []
         self.keyword = ""
 
-    def set_title(self, rdate: dt.datetime, addition: Optional[str] = None) -> None:
+    def set_title(self, rdate: dt.datetime, addition: str | None = None) -> None:
         """
         Add title to figure based on report date and additional text if inputted.
 
@@ -71,7 +72,7 @@ class _SlicePolyCollection:
         ----------
         rstep : dt.datetime
             Report date
-        addition : Optional[str], optional
+        addition : str | None, optional
             Adding string to end of title, by default None
         """
         # Title
@@ -84,7 +85,7 @@ class _SlicePolyCollection:
         # Add title to figure
         self.fig.suptitle(title)
 
-    def add_collection(self, polyc: Union[Poly3DCollection, PolyCollection]) -> None:
+    def add_collection(self, polyc: Poly3DCollection | PolyCollection) -> None:
         """
         Alias to axes.add_collection in matplotlib
 
@@ -164,9 +165,8 @@ class _SlicePolyCollection:
         keyword: str,
         colorbar: bool = True,
         equal_clim: bool = True,
-        polyc_dict: Optional[
-            Dict[int, Union[List[Poly3DCollection], List[PolyCollection]]]
-        ] = None,
+        polyc_dict: dict[int, list[Poly3DCollection] | list[PolyCollection]]
+        | None = None,
         **kwargs,
     ) -> None:
         """
@@ -262,7 +262,7 @@ class _SlicePolyCollection:
         for polyc in polyc_grid:
             self.add_collection(polyc)
 
-    def gif(self, keyword: str, rsteps: Optional[List[int]] = None, **kwargs) -> None:
+    def gif(self, keyword: str, rsteps: list[int] | None = None, **kwargs) -> None:
         """
         Generate gif
 
@@ -270,7 +270,7 @@ class _SlicePolyCollection:
         ----------
         keyword : str
             OPM keyword to plot
-        rsteps : List[int], optional
+        rsteps : list[int] | None, optional
             Subset of all report steps. If None, all report steps are included in gif.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
@@ -314,21 +314,21 @@ class _SlicePolyCollection:
         self.anim = animation.FuncAnimation(self.fig, plot_func, frames=rsteps_gif)
 
     def _data_for_gif(
-        self, rsteps: List[int], keyword: str, **kwargs
-    ) -> Dict[int, Union[List[Poly3DCollection], List[PolyCollection]]]:
+        self, rsteps: list[int], keyword: str, **kwargs
+    ) -> dict[int, list[Poly3DCollection] | list[PolyCollection]]:
         """
         Pre-generate data for report steps.
 
         Parameters
         ----------
-        rsteps : List[int]
+        rsteps : list[int]
             List of report steps to generate plot data
         keyword : str
             OPM keyword to plot
 
         Returns
         -------
-        Dict[int, Union[List[Poly3DCollection], List[PolyCollection]]]
+        dict[int, list[Poly3DCollection] | list[PolyCollection]]
             Dictionary of slice Poly3DCollection/PolyCollection with keyword data at report steps
             (dictionary key)
         """
@@ -454,16 +454,16 @@ class SlicePoly3DCollection(_SlicePolyCollection):
     Class for plotting collection of slices in 3D view
     """
 
-    def __init__(self, paths: List[str], slice_info: List[Tuple[str, int]]) -> None:
+    def __init__(self, paths: list[str], slice_info: list[tuple[str, int]]) -> None:
         """
         Initialize class by setting up figure/axes.
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths to OPM files. First entry considered to be the main folder; rest of
             entries are folders with restart runs.
-        slice_info : List[Tuple[str, int]]
+        slice_info : list[tuple[str, int]]
             Info to generate slices: [(dimension=i, j, or k, index)]
         """
         # Generate collection of slices
@@ -515,16 +515,16 @@ class SlicePoly2DCollection(_SlicePolyCollection):
     Class for plotting slice in 2D view thus, not a collection per se
     """
 
-    def __init__(self, paths: List[str], slice_dim: str, slice_ind: int) -> None:
+    def __init__(self, paths: list[str], slice_dim: str, slice_ind: int) -> None:
         """
         Initialize class by setting up figure/axes.
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths to OPM files. First entry considered to be the main folder; rest of
             entries are folders with restart runs.
-        slice_info : List[Tuple[str, int]]
+        slice_info : list[tuple[str, int]]
             Info to generate slices: [(dimension=i, j, or k, index)]
         """
         # Generate 2D slice and put in a list to conform with parent class methods

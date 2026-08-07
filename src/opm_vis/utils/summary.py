@@ -2,7 +2,6 @@
 import datetime as dt
 import warnings
 from glob import glob
-from typing import List
 
 import numpy as np
 from numpy.typing import NDArray
@@ -14,13 +13,13 @@ class SummaryReader:
     ESmry wrapper class
     """
 
-    def __init__(self, paths: List[str]) -> None:
+    def __init__(self, paths: list[str]) -> None:
         """
         Init. class by instantiating ESmry classes for each .SMSPEC file in input folders
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths with .SMSPEC files. Main folder is in paths[0]; rest of entries, if any,
             are folders with simulator restart runs.
         """
@@ -99,25 +98,25 @@ class SummaryReader:
 
         return np.array(time_series)
 
-    def available_keywords(self) -> List[str]:
+    def available_keywords(self) -> list[str]:
         """
         Return available summary keywords
 
         Returns
         -------
-        List[str]
+        list[str]
             List of summary keywords
         """
         # Assume the same keywords exist in all .SMPEC files
         return self.smry[0].keys()
 
-    def summary_dates(self) -> List[dt.datetime]:
+    def summary_dates(self) -> list[dt.datetime]:
         """
         Return all dates in time series.
 
         Returns
         -------
-        List[dt.datetime]
+        list[dt.datetime]
             List of summary dates
 
         Notes

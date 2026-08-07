@@ -1,8 +1,10 @@
 """ Calculate various attributes from restart files """
+from __future__ import annotations
+
 import datetime as dt
 import warnings
 from glob import glob
-from typing import List, Optional, Any, Dict
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -37,13 +39,13 @@ class _RestartFiles:
     Top class for ERst wrapper
     """
 
-    def __init__(self, paths: List[str]) -> None:
+    def __init__(self, paths: list[str]) -> None:
         """
         Init. class by instantiating ERst classes for each restart file in input folders
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths with restart files. Main folder is in paths[0]; rest of entries, if any,
             are folders with simulator restart runs.
         """
@@ -91,7 +93,7 @@ class RestartReader(_RestartFiles):
     """
 
     def read(
-        self, keyword: str, rstep: int, act: Optional[List[int]] = None
+        self, keyword: str, rstep: int, act: list[int] | None = None
     ) -> NDArray[Any]:
         """
         Read restart file at report step and return array for active indices.
@@ -103,7 +105,7 @@ class RestartReader(_RestartFiles):
             inputed in RST-type mnemonics).
         rstep : int
             Report step.
-        act : List[int], optional
+        act : list[int] | None, optional
             Active indices for output array. If act=None, whole array is outputted.
 
         Returns
@@ -120,7 +122,7 @@ class RestartReader(_RestartFiles):
         # Raise error if report step does not exist in restart files
         raise ValueError(f"Report step {rstep} was not found in restart files!")
 
-    def available_keywords(self, rstep: int) -> List[str]:
+    def available_keywords(self, rstep: int) -> list[str]:
         """
         Available keyword at report step
 
@@ -131,7 +133,7 @@ class RestartReader(_RestartFiles):
 
         Returns
         -------
-        List[str]
+        list[str]
             List of available keywords
         """
         #  Loop over restart files to find info at correct report step
@@ -180,13 +182,13 @@ class Report(_RestartFiles):
     Class to organize and handle report dates/steps from restart files
     """
 
-    def __init__(self, paths: List[str]) -> None:
+    def __init__(self, paths: list[str]) -> None:
         """
         Initialize by organizing report steps and dates.
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths with restart files. Main folder is in paths[0]; rest of entries, if any,
             are folders with simulator restart runs.
         """
@@ -264,24 +266,24 @@ class Report(_RestartFiles):
         """
         return self.rdates[self.rsteps.index(rstep)]
 
-    def report_dates(self) -> List[dt.datetime]:
+    def report_dates(self) -> list[dt.datetime]:
         """
         Return report dates
 
         Returns
         -------
-        List[dt.datetime]
+        list[dt.datetime]
             List of report dates as datetime objects
         """
         return self.rdates
 
-    def report_steps(self) -> List[int]:
+    def report_steps(self) -> list[int]:
         """
         Return report steps
 
         Returns
         -------
-        List[int]
+        list[int]
             List of report steps
         """
         return self.rsteps
@@ -292,13 +294,13 @@ class Wells(_RestartFiles):
     Well information from restart files
     """
 
-    def __init__(self, paths: List[str]) -> None:
+    def __init__(self, paths: list[str]) -> None:
         """
         Initialize by extracting all well information from restart files.
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths with restart files. Main folder is in paths[0]; rest of entries, if any,
             are folders with simulator restart runs.
         """
@@ -377,7 +379,7 @@ class Wells(_RestartFiles):
                 # Increase internal well_info index counter
                 ind += 1
 
-    def __getitem__(self, rstep: int) -> Dict[str, List[Any]]:
+    def __getitem__(self, rstep: int) -> dict[str, list[Any]]:
         """
         Get well info at inputted report step
 

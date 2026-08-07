@@ -1,7 +1,9 @@
 """ Static parameters from INIT files """
+from __future__ import annotations
+
 from glob import glob
 import warnings
-from typing import List, Optional, Any
+from typing import Any
 
 from numpy.typing import NDArray
 from opm.util import EModel
@@ -41,7 +43,7 @@ class InitReader(_InitFile):
     Class for reading .INIT files. Initialization in parent class.
     """
 
-    def read(self, keyword: str, act: Optional[List[int]] = None) -> NDArray[Any]:
+    def read(self, keyword: str, act: list[int] | None = None) -> NDArray[Any]:
         """
         Read .INIT file and return array for active indices.
 
@@ -49,7 +51,7 @@ class InitReader(_InitFile):
         ----------
         keyword : str
             Keyword for static parameters in OPM
-        act : List[int], optional
+        act : list[int] | None, optional
             Active indices for output array. If act=None, whole array is outputted.
 
         Returns
@@ -61,13 +63,13 @@ class InitReader(_InitFile):
             self.init.get(keyword)[act] if act is not None else self.init.get(keyword)
         )
 
-    def available_keywords(self) -> List[str]:
+    def available_keywords(self) -> list[str]:
         """
         List of keywords that are available in .INIT file
 
         Returns
         -------
-        List[str]
+        list[str]
             Keywords available in .INIT file
         """
         return [

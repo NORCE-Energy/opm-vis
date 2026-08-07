@@ -2,7 +2,7 @@
 import warnings
 from abc import ABC, abstractmethod
 from glob import glob
-from typing import Any, List
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -249,13 +249,13 @@ class _GridSlice(ABC):
         # Use average of cell corners as approximation for cell center
         self.cent = np.mean(self.corn, axis=1)
 
-    def active_indices(self) -> List[int]:
+    def active_indices(self) -> list[int]:
         """
         Return active indices
 
         Returns
         -------
-        List[int]
+        list[int]
             List of active cells for slice
         """
         return self.act

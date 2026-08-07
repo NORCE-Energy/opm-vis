@@ -1,7 +1,8 @@
 """Module for generating slices for plotting"""
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from copy import copy
-from typing import List, Union
 
 from matplotlib.collections import PolyCollection
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -20,13 +21,13 @@ class _SlicePoly(_GridSlice, ABC):
     Do not instantiate!
     """
 
-    def __init__(self, paths: List[str], slice_dim: str, slice_ind: int) -> None:
+    def __init__(self, paths: list[str], slice_dim: str, slice_ind: int) -> None:
         """
         Initialize slice by instantiating all helper classes
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths to OPM files. First entry considered to be the main folder; rest of
             entries are folders with restart runs.
         slice_dim : str
@@ -44,7 +45,7 @@ class _SlicePoly(_GridSlice, ABC):
 
     def generate(
         self, keyword: str, rstep: int, **kwargs
-    ) -> Union[PolyCollection, Poly3DCollection]:
+    ) -> PolyCollection | Poly3DCollection:
         """
         Generate data from keyword at one report step
 
@@ -59,7 +60,7 @@ class _SlicePoly(_GridSlice, ABC):
 
         Returns
         -------
-        polyc : Union[PolyCollection, Poly3DCollection]
+        polyc : PolyCollection | Poly3DCollection
             Matplotlib polygons with data from keyword
         """
         # Get active indices
@@ -86,13 +87,13 @@ class _SlicePoly(_GridSlice, ABC):
         # Return polygon collection
         return polyc
 
-    def _filter_wells(self, paths: List[str]) -> None:
+    def _filter_wells(self, paths: list[str]) -> None:
         """
         Filter wells that are present on slice; rest will be empty lists
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             Path to restart files (passed to Wells initialization)
         """
         # Instantiate Wells class
@@ -133,7 +134,7 @@ class _SlicePoly(_GridSlice, ABC):
                 well[name] = copy(well_info)
 
     @abstractmethod
-    def generate_poly(self, **kwargs) -> Union[PolyCollection, Poly3DCollection]:
+    def generate_poly(self, **kwargs) -> PolyCollection | Poly3DCollection:
         """Dummy class. See child class generate_poly methods"""
 
     def cell_corners_min(self):
@@ -166,13 +167,13 @@ class SlicePoly3D(_SlicePoly, GridSlice3D):
     Generate slice for 3D plotting. See parent classes for some method docs.
     """
 
-    def __init__(self, paths: List[str], slice_dim: str, slice_ind: int) -> None:
+    def __init__(self, paths: list[str], slice_dim: str, slice_ind: int) -> None:
         """
         Initialize slice by instantiating all helper classes.
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths to OPM files. First entry considered to be the main folder; rest of
             entries are folders with restart runs.
         slice_dim : str
@@ -215,13 +216,13 @@ class SlicePoly2D(_SlicePoly, GridSlice2D):
     Subclass of SlicePoly for setting up a slice plot projected to 2D
     """
 
-    def __init__(self, paths: List[str], slice_dim: str, slice_ind: int) -> None:
+    def __init__(self, paths: list[str], slice_dim: str, slice_ind: int) -> None:
         """
         Initialize slice by instantiating all helper classes.
 
         Parameters
         ----------
-        paths : List[str]
+        paths : list[str]
             List of paths to OPM files. First entry considered to be the main folder; rest of
             entries are folders with restart runs.
         slice_dim : str
