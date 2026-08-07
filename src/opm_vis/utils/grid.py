@@ -15,6 +15,9 @@ _INDICES = {
     "k": [0, 2, 3, 1],
 }
 
+# Grid dimension axis (0=x/i, 1=y/j, 2=z/k) corresponding to each slice dimension
+_SLICE_AXIS = {"i": 0, "j": 1, "k": 2}
+
 # pylint: disable=unsubscriptable-object,too-many-instance-attributes
 # EGrid is a pybind class, so until stubs (.pyi files) are made, pylint unsubscriptable-object
 # errors will pop up.
@@ -69,6 +72,14 @@ class _GridSlice(ABC):
             )
         self.nx1 = self.egrid.dimension[self.slice_axis[0]]
         self.nx2 = self.egrid.dimension[self.slice_axis[1]]
+
+        # Check slice_ind is within grid bounds along the slice dimension
+        n_slice = self.egrid.dimension[_SLICE_AXIS[slice_dim]]
+        if not 0 <= slice_ind < n_slice:
+            raise ValueError(
+                f"slice_ind={slice_ind} is out of bounds for slice_dim='{slice_dim}'; "
+                f"grid has {n_slice} cells along this axis (valid range: 0-{n_slice - 1})"
+            )
 
         # Check (i, j, k) coord. system is aligned with (x, y, z) coord. system
         self.aligned_grid = self.is_aligned()
