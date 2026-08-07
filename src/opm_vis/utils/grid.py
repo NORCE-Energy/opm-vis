@@ -62,6 +62,10 @@ class _GridSlice(ABC):
             self.slice_axis = [0, 2]
         elif slice_dim == "k":
             self.slice_axis = [0, 1]
+        else:
+            raise TypeError(
+                f'{slice_dim} slice dimension is not valid! Choose "i", "j", or "k"'
+            )
         self.nx1 = self.egrid.dimension[self.slice_axis[0]]
         self.nx2 = self.egrid.dimension[self.slice_axis[1]]
 
@@ -165,12 +169,8 @@ class _GridSlice(ABC):
                     act_index = self.egrid.active_index(self.slice_ind, ind_1, ind_2)
                 elif self.slice_dim == "j":
                     act_index = self.egrid.active_index(ind_1, self.slice_ind, ind_2)
-                elif self.slice_dim == "k":
-                    act_index = self.egrid.active_index(ind_1, ind_2, self.slice_ind)
                 else:
-                    raise TypeError(
-                        f'{self.slice_dim} slice dimension is not valid! Choose "i", "j", or "k"'
-                    )
+                    act_index = self.egrid.active_index(ind_1, ind_2, self.slice_ind)
 
                 # Check if active index at (i,j,k) is an active cell, if so add to list
                 if act_index >= 0:
