@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import os
 import warnings
 from glob import glob
 from typing import Any, Iterator
@@ -58,8 +57,8 @@ class _RestartFiles:
             # Init. restart file list for current search path
             restart_files = []
 
-            unrst_files = glob(os.path.join(path, "*.UNRST"))
-            x_files = glob(os.path.join(path, "*.X*"))
+            unrst_files = glob(path + "*.UNRST")
+            x_files = glob(path + "*.X*")
 
             # Are there UNRST and X files in same folder? We load the UNRST file and issue warning
             if unrst_files and x_files:
