@@ -4,7 +4,9 @@ import shutil
 import numpy as np
 import pytest
 
-from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
+pytest.importorskip("pyvista")  # the pvplot backend is an optional extra
+
+from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh  # noqa: E402
 
 # The case1/data_dir fixtures come from conftest.py. SPE1CASE1 is a fully active,
 # standard-oriented 10x10x3 Cartesian box grid: it pins down the corner ordering and the

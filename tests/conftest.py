@@ -39,3 +39,36 @@ def case1() -> str:
     no NaN corner points and no faults.
     """
     return str(_DATA_DIR / "SPE1CASE1")
+
+
+@pytest.fixture(scope="session")
+def offscreen():
+    """
+    Force PyVista into off-screen rendering, skipping the test if it cannot render
+
+    Returns
+    -------
+    module
+        The pyvista module, already switched to off-screen mode
+
+    Notes
+    -----
+    VTK needs an OpenGL context, which a bare CI container does not have unless it runs under
+    xvfb or installs vtk-osmesa. Probing once with a tiny render and skipping keeps the
+    data-layer tests runnable everywhere instead of erroring out on import.
+    """
+    pyvista = pytest.importorskip("pyvista")
+    pyvista.OFF_SCREEN = True
+
+    try:
+        plotter = pyvista.Plotter(off_screen=True, window_size=(64, 48))
+        plotter.add_mesh(pyvista.Cube())
+        plotter.screenshot(return_img=True)
+        plotter.close()
+    # pylint: disable=broad-exception-caught
+    # VTK reports a missing GL context in several unrelated ways, none of them a subclass we
+    # can usefully name here.
+    except Exception as exc:  # pragma: no cover - depends on the render environment
+        pytest.skip(f"Off-screen VTK rendering is unavailable: {exc}")
+
+    return pyvista

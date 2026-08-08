@@ -16,3 +16,10 @@ except ImportError as exc:  # pragma: no cover - depends on the install environm
         "The opm_vis.pvplot backend requires PyVista, which is an optional dependency. "
         'Install it with: pip install "opm-vis[pyvista]"'
     ) from exc
+
+# Imported after the availability check above, since both of these import pyvista themselves
+from opm_vis.pvplot.data import CaseData  # noqa: E402
+from opm_vis.pvplot.mesh import GridMesh  # noqa: E402
+from opm_vis.pvplot.plotter import GridPlotter  # noqa: E402
+
+__all__ = ["CaseData", "GridMesh", "GridPlotter"]

@@ -1,8 +1,15 @@
 """ Unit tests for opm_vis.pvplot.labels """
 import pytest
 
-from opm_vis.pvplot.labels import axis_titles, plain_text, scalar_bar_title, unit
-from opm_vis.utils.units import _FIELD, _LAB, _METRIC, _PVT_M, Label
+pytest.importorskip("pyvista")  # importing opm_vis.pvplot at all needs it
+
+from opm_vis.pvplot.labels import (  # noqa: E402
+    axis_titles,
+    plain_text,
+    scalar_bar_title,
+    unit,
+)
+from opm_vis.utils.units import _FIELD, _LAB, _METRIC, _PVT_M, Label  # noqa: E402
 
 # Pure string handling, so no dataset and no rendering is needed here. The private unit tables
 # are imported to assert that no mathtext survives for any tabulated mnemonic, which keeps

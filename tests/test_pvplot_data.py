@@ -2,7 +2,9 @@
 import numpy as np
 import pytest
 
-from opm_vis.pvplot.data import CaseData
+pytest.importorskip("pyvista")  # importing opm_vis.pvplot at all needs it
+
+from opm_vis.pvplot.data import CaseData  # noqa: E402
 
 # The case1 fixture comes from conftest.py. SPE1CASE1 is a fully active 10x10x3 grid in field
 # units with 121 report steps. PRESSURE, RS, SGAS and SWAT appear in both its restart files
