@@ -1,6 +1,7 @@
 """ Interactive PyVista plotter for OPM simulation results """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ import pyvista as pv
 from numpy.typing import NDArray
 
 from opm_vis.pvplot.data import CaseData
-from opm_vis.pvplot.mesh import GridMesh
+from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
 from opm_vis.utils.units import Label
 
 
@@ -25,6 +26,7 @@ class _MeshActor:
 
     mesh: pv.DataSet
     actor: Any
+    carries_scalars: bool = True
 
 
 class GridPlotter:
@@ -84,8 +86,13 @@ class GridPlotter:
             self.plotter.set_scale(zscale=z_scale)
 
         # Internal variables. Every dataset added is tracked by name so its scalars can be
-        # updated later; see the _actors docstring.
+        # updated later; see the _MeshActor docstring.
         self._actors: dict[str, _MeshActor] = {}
+
+        # What is currently coloured, set by set_scalars
+        self.keyword = ""
+        self.rstep: int | None = None
+        self._colour_map: tuple[str, bool] | None = None
 
     def add_slice(
         self,
@@ -168,7 +175,111 @@ class GridPlotter:
         kwargs.setdefault("style", "wireframe")
         kwargs.setdefault("color", "grey")
 
-        return self._add(self.grid.mesh.extract_surface(), name, **kwargs)
+        # Excluded from set_scalars: a wireframe is context, and colouring it by the same
+        # field as the slices in front of it only adds noise.
+        return self._add(
+            self.grid.mesh.extract_surface(), name, carries_scalars=False, **kwargs
+        )
+
+    def set_scalars(
+        self,
+        keyword: str,
+        rstep: int,
+        *,
+        clim: tuple[float, float] | None = None,
+        cmap: str = "viridis",
+        log_scale: bool = False,
+    ) -> None:
+        """
+        Colour everything that has been added by one keyword at one report step
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword to colour by
+        rstep : int
+            Report step
+        clim : tuple[float, float] | None, optional
+            Colour limits, by default None, which takes the range of this report step's data.
+            Pass global_clim(...) to keep the colours comparable across report steps.
+        cmap : str, optional
+            Matplotlib colour map name, by default "viridis"
+        log_scale : bool, optional
+            Map colours logarithmically, by default False. Useful for permeability.
+
+        Notes
+        -----
+        Values are written into the datasets already on screen and the scene is re-rendered.
+        Nothing is rebuilt or re-added, which is what makes stepping through report steps
+        cheap; opm_vis.plot instead creates a fresh artist per frame and never clears the old
+        ones.
+
+        Each dataset is indexed through its own ACTIVE_INDEX array, so slices, the full grid
+        and thresholded subsets can all be coloured from one read of the file.
+        """
+        targets = [entry for entry in self._actors.values() if entry.carries_scalars]
+        if not targets:
+            raise RuntimeError(
+                "Nothing to colour! Call add_slice or add_grid before set_scalars."
+            )
+
+        data = self.case.read(keyword, rstep)
+        scalar_range = (
+            clim if clim is not None else self.case.value_range(keyword, [rstep])
+        )
+
+        for entry in targets:
+            entry.mesh.cell_data[keyword] = data[entry.mesh.cell_data[ACTIVE_INDEX]]
+            entry.mesh.set_active_scalars(keyword)
+
+            mapper = entry.actor.mapper
+
+            # Setting the dataset's active scalars is not enough: the mapper has its own
+            # array selection, and without pointing it at the array by name it keeps
+            # colouring by whatever it was bound to when the mesh was added. Every array
+            # pvplot attaches is cell data, hence the cell field data scalar mode.
+            mapper.SetScalarModeToUseCellFieldData()
+            mapper.SelectColorArray(keyword)
+            mapper.scalar_visibility = True
+            mapper.scalar_range = scalar_range
+
+            # Rebuilding the colour map is wasted work when only the report step changed,
+            # which is the common case while animating
+            if (cmap, log_scale) != self._colour_map:
+                mapper.lookup_table.cmap = cmap
+                mapper.lookup_table.log_scale = log_scale
+
+        # Record what is currently shown, for the scalar bar and title
+        self.keyword = keyword
+        self.rstep = rstep
+        self._colour_map = (cmap, log_scale)
+
+        # Assigning cell data marks the dataset modified, but only an explicit render puts it
+        # on screen: screenshot() on its own reuses the previous frame buffer.
+        self.plotter.render()
+
+    def global_clim(
+        self, keyword: str, rsteps: Sequence[int] | None = None
+    ) -> tuple[float, float]:
+        """
+        Colour limits covering a keyword's full range over several report steps
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword
+        rsteps : Sequence[int] | None, optional
+            Report steps to cover, by default None, which uses every report step in the case
+
+        Returns
+        -------
+        tuple[float, float]
+            (minimum, maximum) to pass as set_scalars' clim
+        """
+        if rsteps is None:
+            rsteps = self.case.report.report_steps()
+
+        return self.case.value_range(keyword, rsteps)
 
     def actor_names(self) -> list[str]:
         """
@@ -216,7 +327,9 @@ class GridPlotter:
         """Close the render window and release its resources"""
         self.plotter.close()
 
-    def _add(self, mesh: pv.DataSet, name: str, **kwargs) -> str:
+    def _add(
+        self, mesh: pv.DataSet, name: str, *, carries_scalars: bool = True, **kwargs
+    ) -> str:
         """
         Add a dataset to the render window and register it
 
@@ -226,6 +339,8 @@ class GridPlotter:
             Dataset to draw
         name : str
             Name to register it under
+        carries_scalars : bool, optional
+            Whether set_scalars should colour this dataset, by default True
         kwargs : optional
             Optional arguments passed to pyvista.Plotter.add_mesh
 
@@ -240,7 +355,9 @@ class GridPlotter:
             )
 
         actor = self.plotter.add_mesh(mesh, name=name, **kwargs)
-        self._actors[name] = _MeshActor(mesh=mesh, actor=actor)
+        self._actors[name] = _MeshActor(
+            mesh=mesh, actor=actor, carries_scalars=carries_scalars
+        )
 
         return name
 
