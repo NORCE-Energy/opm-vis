@@ -1,16 +1,14 @@
 """ Unit tests for opm_vis.utils.restart, backed by the SPE1CASE1 UNRST test dataset """
 import datetime as dt
 import shutil
-from pathlib import Path
 
 import numpy as np
 import pytest
 
 from opm_vis.utils.restart import Report, RestartReader, Wells
 
-DATA_DIR = Path(__file__).parent / "data"
-CASE = str(DATA_DIR / "SPE1CASE1")  # "path" prefix, as _RestartFiles's glob() expects
-
+# The case1/data_dir fixtures come from conftest.py.
+#
 # SPE1CASE1 has 121 report steps (0-120), two wells (PROD, INJ) that stay open at
 # fixed locations for the whole run, and no report step besides 0 lacks well data -
 # so the "well data present but not at rstep 0" branch of Wells is exercised by the
@@ -19,18 +17,18 @@ CASE = str(DATA_DIR / "SPE1CASE1")  # "path" prefix, as _RestartFiles's glob() e
 
 
 @pytest.fixture(scope="module")
-def reader():
-    return RestartReader([CASE])
+def reader(case1):
+    return RestartReader([case1])
 
 
 @pytest.fixture(scope="module")
-def report():
-    return Report([CASE])
+def report(case1):
+    return Report([case1])
 
 
 @pytest.fixture(scope="module")
-def wells():
-    return Wells([CASE])
+def wells(case1):
+    return Wells([case1])
 
 
 # ---------------------------------------------------------------------------
@@ -44,17 +42,17 @@ def test_no_restart_files_found_warns_and_skips(tmp_path):
     assert rr.rst == []
 
 
-def test_multiple_unrst_files_warns_and_loads_first(tmp_path):
-    shutil.copy(DATA_DIR / "SPE1CASE1.UNRST", tmp_path / "CASE1.UNRST")
-    shutil.copy(DATA_DIR / "SPE1CASE1.UNRST", tmp_path / "CASE2.UNRST")
+def test_multiple_unrst_files_warns_and_loads_first(tmp_path, data_dir):
+    shutil.copy(data_dir / "SPE1CASE1.UNRST", tmp_path / "CASE1.UNRST")
+    shutil.copy(data_dir / "SPE1CASE1.UNRST", tmp_path / "CASE2.UNRST")
 
     with pytest.warns(UserWarning, match="Multiple .UNRST files"):
         rr = RestartReader([str(tmp_path / "CASE")])
     assert len(rr.rst) == 1
 
 
-def test_unrst_and_x_files_together_warns_and_loads_unrst(tmp_path):
-    shutil.copy(DATA_DIR / "SPE1CASE1.UNRST", tmp_path / "CASE.UNRST")
+def test_unrst_and_x_files_together_warns_and_loads_unrst(tmp_path, data_dir):
+    shutil.copy(data_dir / "SPE1CASE1.UNRST", tmp_path / "CASE.UNRST")
     (tmp_path / "CASE.X0001").touch()
 
     with pytest.warns(UserWarning, match="There are .UNRST and .X files"):
