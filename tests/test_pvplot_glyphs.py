@@ -283,3 +283,51 @@ def test_global_glyph_factor_can_match_a_slice(plotter):
     name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, slice_dim="k", slice_ind=0)
 
     assert factor == pytest.approx(plotter._glyphs[name].factor)
+
+
+# ---------------------------------------------------------------------------
+# animate(vectors=True)
+# ---------------------------------------------------------------------------
+
+
+def test_animate_can_follow_vectors(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+    name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 0)
+    before = plotter._actors[name].mesh
+
+    plotter.animate("PRESSURE", tmp_path / "a.gif", rsteps=[0, 15], vectors=True)
+
+    target = tmp_path / "a.gif"
+    assert target.exists() and target.stat().st_size > 0
+    # Same actor throughout, but rebuilt to the last frame's vectors
+    assert plotter.actor_names() == ["k0", name]
+    assert plotter._actors[name].mesh is not before
+
+
+def test_animate_without_vectors_leaves_glyphs_untouched(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+    name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 0)
+    before = plotter._actors[name].mesh
+
+    plotter.animate("PRESSURE", tmp_path / "a.gif", rsteps=[0, 15])
+
+    assert plotter._actors[name].mesh is before
+
+
+def test_animate_vectors_keeps_the_scale_factor_fixed(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+    name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 0)
+    factor_before = plotter._glyphs[name].factor
+
+    plotter.animate("PRESSURE", tmp_path / "a.gif", rsteps=[0, 15], vectors=True)
+
+    # Recomputing the factor per frame would make the same physical displacement draw at a
+    # different size depending on which frame is showing
+    assert plotter._glyphs[name].factor == factor_before
+
+
+def test_animate_vectors_without_add_glyphs_raises(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+
+    with pytest.raises(RuntimeError, match="Nothing to update! Call add_glyphs"):
+        plotter.animate("PRESSURE", tmp_path / "a.gif", rsteps=[0, 15], vectors=True)

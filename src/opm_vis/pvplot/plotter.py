@@ -988,6 +988,7 @@ class GridPlotter:
         fps: int = 3,
         clim: tuple[float, float] | None = None,
         wells: bool = False,
+        vectors: bool = False,
         title: bool = True,
         **kwargs,
     ) -> None:
@@ -1010,6 +1011,10 @@ class GridPlotter:
         wells : bool, optional
             Redraw wells each frame, by default False. Worth turning on when wells open or shut
             during the period being animated.
+        vectors : bool, optional
+            Update every glyph actor each frame, by default False. Requires add_glyphs to have
+            been called first; its scale factor is left untouched, so pass factor or
+            global_glyph_factor(...) there if arrow length should stay comparable throughout.
         title : bool, optional
             Title each frame with its report date, by default True
         kwargs : optional
@@ -1045,6 +1050,8 @@ class GridPlotter:
                 self.set_scalars(keyword, rstep, clim=clim, **kwargs)
                 if wells:
                     self.add_wells(rstep)
+                if vectors:
+                    self.set_vectors(rstep)
                 if title:
                     self.set_title()
                 self.plotter.write_frame()
