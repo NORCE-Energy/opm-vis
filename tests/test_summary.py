@@ -1,17 +1,13 @@
 """ Unit tests for opm_vis.utils.summary, backed by the SPE1CASE1/SPE1CASE2 SMSPEC test datasets """
 import datetime as dt
 import shutil
-from pathlib import Path
 
 import numpy as np
 import pytest
 
 from opm_vis.utils.summary import SummaryReader
 
-DATA_DIR = Path(__file__).parent / "data"
-CASE1 = str(DATA_DIR / "SPE1CASE1")  # "path" prefix, as SummaryReader's glob() expects
-
-# SPE1CASE2_RESTART_60 is a restart of SPE1CASE2 from report step 60: it reproduces
+# The case1/data_dir fixtures come from conftest.py. SPE1CASE2_RESTART_60 is a restart of SPE1CASE2 from report step 60: it reproduces
 # SPE1CASE2's last 60 timesteps bit-for-bit. Together they exercise the restart
 # stitching in _time_and_indices(). Both files share the "SPE1CASE2" filename prefix
 # in tests/data, so glob("...SPE1CASE2*.SMSPEC") would ambiguously match both -
@@ -20,12 +16,12 @@ CASE1 = str(DATA_DIR / "SPE1CASE1")  # "path" prefix, as SummaryReader's glob() 
 
 
 @pytest.fixture(scope="module")
-def reader():
-    return SummaryReader([CASE1])
+def reader(case1):
+    return SummaryReader([case1])
 
 
 @pytest.fixture(scope="module")
-def restart_paths(tmp_path_factory):
+def restart_paths(tmp_path_factory, data_dir):
     base = tmp_path_factory.mktemp("restart_data")
     main_dir = base / "main"
     restart_dir = base / "restart"
@@ -33,8 +29,8 @@ def restart_paths(tmp_path_factory):
     restart_dir.mkdir()
 
     for ext in (".SMSPEC", ".UNSMRY"):
-        shutil.copy(DATA_DIR / f"SPE1CASE2{ext}", main_dir / f"CASE{ext}")
-        shutil.copy(DATA_DIR / f"SPE1CASE2_RESTART_60{ext}", restart_dir / f"CASE{ext}")
+        shutil.copy(data_dir / f"SPE1CASE2{ext}", main_dir / f"CASE{ext}")
+        shutil.copy(data_dir / f"SPE1CASE2_RESTART_60{ext}", restart_dir / f"CASE{ext}")
 
     return [str(main_dir / "CASE"), str(restart_dir / "CASE")]
 
@@ -45,14 +41,14 @@ def restart_reader(restart_paths):
 
 
 @pytest.fixture(scope="module")
-def full_run_reader(tmp_path_factory):
+def full_run_reader(tmp_path_factory, data_dir):
     # SPE1CASE2 alone already spans the full 123 timesteps that the restart run
     # re-simulates the tail of, so it's the ground truth the stitched result must match.
     # Isolated in its own directory for the same reason as restart_paths above: the
     # "SPE1CASE2" prefix would otherwise also match SPE1CASE2_RESTART_60's files.
     main_dir = tmp_path_factory.mktemp("full_run_data")
     for ext in (".SMSPEC", ".UNSMRY"):
-        shutil.copy(DATA_DIR / f"SPE1CASE2{ext}", main_dir / f"CASE{ext}")
+        shutil.copy(data_dir / f"SPE1CASE2{ext}", main_dir / f"CASE{ext}")
 
     return SummaryReader([str(main_dir / "CASE")])
 
@@ -62,17 +58,17 @@ def full_run_reader(tmp_path_factory):
 # ---------------------------------------------------------------------------
 
 
-def test_no_smspec_file_found_warns_and_skips_that_path(tmp_path):
+def test_no_smspec_file_found_warns_and_skips_that_path(tmp_path, case1):
     with pytest.warns(UserWarning, match="No .SMSPEC found"):
-        sr = SummaryReader([CASE1, str(tmp_path / "MISSING")])
+        sr = SummaryReader([case1, str(tmp_path / "MISSING")])
 
     assert len(sr.smry) == 1
 
 
-def test_multiple_smspec_files_warns_and_loads_first(tmp_path):
+def test_multiple_smspec_files_warns_and_loads_first(tmp_path, data_dir):
     for name in ("CASE1", "CASE2"):
-        shutil.copy(DATA_DIR / "SPE1CASE1.SMSPEC", tmp_path / f"{name}.SMSPEC")
-        shutil.copy(DATA_DIR / "SPE1CASE1.UNSMRY", tmp_path / f"{name}.UNSMRY")
+        shutil.copy(data_dir / "SPE1CASE1.SMSPEC", tmp_path / f"{name}.SMSPEC")
+        shutil.copy(data_dir / "SPE1CASE1.UNSMRY", tmp_path / f"{name}.UNSMRY")
 
     with pytest.warns(UserWarning, match="Multiple .SMSPEC files"):
         sr = SummaryReader([str(tmp_path / "CASE")])

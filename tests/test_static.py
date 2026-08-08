@@ -1,19 +1,17 @@
 """ Unit tests for opm_vis.utils.static, backed by the SPE1CASE1 INIT test dataset """
 import shutil
-from pathlib import Path
 
 import numpy as np
 import pytest
 
 from opm_vis.utils.static import InitReader
 
-DATA_DIR = Path(__file__).parent / "data"
-CASE = str(DATA_DIR / "SPE1CASE1")  # "path" prefix, as _InitFile's glob() expects
+# The case1/data_dir fixtures come from conftest.py.
 
 
 @pytest.fixture(scope="module")
-def reader():
-    return InitReader(CASE)
+def reader(case1):
+    return InitReader(case1)
 
 
 # ---------------------------------------------------------------------------
@@ -27,9 +25,9 @@ def test_no_init_file_found_warns_and_leaves_init_unset(tmp_path):
     assert ir.init is None
 
 
-def test_multiple_init_files_warns_and_loads_first(tmp_path):
-    shutil.copy(DATA_DIR / "SPE1CASE1.INIT", tmp_path / "CASE1.INIT")
-    shutil.copy(DATA_DIR / "SPE1CASE1.INIT", tmp_path / "CASE2.INIT")
+def test_multiple_init_files_warns_and_loads_first(tmp_path, data_dir):
+    shutil.copy(data_dir / "SPE1CASE1.INIT", tmp_path / "CASE1.INIT")
+    shutil.copy(data_dir / "SPE1CASE1.INIT", tmp_path / "CASE2.INIT")
 
     with pytest.warns(UserWarning, match="Multiple .INIT files"):
         ir = InitReader(str(tmp_path / "CASE"))

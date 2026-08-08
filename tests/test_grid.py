@@ -1,6 +1,5 @@
 """ Unit tests for opm_vis.utils.grid, backed by the SPE1CASE1 EGRID test dataset """
 import shutil
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -8,18 +7,16 @@ from opm.io.ecl import EGrid
 
 from opm_vis.utils.grid import GridSlice2D, GridSlice3D
 
-DATA_DIR = Path(__file__).parent / "data"
-CASE = str(DATA_DIR / "SPE1CASE1")  # "path" prefix, as grid.py's glob() expects
-
-# SPE1CASE1 is a fully active, standard-oriented 10x10x3 Cartesian box grid (no
-# inactive cells, no NaNs). A handful of edge cases below - each covering a specific
-# bug fix - can't be produced from that real dataset, so they use small synthetic
-# stand-ins exposing just the interface the method under test needs.
+# The case1/data_dir fixtures come from conftest.py. SPE1CASE1 is a fully active,
+# standard-oriented 10x10x3 Cartesian box grid (no inactive cells, no NaNs). A handful of
+# edge cases below - each covering a specific bug fix - can't be produced from that real
+# dataset, so they use small synthetic stand-ins exposing just the interface the method
+# under test needs.
 
 
 @pytest.fixture(scope="module")
-def real_egrid():
-    return EGrid(str(DATA_DIR / "SPE1CASE1.EGRID"))
+def real_egrid(data_dir):
+    return EGrid(str(data_dir / "SPE1CASE1.EGRID"))
 
 
 def _bypass_init(cls, egrid, **attrs):
@@ -36,14 +33,14 @@ def _bypass_init(cls, egrid, **attrs):
 # ---------------------------------------------------------------------------
 
 
-def test_invalid_slice_dim_raises_type_error():
+def test_invalid_slice_dim_raises_type_error(case1):
     with pytest.raises(TypeError, match="slice dimension is not valid"):
-        GridSlice3D(CASE, "x", 0)
+        GridSlice3D(case1, "x", 0)
 
 
-def test_slice_ind_out_of_bounds_raises_value_error():
+def test_slice_ind_out_of_bounds_raises_value_error(case1):
     with pytest.raises(ValueError, match="out of bounds"):
-        GridSlice3D(CASE, "k", 3)  # SPE1CASE1 has 3 layers: valid range is 0-2
+        GridSlice3D(case1, "k", 3)  # SPE1CASE1 has 3 layers: valid range is 0-2
 
 
 def test_missing_egrid_file_raises_file_not_found(tmp_path):
@@ -51,9 +48,9 @@ def test_missing_egrid_file_raises_file_not_found(tmp_path):
         GridSlice3D(str(tmp_path / "CASE"), "k", 0)
 
 
-def test_multiple_egrid_files_warns_and_still_validates(tmp_path):
-    shutil.copy(DATA_DIR / "SPE1CASE1.EGRID", tmp_path / "CASE1.EGRID")
-    shutil.copy(DATA_DIR / "SPE1CASE1.EGRID", tmp_path / "CASE2.EGRID")
+def test_multiple_egrid_files_warns_and_still_validates(tmp_path, data_dir):
+    shutil.copy(data_dir / "SPE1CASE1.EGRID", tmp_path / "CASE1.EGRID")
+    shutil.copy(data_dir / "SPE1CASE1.EGRID", tmp_path / "CASE2.EGRID")
 
     with pytest.warns(UserWarning, match="Multiple .EGRID files"):
         with pytest.raises(TypeError):
@@ -317,8 +314,8 @@ def test_grid_slice_2d_drops_slice_axis():
 # ---------------------------------------------------------------------------
 
 
-def test_grid_slice_3d_full_construction():
-    slc = GridSlice3D(CASE, "k", 1)
+def test_grid_slice_3d_full_construction(case1):
+    slc = GridSlice3D(case1, "k", 1)
 
     assert len(slc.active_indices()) == 100  # 10x10 plane, all active
     assert slc.cell_corners().shape == (100, 4, 3)
@@ -327,8 +324,8 @@ def test_grid_slice_3d_full_construction():
     assert slc.aligned_grid == False  # noqa: E712 (np.bool_, not identical to bool)
 
 
-def test_grid_slice_2d_full_construction():
-    slc = GridSlice2D(CASE, "k", 1)
+def test_grid_slice_2d_full_construction(case1):
+    slc = GridSlice2D(case1, "k", 1)
 
     assert slc.cell_corners().shape == (100, 4, 2)
     assert slc.cell_centers().shape == (100, 2)
