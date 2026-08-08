@@ -17,10 +17,11 @@ def grid_mesh(case1):
     return GridMesh(case1)
 
 
-def _bypass_init(egrid):
+def _bypass_init(egrid, weld=True):
     """Create a GridMesh around a synthetic EGrid without touching the filesystem."""
     obj = object.__new__(GridMesh)
     obj.egrid = egrid
+    obj.weld = weld
     obj._mesh = None
     return obj
 
@@ -47,6 +48,27 @@ class _BoxEGrid:
         xs = [float(i + (c & 1)) for c in range(8)]
         ys = [float(j + ((c >> 1) & 1)) for c in range(8)]
         zs = [float(self._z_sign * (k + ((c >> 2) & 1))) for c in range(8)]
+        return xs, ys, zs
+
+
+class _FaultedPairEGrid:
+    """Two unit cells side by side along i, with the second displaced down by `throw`. A
+    zero throw leaves them face-to-face; any other value stands in for a fault."""
+
+    dimension = (2, 1, 1)
+    active_cells = 2
+
+    def __init__(self, throw):
+        self._throw = throw
+
+    def ijk_from_active_index(self, act):
+        return [act, 0, 0]
+
+    def xyz_from_active_index(self, act):
+        offset = self._throw if act == 1 else 0.0
+        xs = [float(act + (c & 1)) for c in range(8)]
+        ys = [float((c >> 1) & 1) for c in range(8)]
+        zs = [float(((c >> 2) & 1) + offset) for c in range(8)]
         return xs, ys, zs
 
 
@@ -122,6 +144,40 @@ def test_points_are_double_precision(grid_mesh):
 
 def test_dimension_reports_grid_size(grid_mesh):
     assert grid_mesh.dimension == (10, 10, 3)
+
+
+# ---------------------------------------------------------------------------
+# Point welding
+# ---------------------------------------------------------------------------
+
+
+def test_welding_merges_shared_corner_points(grid_mesh):
+    # A 10x10x3 Cartesian box has 11x11 pillars carrying 4 distinct depths each
+    assert grid_mesh.mesh.n_points == 11 * 11 * 4
+
+
+def test_welding_leaves_cells_and_geometry_untouched(case1):
+    welded = GridMesh(case1).mesh
+    unwelded = GridMesh(case1, weld=False).mesh
+
+    assert unwelded.n_points == 8 * unwelded.n_cells  # one copy per cell corner
+    assert welded.n_points < unwelded.n_points
+    assert welded.n_cells == unwelded.n_cells
+    np.testing.assert_allclose(welded.volume, unwelded.volume, rtol=1e-9)
+    np.testing.assert_array_equal(
+        welded.cell_data[ACTIVE_INDEX], unwelded.cell_data[ACTIVE_INDEX]
+    )
+
+
+def test_welding_keeps_faulted_cells_apart():
+    # Two cells side by side in i. Without a throw they share a face and its 4 corners get
+    # merged; with a throw nothing coincides, so all 16 points must survive. This is what
+    # the zero tolerance protects - a fault must not be welded shut.
+    juxtaposed = _bypass_init(_FaultedPairEGrid(throw=0.0))
+    faulted = _bypass_init(_FaultedPairEGrid(throw=0.5))
+
+    assert juxtaposed.mesh.n_points == 12  # 16 corners, 4 of them shared
+    assert faulted.mesh.n_points == 16
 
 
 # ---------------------------------------------------------------------------

@@ -40,7 +40,7 @@ class GridMesh:
     cell array.
     """
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, *, weld: bool = True) -> None:
         """
         Initialize EGrid class from input path
 
@@ -48,6 +48,9 @@ class GridMesh:
         ----------
         path : str
             Path to .EGRID file. This is a filename prefix, not a directory.
+        weld : bool, optional
+            Merge coincident corner points shared between neighbouring cells, by default
+            True. See the weld_points note in _build.
         """
         # Instantiate EGrid class
         egrid_files = glob(path + "*.EGRID")
@@ -59,6 +62,9 @@ class GridMesh:
             self.egrid = EGrid(egrid_files[0])
         else:
             raise FileNotFoundError(f"No .EGRID file found in {path}!")
+
+        # Internalize input
+        self.weld = weld
 
         # Internal variables. The mesh is built on first access, see the mesh property.
         self._mesh: pv.UnstructuredGrid | None = None
@@ -159,6 +165,13 @@ class GridMesh:
         -------
         pv.UnstructuredGrid
             Mesh with the ACTIVE_INDEX, "I", "J" and "K" cell arrays attached
+
+        Notes
+        -----
+        Welding merges the coincident corner points that neighbouring cells share, cutting
+        the point count by roughly a factor of eight. The tolerance is exactly zero on
+        purpose: corner-point grids are genuinely discontinuous across faults, and only
+        bit-identical coordinates should ever be merged. Cell order is unaffected.
         """
         corners, ijk, active_index = self._read_corners()
 
@@ -168,10 +181,16 @@ class GridMesh:
 
         # Cell arrays. ACTIVE_INDEX is what property data is looked up through; I/J/K make
         # slicing and thresholding on grid indices possible, and both survive extraction.
+        # Attached before welding so they follow the cells regardless of what clean() does.
         mesh.cell_data[ACTIVE_INDEX] = active_index
         mesh.cell_data["I"] = ijk[:, 0]
         mesh.cell_data["J"] = ijk[:, 1]
         mesh.cell_data["K"] = ijk[:, 2]
+
+        if self.weld:
+            mesh = mesh.clean(
+                tolerance=0.0, produce_merge_map=False, average_point_data=False
+            )
 
         return mesh
 
