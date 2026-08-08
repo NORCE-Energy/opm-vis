@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 import warnings
+from collections.abc import Sequence
 from functools import partial
 
 import matplotlib.pyplot as plt
@@ -262,7 +263,14 @@ class _SlicePolyCollection:
         for polyc in polyc_grid:
             self.add_collection(polyc)
 
-    def gif(self, keyword: str, rsteps: list[int] | None = None, **kwargs) -> None:
+    def gif(
+        self,
+        keyword: str,
+        rsteps: list[int] | None = None,
+        *,
+        rstep_list: Sequence[int] | None = None,
+        **kwargs,
+    ) -> None:
         """
         Generate gif
 
@@ -271,7 +279,13 @@ class _SlicePolyCollection:
         keyword : str
             OPM keyword to plot
         rsteps : list[int] | None, optional
-            Subset of all report steps. If None, all report steps are included in gif.
+            [start, end] inclusive range of report steps. If None and rstep_list is also None,
+            every report step is included in the gif.
+        rstep_list : Sequence[int] | None, optional
+            Explicit report steps to animate, in order, by default None. Takes priority over
+            rsteps: use this instead of rsteps when the steps to include are not a contiguous
+            range, e.g. every 5th report step, since rsteps assumes every integer between start
+            and end is a real report step.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -280,7 +294,10 @@ class _SlicePolyCollection:
         Use show or save_gif to show gif on screen or save to file.
         """
         # Which report steps and dates to include in gif
-        if rsteps is None:
+        if rstep_list is not None:
+            rsteps_gif = list(rstep_list)
+            self.rdates = [self.report.report_date(rstep) for rstep in rsteps_gif]
+        elif rsteps is None:
             # All report steps
             rsteps_gif = self.report.report_steps()
             self.rdates = self.report.report_dates()
