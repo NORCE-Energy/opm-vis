@@ -147,6 +147,54 @@ def test_dimension_reports_grid_size(grid_mesh):
 
 
 # ---------------------------------------------------------------------------
+# slice_mask / extract_slice
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "slice_dim, slice_ind, expected",
+    [
+        ("i", 4, 10 * 3),  # a 10x10x3 grid has ny*nz cells on an i-slice
+        ("j", 5, 10 * 3),  # nx*nz on a j-slice
+        ("k", 1, 10 * 10),  # nx*ny on a k-slice
+    ],
+)
+def test_slice_has_expected_cell_count(grid_mesh, slice_dim, slice_ind, expected):
+    assert grid_mesh.slice_mask(slice_dim, slice_ind).sum() == expected
+    assert grid_mesh.extract_slice(slice_dim, slice_ind).n_cells == expected
+
+
+def test_slice_keeps_active_index_of_its_cells(grid_mesh):
+    slc = grid_mesh.extract_slice("k", 1)
+
+    expected = [
+        grid_mesh.egrid.active_index(i, j, 1) for i in range(10) for j in range(10)
+    ]
+    np.testing.assert_array_equal(sorted(slc.cell_data[ACTIVE_INDEX]), sorted(expected))
+
+
+def test_slices_partition_the_grid(grid_mesh):
+    total = sum(grid_mesh.slice_mask("k", ind).sum() for ind in range(3))
+
+    assert total == grid_mesh.mesh.n_cells
+
+
+def test_invalid_slice_dim_raises_type_error(grid_mesh):
+    with pytest.raises(TypeError, match="slice dimension is not valid"):
+        grid_mesh.slice_mask("x", 0)
+
+
+def test_slice_ind_out_of_bounds_raises_value_error(grid_mesh):
+    with pytest.raises(ValueError, match="out of bounds"):
+        grid_mesh.slice_mask("k", 3)  # SPE1CASE1 has 3 layers: valid range is 0-2
+
+
+def test_negative_slice_ind_raises_value_error(grid_mesh):
+    with pytest.raises(ValueError, match="out of bounds"):
+        grid_mesh.slice_mask("k", -1)
+
+
+# ---------------------------------------------------------------------------
 # Point welding
 # ---------------------------------------------------------------------------
 

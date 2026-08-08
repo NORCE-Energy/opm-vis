@@ -26,6 +26,9 @@ _VTK_HEX_ORDER_MIRRORED = _VTK_HEX_ORDER[[4, 5, 6, 7, 0, 1, 2, 3]]
 # read from a restart or INIT file.
 ACTIVE_INDEX = "ACTIVE_INDEX"
 
+# Grid dimension axis (0=x/i, 1=y/j, 2=z/k) corresponding to each slice dimension
+_SLICE_AXIS = {"i": 0, "j": 1, "k": 2}
+
 
 # pylint: disable=unsubscriptable-object
 # EGrid is a pybind class, so until stubs (.pyi files) are made, pylint
@@ -114,6 +117,81 @@ class GridMesh:
         return np.column_stack(
             [self.mesh.cell_data[name] for name in ("I", "J", "K")]
         )
+
+    def slice_mask(self, slice_dim: str, slice_ind: int) -> NDArray[np.bool_]:
+        """
+        Boolean mask selecting the mesh cells that lie on one i-, j- or k-slice
+
+        Parameters
+        ----------
+        slice_dim : str
+            'i', 'j', or 'k' slice of the 3D grid
+        slice_ind : int
+            Index of slice
+
+        Returns
+        -------
+        NDArray[np.bool_]
+            Mask with shape (n_cells,)
+        """
+        axis = self._validate_slice(slice_dim, slice_ind)
+
+        return self.ijk[:, axis] == slice_ind
+
+    def extract_slice(self, slice_dim: str, slice_ind: int) -> pv.UnstructuredGrid:
+        """
+        Extract one i-, j- or k-slice as its own mesh
+
+        Parameters
+        ----------
+        slice_dim : str
+            'i', 'j', or 'k' slice of the 3D grid
+        slice_ind : int
+            Index of slice
+
+        Returns
+        -------
+        pv.UnstructuredGrid
+            The cells of the slice, still as hexahedra
+
+        Notes
+        -----
+        Cell data comes along, so the extracted mesh keeps its own ACTIVE_INDEX array and can
+        be given property values without consulting the parent mesh.
+        """
+        return self.mesh.extract_cells(self.slice_mask(slice_dim, slice_ind))
+
+    def _validate_slice(self, slice_dim: str, slice_ind: int) -> int:
+        """
+        Check a slice dimension and index against the grid
+
+        Parameters
+        ----------
+        slice_dim : str
+            'i', 'j', or 'k' slice of the 3D grid
+        slice_ind : int
+            Index of slice
+
+        Returns
+        -------
+        int
+            Grid dimension axis the slice dimension refers to
+        """
+        if slice_dim not in _SLICE_AXIS:
+            raise TypeError(
+                f'{slice_dim} slice dimension is not valid! Choose "i", "j", or "k"'
+            )
+
+        # Check slice_ind is within grid bounds along the slice dimension
+        axis = _SLICE_AXIS[slice_dim]
+        n_slice = self.egrid.dimension[axis]
+        if not 0 <= slice_ind < n_slice:
+            raise ValueError(
+                f"slice_ind={slice_ind} is out of bounds for slice_dim='{slice_dim}'; "
+                f"grid has {n_slice} cells along this axis (valid range: 0-{n_slice - 1})"
+            )
+
+        return axis
 
     def _read_corners(
         self,
