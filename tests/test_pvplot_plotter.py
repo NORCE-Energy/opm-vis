@@ -241,6 +241,91 @@ def test_global_clim_covers_every_report_step_by_default(plotter):
 
 
 # ---------------------------------------------------------------------------
+# add_threshold / add_clip
+# ---------------------------------------------------------------------------
+
+
+def test_add_threshold_keeps_only_the_cells_that_pass(plotter):
+    name = plotter.add_threshold("SGAS", 120, 0.4)
+
+    subset = plotter._actors[name].mesh
+    expected = (plotter.case.read("SGAS", 120) >= 0.4).sum()
+    assert name == "SGAS-threshold"
+    assert subset.n_cells == expected
+    assert subset.n_cells < 300
+
+
+def test_add_threshold_can_be_inverted(plotter):
+    kept = plotter.add_threshold("SGAS", 120, 0.4, name="kept")
+    dropped = plotter.add_threshold("SGAS", 120, 0.4, invert=True, name="dropped")
+
+    total = plotter._actors[kept].mesh.n_cells + plotter._actors[dropped].mesh.n_cells
+    assert total == 300
+
+
+def test_add_threshold_accepts_a_range(plotter):
+    name = plotter.add_threshold("SGAS", 120, (0.4, 0.5))
+
+    values = plotter.case.read("SGAS", 120)
+    expected = ((values >= 0.4) & (values <= 0.5)).sum()
+    assert plotter._actors[name].mesh.n_cells == expected
+
+
+def test_thresholded_subset_can_still_be_recoloured(plotter):
+    name = plotter.add_threshold("SGAS", 120, 0.4)
+
+    plotter.set_scalars("PRESSURE", 60)
+
+    # The threshold fixes which cells are shown, not what they show
+    subset = plotter._actors[name].mesh
+    np.testing.assert_allclose(
+        subset.cell_data["PRESSURE"],
+        plotter.case.read("PRESSURE", 60)[subset.cell_data["ACTIVE_INDEX"]],
+    )
+
+
+def test_add_threshold_leaves_the_full_grid_uncoloured(plotter):
+    plotter.add_grid()
+
+    plotter.add_threshold("SGAS", 120, 0.4)
+
+    # threshold() selects the array it filtered on; left alone that would silently start
+    # colouring the full grid actor by SGAS
+    assert plotter._actors["grid"].mesh.active_scalars_name is None
+
+
+def test_add_clip_halves_the_grid_through_its_centre(plotter):
+    name = plotter.add_clip("z")
+
+    assert name == "clip"
+    assert plotter._actors[name].mesh.n_cells < 300
+
+
+def test_clipped_grid_can_still_be_recoloured(plotter):
+    name = plotter.add_clip("x")
+
+    plotter.set_scalars("SGAS", 60)
+
+    subset = plotter._actors[name].mesh
+    np.testing.assert_allclose(
+        subset.cell_data["SGAS"],
+        plotter.case.read("SGAS", 60)[subset.cell_data["ACTIVE_INDEX"]],
+    )
+
+
+def test_crinkle_clip_keeps_whole_cells(plotter):
+    # Mid-cell: SPE1CASE1's columns are 1000 ft wide, so the default centre at x=5000 falls on
+    # a cell boundary and splits nothing
+    origin = (5500.0, 5000.0, 8375.0)
+
+    smooth = plotter.add_clip("x", origin, name="smooth")
+    crinkled = plotter.add_clip("x", origin, crinkle=True, name="crinkled")
+
+    # A crinkle clip never splits a cell, so its cells keep their full volume
+    assert plotter._actors[crinkled].mesh.volume > plotter._actors[smooth].mesh.volume
+
+
+# ---------------------------------------------------------------------------
 # add_wells
 # ---------------------------------------------------------------------------
 

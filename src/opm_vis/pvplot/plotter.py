@@ -212,6 +212,112 @@ class GridPlotter:
             self.grid.mesh.extract_surface(), name, carries_scalars=False, **kwargs
         )
 
+    def add_threshold(
+        self,
+        keyword: str,
+        rstep: int,
+        value: float | tuple[float, float],
+        *,
+        invert: bool = False,
+        name: str | None = None,
+        **kwargs,
+    ) -> str:
+        """
+        Add only the cells whose value of a keyword passes a threshold
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword to threshold on
+        rstep : int
+            Report step to take the values from
+        value : float | tuple[float, float]
+            Lower bound, or a (lower, upper) range
+        invert : bool, optional
+            Keep the cells that fail the threshold instead, by default False
+        name : str | None, optional
+            Name to register the subset under, by default None, which uses e.g.
+            "SGAS-threshold".
+        kwargs : optional
+            Optional arguments passed to pyvista.Plotter.add_mesh
+
+        Returns
+        -------
+        str
+            Name the subset was registered under
+
+        Notes
+        -----
+        Useful for showing a plume or a swept region on its own. The subset keeps its
+        ACTIVE_INDEX array, so set_scalars can still colour it by any keyword and at any report
+        step afterwards - the threshold fixes which cells are shown, not what they show.
+        """
+        mesh = self.grid.mesh
+
+        # Captured before the assignment: attaching cell data to a mesh with no active scalars
+        # makes the new array active by itself
+        previous = mesh.active_scalars_name
+
+        mesh.cell_data[keyword] = self.case.read(keyword, rstep)[
+            mesh.cell_data[ACTIVE_INDEX]
+        ]
+        try:
+            subset = mesh.threshold(value, scalars=keyword, invert=invert)
+        finally:
+            # threshold() leaves the array it filtered on selected as the grid's active
+            # scalars, which would silently start colouring anything already showing it
+            mesh.set_active_scalars(previous)
+
+        return self._add(subset, name or f"{keyword}-threshold", **kwargs)
+
+    def add_clip(
+        self,
+        normal: str | tuple[float, float, float] = "z",
+        origin: tuple[float, float, float] | None = None,
+        *,
+        invert: bool = True,
+        crinkle: bool = False,
+        name: str | None = None,
+        **kwargs,
+    ) -> str:
+        """
+        Add the grid cut by a plane
+
+        Parameters
+        ----------
+        normal : str | tuple[float, float, float], optional
+            Plane normal, either an axis name or a vector, by default "z"
+        origin : tuple[float, float, float] | None, optional
+            Point on the plane, by default None, which uses the centre of the grid
+        invert : bool, optional
+            Keep the side the normal points away from, by default True
+        crinkle : bool, optional
+            Keep whole cells rather than cutting through them, by default False. Leaves a
+            jagged face but every cell keeps its original geometry.
+        name : str | None, optional
+            Name to register the subset under, by default "clip"
+        kwargs : optional
+            Optional arguments passed to pyvista.Plotter.add_mesh
+
+        Returns
+        -------
+        str
+            Name the subset was registered under
+
+        Notes
+        -----
+        Cut cells keep the cell data of the cell they came from, ACTIVE_INDEX included, so a
+        clipped grid can still be coloured by set_scalars.
+        """
+        subset = self.grid.mesh.clip(
+            normal=normal,
+            origin=origin if origin is not None else self.grid.mesh.center,
+            invert=invert,
+            crinkle=crinkle,
+        )
+
+        return self._add(subset, name or "clip", **kwargs)
+
     def add_wells(
         self,
         rstep: int,
