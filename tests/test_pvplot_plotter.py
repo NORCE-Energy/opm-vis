@@ -241,6 +241,102 @@ def test_global_clim_covers_every_report_step_by_default(plotter):
 
 
 # ---------------------------------------------------------------------------
+# add_wells
+# ---------------------------------------------------------------------------
+
+
+def test_add_wells_draws_the_open_wells(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.add_wells(60)
+
+    # Both SPE1CASE1 wells are open for the whole run, so there is no shut actor
+    assert "pvplot-wells-open" in plotter.actor_names()
+    assert "pvplot-wells-shut" not in plotter.actor_names()
+
+
+def test_add_wells_is_not_restricted_to_the_slices_on_screen(plotter):
+    # PROD is completed in k=2 only, so a k=0 slice would hide it in opm_vis.plot
+    plotter.add_slice("k", 0)
+
+    plotter.add_wells(60)
+
+    assert plotter._actors["pvplot-wells-open"].mesh.n_cells == 2
+
+
+def test_add_wells_replaces_rather_than_stacks(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.add_wells(60)
+    after_one = len(plotter.plotter.actors)
+    plotter.add_wells(120)
+
+    assert len(plotter.plotter.actors) == after_one
+
+
+def test_add_wells_is_a_no_op_when_a_report_step_has_no_wells(plotter):
+    plotter.add_slice("k", 0)
+
+    # SPE1CASE1's restart file carries no well arrays at report step 0
+    plotter.add_wells(0)
+
+    assert "pvplot-wells-open" not in plotter.actor_names()
+
+
+def _label_actors(plotter):
+    """Label actor names. add_point_labels suffixes the name it is given."""
+    return [n for n in plotter.plotter.actors if n.startswith("pvplot-well-labels")]
+
+
+def test_add_wells_labels_can_be_turned_off(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.add_wells(60, labels=False)
+
+    assert _label_actors(plotter) == []
+
+
+def test_add_wells_labels_each_well_by_name(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.add_wells(60)
+
+    assert _label_actors(plotter) != []
+
+
+def test_add_wells_labels_are_replaced_not_stacked(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.add_wells(60)
+    after_one = len(_label_actors(plotter))
+    plotter.add_wells(120)
+
+    assert after_one > 0
+    assert len(_label_actors(plotter)) == after_one
+
+
+def test_wells_are_not_coloured_by_set_scalars(plotter):
+    plotter.add_slice("k", 0)
+    plotter.add_wells(60)
+
+    plotter.set_scalars("SGAS", 60)
+
+    # Wells are drawn in their open/shut colour, not in the property colour map
+    assert "SGAS" not in plotter._actors["pvplot-wells-open"].mesh.cell_data
+
+
+def test_add_wells_renders(plotter):
+    plotter.add_slice("k", 0)
+    plotter.set_scalars("SGAS", 60)
+    without = plotter.screenshot()
+
+    plotter.add_wells(60)
+    plotter.plotter.render()
+
+    assert not np.array_equal(without, plotter.screenshot())
+
+
+# ---------------------------------------------------------------------------
 # Scalar bar
 # ---------------------------------------------------------------------------
 

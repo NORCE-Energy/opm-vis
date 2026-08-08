@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 from opm_vis.pvplot.data import CaseData
 from opm_vis.pvplot.labels import axis_titles, scalar_bar_title
 from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
+from opm_vis.pvplot.wells import well_paths
 from opm_vis.utils.units import Label
 
 # OPM's z axis is depth, increasing downwards, while VTK assumes z points up. Every camera
@@ -35,8 +36,11 @@ _VIEW_2D = {
     "k": lambda plotter: plotter.view_xy(),
 }
 
-# Fixed name for the title actor, so repeated calls replace rather than stack
+# Fixed names for the actors pvplot manages itself, so repeated calls replace rather than stack
 _TITLE_NAME = "pvplot-title"
+_WELLS_OPEN = "pvplot-wells-open"
+_WELLS_SHUT = "pvplot-wells-shut"
+_WELL_LABELS = "pvplot-well-labels"
 
 
 @dataclass
@@ -207,6 +211,73 @@ class GridPlotter:
         return self._add(
             self.grid.mesh.extract_surface(), name, carries_scalars=False, **kwargs
         )
+
+    def add_wells(
+        self,
+        rstep: int,
+        *,
+        labels: bool = True,
+        open_color: str = "black",
+        shut_color: str = "red",
+        line_width: float = 4.0,
+        **kwargs,
+    ) -> None:
+        """
+        Draw the wells present at one report step
+
+        Parameters
+        ----------
+        rstep : int
+            Report step
+        labels : bool, optional
+            Annotate each well with its name, by default True
+        open_color : str, optional
+            Colour for open wells, by default "black"
+        shut_color : str, optional
+            Colour for shut wells, by default "red"
+        line_width : float, optional
+            Trajectory line width in pixels, by default 4.0
+        kwargs : optional
+            Optional arguments passed to pyvista.Plotter.add_mesh
+
+        Notes
+        -----
+        Trajectories are full 3D paths, so they are drawn once for the whole model rather than
+        filtered per slice the way opm_vis.plot does. Calling this again for another report
+        step replaces what is already there, which is what lets an animation follow wells
+        opening and shutting.
+        """
+        paths = well_paths(self.grid.egrid, self.case.wells, rstep)
+
+        # Replace whatever a previous call left behind, so report steps do not stack up
+        for name in (_WELLS_OPEN, _WELLS_SHUT):
+            if name in self._actors:
+                self.plotter.remove_actor(self._actors.pop(name).actor)
+
+        for name, mesh, color in (
+            (_WELLS_OPEN, paths.open_wells, open_color),
+            (_WELLS_SHUT, paths.shut_wells, shut_color),
+        ):
+            if mesh is None:
+                continue
+            self._add(
+                mesh,
+                name,
+                carries_scalars=False,
+                color=color,
+                line_width=line_width,
+                **kwargs,
+            )
+
+        if labels and len(paths.label_names) > 0:
+            self.plotter.add_point_labels(
+                paths.label_points,
+                paths.label_names,
+                name=_WELL_LABELS,
+                font_size=10,
+                shape=None,
+                always_visible=True,
+            )
 
     def set_scalars(
         self,
