@@ -241,6 +241,144 @@ def test_global_clim_covers_every_report_step_by_default(plotter):
 
 
 # ---------------------------------------------------------------------------
+# Camera presets, axes and title
+# ---------------------------------------------------------------------------
+
+
+def _screen_height_of(plotter, mask):
+    """Mean vertical pixel position of the cells picked out by `mask`, 0 being the top."""
+    mesh = plotter._actors["grid"].mesh
+    mesh.cell_data["MARK"] = mask.astype(float)
+    mesh.set_active_scalars("MARK")
+    mapper = plotter._actors["grid"].actor.mapper
+    mapper.SetScalarModeToUseCellFieldData()
+    mapper.SelectColorArray("MARK")
+    mapper.scalar_visibility = True
+    mapper.scalar_range = (0.0, 1.0)
+
+    plotter.plotter.background_color = "black"
+    plotter.plotter.render()
+    luminance = plotter.screenshot().mean(axis=2)
+    rows, _ = np.where(luminance > luminance.max() * 0.9)
+
+    return rows.mean()
+
+
+def test_view_3d_puts_shallow_cells_above_deep_ones(plotter):
+    plotter.add_grid(lighting=False, show_scalar_bar=False)
+    plotter.view_3d()
+    layer = plotter.grid.ijk[:, 2]
+
+    shallow = _screen_height_of(plotter, layer == 0)
+    deep = _screen_height_of(plotter, layer == 2)
+
+    # PyVista assumes z points up; without flipping the view-up vector for OPM's
+    # depth-positive-down z, the model renders upside down
+    assert shallow < deep
+
+
+def test_view_2d_cross_section_puts_shallow_cells_above_deep_ones(plotter):
+    plotter.add_grid(lighting=False, show_scalar_bar=False)
+    plotter.view_2d("j")
+    layer = plotter.grid.ijk[:, 2]
+
+    assert _screen_height_of(plotter, layer == 0) < _screen_height_of(plotter, layer == 2)
+
+
+def test_view_2d_uses_parallel_projection(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.view_2d("k")
+
+    assert plotter.plotter.camera.parallel_projection is True
+
+
+def test_view_3d_turns_parallel_projection_back_off(plotter):
+    plotter.add_slice("k", 0)
+    plotter.view_2d("k")
+
+    plotter.view_3d()
+
+    assert plotter.plotter.camera.parallel_projection is False
+
+
+@pytest.mark.parametrize("slice_dim", ["i", "j", "k"])
+def test_view_2d_works_for_every_slice_dimension(plotter, slice_dim):
+    plotter.add_slice(slice_dim, 0)
+
+    plotter.view_2d(slice_dim)
+
+    assert plotter.screenshot().shape == (120, 160, 3)
+
+
+def test_view_2d_rejects_an_invalid_slice_dimension(plotter):
+    with pytest.raises(TypeError, match="slice dimension is not valid"):
+        plotter.view_2d("x")
+
+
+def test_view_3d_accepts_camera_rotations(plotter):
+    plotter.add_slice("k", 0)
+    plotter.view_3d()
+    straight_on = plotter.plotter.camera_position[0]
+
+    plotter.view_3d(azimuth=45.0, elevation=20.0)
+
+    assert plotter.plotter.camera_position[0] != straight_on
+
+
+def test_set_z_scale_stretches_the_depth_axis(plotter):
+    plotter.add_slice("j", 5)
+
+    plotter.set_z_scale(20.0)
+
+    assert plotter.plotter.scale[2] == 20.0
+
+
+def test_z_scale_can_be_set_at_construction(case1, offscreen):
+    del offscreen
+    with GridPlotter([case1], off_screen=True, z_scale=15.0) as gplot:
+        assert gplot.plotter.scale[2] == 15.0
+
+
+def test_show_axes_grid_labels_axes_in_the_cases_own_units(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.show_axes_grid()
+
+    # SPE1CASE1 is a field-units case, so feet and not metres
+    assert plotter.plotter.renderer.cube_axes_actor.GetXTitle() == "E(x) [ft]"
+    assert plotter.plotter.renderer.cube_axes_actor.GetZTitle() == "Depth [ft]"
+
+
+def test_set_title_uses_the_report_date_by_default(plotter):
+    plotter.add_slice("k", 0)
+    plotter.set_scalars("SGAS", 0)
+
+    plotter.set_title()
+
+    assert plotter.title == "01.01.2015"
+    assert "pvplot-title" in plotter.plotter.actors
+
+
+def test_set_title_replaces_rather_than_stacks(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_title("first")
+    before = len(plotter.plotter.actors)
+    plotter.set_title("second")
+
+    assert plotter.title == "second"
+    assert len(plotter.plotter.actors) == before  # replaced under the same name
+
+
+def test_set_title_without_a_report_step_raises(plotter):
+    plotter.add_slice("k", 0)
+
+    with pytest.raises(RuntimeError, match="no date to title with"):
+        plotter.set_title()
+
+
+# ---------------------------------------------------------------------------
 # screenshot / lifecycle
 # ---------------------------------------------------------------------------
 

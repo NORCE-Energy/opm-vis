@@ -10,8 +10,33 @@ import pyvista as pv
 from numpy.typing import NDArray
 
 from opm_vis.pvplot.data import CaseData
+from opm_vis.pvplot.labels import axis_titles
 from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
 from opm_vis.utils.units import Label
+
+# OPM's z axis is depth, increasing downwards, while VTK assumes z points up. Every camera
+# therefore needs its view-up vector flipped, or the model renders with its deepest layer at
+# the top of the screen.
+_DEPTH_UP = (0.0, 0.0, -1.0)
+
+# Camera setup per slice dimension for view_2d. Determined by rendering a single marked cell
+# and checking where it lands on screen: the cross-sections need both the negative viewing
+# side and the flipped view-up to put depth downwards and easting/northing to the right, while
+# the k-slice map view needs neither.
+_VIEW_2D = {
+    "i": lambda plotter: (
+        plotter.view_yz(negative=True),
+        plotter.set_viewup(_DEPTH_UP),
+    ),
+    "j": lambda plotter: (
+        plotter.view_xz(negative=True),
+        plotter.set_viewup(_DEPTH_UP),
+    ),
+    "k": lambda plotter: plotter.view_xy(),
+}
+
+# Fixed name for the title actor, so repeated calls replace rather than stack
+_TITLE_NAME = "pvplot-title"
 
 
 @dataclass
@@ -89,9 +114,10 @@ class GridPlotter:
         # updated later; see the _MeshActor docstring.
         self._actors: dict[str, _MeshActor] = {}
 
-        # What is currently coloured, set by set_scalars
+        # What is currently coloured, set by set_scalars, and the current title
         self.keyword = ""
         self.rstep: int | None = None
+        self.title = ""
         self._colour_map: tuple[str, bool] | None = None
 
     def add_slice(
@@ -280,6 +306,124 @@ class GridPlotter:
             rsteps = self.case.report.report_steps()
 
         return self.case.value_range(keyword, rsteps)
+
+    def view_2d(self, slice_dim: str) -> None:
+        """
+        Look straight at an i-, j- or k-slice, with parallel projection
+
+        Parameters
+        ----------
+        slice_dim : str
+            'i', 'j', or 'k', the slice dimension to look down
+
+        Notes
+        -----
+        Perspective is switched off, so the view is a true projection with no foreshortening -
+        the equivalent of the flat 2D axes in opm_vis.plot, but reached with a camera rather
+        than a separate class.
+
+        Cross-sections are oriented with depth increasing downwards and easting or northing
+        increasing to the right. The k-slice map view is laid out the conventional way, with
+        easting to the right and northing up. Note that because OPM's z axis is depth, no
+        camera can give a map both northing up and easting right while looking from above; the
+        conventional layout is chosen over the literal viewing side.
+        """
+        if slice_dim not in _VIEW_2D:
+            raise TypeError(
+                f'{slice_dim} slice dimension is not valid! Choose "i", "j", or "k"'
+            )
+
+        _VIEW_2D[slice_dim](self.plotter)
+        self.plotter.enable_parallel_projection()
+        self.plotter.reset_camera()
+
+    def view_3d(self, *, azimuth: float = 0.0, elevation: float = 0.0) -> None:
+        """
+        Look at the model from an angle, with depth increasing downwards
+
+        Parameters
+        ----------
+        azimuth : float, optional
+            Degrees to rotate the camera about the vertical axis from the isometric view, by
+            default 0.0
+        elevation : float, optional
+            Degrees to raise the camera from the isometric view, by default 0.0
+
+        Notes
+        -----
+        The view-up vector is flipped to -z. PyVista's default assumes z points up, so on
+        OPM's depth-positive-down coordinates the isometric view otherwise renders the model
+        upside down, with the deepest layer above the shallowest.
+        """
+        self.plotter.disable_parallel_projection()
+        self.plotter.view_isometric()
+        self.plotter.set_viewup(_DEPTH_UP)
+
+        if azimuth:
+            self.plotter.camera.Azimuth(azimuth)
+        if elevation:
+            self.plotter.camera.Elevation(elevation)
+
+        self.plotter.reset_camera()
+
+    def set_z_scale(self, z_scale: float) -> None:
+        """
+        Set the vertical exaggeration
+
+        Parameters
+        ----------
+        z_scale : float
+            Factor to stretch the depth axis by. Reservoirs are far wider than they are thick,
+            so a value above 1 is usually needed before layering is visible.
+        """
+        self.plotter.set_scale(zscale=z_scale)
+
+    def show_axes_grid(self, **kwargs) -> None:
+        """
+        Show a labelled bounding box around the scene
+
+        Parameters
+        ----------
+        kwargs : optional
+            Optional arguments passed to pyvista.Plotter.show_bounds
+
+        Notes
+        -----
+        Axis titles carry the case's own length unit, so a field-units case is labelled in
+        feet. opm_vis.plot hard-codes metres whatever the case uses.
+        """
+        xtitle, ytitle, ztitle = axis_titles(self.label)
+        kwargs.setdefault("xtitle", xtitle)
+        kwargs.setdefault("ytitle", ytitle)
+        kwargs.setdefault("ztitle", ztitle)
+
+        self.plotter.show_bounds(**kwargs)
+
+    def set_title(self, text: str | None = None) -> None:
+        """
+        Put a title above the scene
+
+        Parameters
+        ----------
+        text : str | None, optional
+            Title text, by default None, which uses the report date of whatever set_scalars
+            last showed
+
+        Notes
+        -----
+        Added under a fixed name so that repeated calls replace the title rather than stacking
+        text on top of itself, which matters when titling every frame of an animation.
+        """
+        if text is None:
+            if self.rstep is None:
+                raise RuntimeError(
+                    "No report step has been shown yet, so there is no date to title with! "
+                    "Call set_scalars first or pass an explicit text."
+                )
+            text = self.case.report.report_date(self.rstep).strftime("%d.%m.%Y")
+
+        self.plotter.add_text(text, name=_TITLE_NAME, position="upper_edge", font_size=10)
+        self.title = text
 
     def actor_names(self) -> list[str]:
         """
