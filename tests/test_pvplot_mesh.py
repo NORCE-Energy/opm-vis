@@ -195,6 +195,54 @@ def test_negative_slice_ind_raises_value_error(grid_mesh):
 
 
 # ---------------------------------------------------------------------------
+# quad_slice
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("slice_dim, slice_ind", [("i", 4), ("j", 5), ("k", 1)])
+def test_quad_slice_covers_the_same_cells_as_extract_slice(
+    grid_mesh, slice_dim, slice_ind
+):
+    quads = grid_mesh.quad_slice(slice_dim, slice_ind)
+    hexes = grid_mesh.extract_slice(slice_dim, slice_ind)
+
+    assert quads.n_cells == hexes.n_cells
+    np.testing.assert_array_equal(
+        sorted(quads.cell_data[ACTIVE_INDEX]), sorted(hexes.cell_data[ACTIVE_INDEX])
+    )
+
+
+def test_quad_slice_areas_match_the_grid_geometry(grid_mesh):
+    # SPE1CASE1 cells are 1000x1000 ft with layer thicknesses of 20, 30 and 50 ft, so a
+    # j-slice spans 10 columns of (20 + 30 + 50) ft x 1000 ft
+    quads = grid_mesh.quad_slice("j", 5)
+
+    np.testing.assert_allclose(quads.area, 10 * 1000 * (20 + 30 + 50))
+
+
+def test_quad_slice_produces_quads_not_triangles(grid_mesh):
+    quads = grid_mesh.quad_slice("k", 0)
+
+    assert quads.n_points == 4 * quads.n_cells
+    assert (quads.faces.reshape(-1, 5)[:, 0] == 4).all()
+
+
+def test_quad_slice_validates_its_arguments(grid_mesh):
+    with pytest.raises(TypeError, match="slice dimension is not valid"):
+        grid_mesh.quad_slice("x", 0)
+    with pytest.raises(ValueError, match="out of bounds"):
+        grid_mesh.quad_slice("k", 3)
+
+
+def test_quad_slice_does_not_need_the_full_mesh(case1):
+    gmesh = GridMesh(case1)
+
+    gmesh.quad_slice("k", 0)
+
+    assert gmesh._mesh is None  # the expensive hexahedral build was never triggered
+
+
+# ---------------------------------------------------------------------------
 # Point welding
 # ---------------------------------------------------------------------------
 

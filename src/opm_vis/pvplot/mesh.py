@@ -9,6 +9,8 @@ import pyvista as pv
 from numpy.typing import NDArray
 from opm.io.ecl import EGrid
 
+from opm_vis.utils.grid import GridSlice3D
+
 # OPM numbers the 8 corners of a cell so that bit 0 of the corner index selects i, bit 1
 # selects j and bit 2 selects k, where k (depth) increases downwards. A VTK_HEXAHEDRON
 # instead wants the corners of one face in rotational order followed by the opposite face in
@@ -66,7 +68,9 @@ class GridMesh:
         else:
             raise FileNotFoundError(f"No .EGRID file found in {path}!")
 
-        # Internalize input
+        # Internalize input. The path is kept for quad_slice, which reuses the slice geometry
+        # in opm_vis.utils.grid rather than the full mesh.
+        self.path = path
         self.weld = weld
 
         # Internal variables. The mesh is built on first access, see the mesh property.
@@ -160,6 +164,50 @@ class GridMesh:
         be given property values without consulting the parent mesh.
         """
         return self.mesh.extract_cells(self.slice_mask(slice_dim, slice_ind))
+
+    def quad_slice(self, slice_dim: str, slice_ind: int) -> pv.PolyData:
+        """
+        Build one i-, j- or k-slice as flat quads, without building the full mesh
+
+        Parameters
+        ----------
+        slice_dim : str
+            'i', 'j', or 'k' slice of the 3D grid
+        slice_ind : int
+            Index of slice
+
+        Returns
+        -------
+        pv.PolyData
+            One quad per slice cell, carrying an ACTIVE_INDEX cell array
+
+        Notes
+        -----
+        This is the cheap path for large grids: it touches only the cells on the slice rather
+        than materialising every hexahedron in the model. The cost is that a quad has no
+        volume, so thresholding, clipping and volume rendering need extract_slice instead.
+
+        Reuses GridSlice3D from opm_vis.utils.grid, which already picks the four corners of
+        the slice face out of the corner-point grid and drops pinched-out cells.
+        """
+        self._validate_slice(slice_dim, slice_ind)
+
+        # (ncells, 4, 3) corner points, with the matching list of active indices
+        slc = GridSlice3D(self.path, slice_dim, slice_ind)
+        corners = slc.cell_corners()
+        ncells = corners.shape[0]
+
+        # VTK connectivity is a flat [npoints_of_face, point ids...] per face
+        faces = np.hstack(
+            (
+                np.full((ncells, 1), 4, dtype=np.int64),
+                np.arange(4 * ncells, dtype=np.int64).reshape(ncells, 4),
+            )
+        ).ravel()
+        quads = pv.PolyData(corners.reshape(-1, 3), faces=faces)
+        quads.cell_data[ACTIVE_INDEX] = np.asarray(slc.active_indices(), dtype=np.int64)
+
+        return quads
 
     def _validate_slice(self, slice_dim: str, slice_ind: int) -> int:
         """
