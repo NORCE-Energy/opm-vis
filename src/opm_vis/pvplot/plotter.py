@@ -572,6 +572,80 @@ class GridPlotter:
         """
         return self.plotter.screenshot(filename, **kwargs)
 
+    def animate(
+        self,
+        keyword: str,
+        filename: str | Path,
+        *,
+        rsteps: Sequence[int] | None = None,
+        fps: float = 3.0,
+        clim: tuple[float, float] | None = None,
+        wells: bool = False,
+        title: bool = True,
+        **kwargs,
+    ) -> None:
+        """
+        Write an animation of one keyword over several report steps
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword to colour by
+        filename : str | Path
+            File to write. A ".gif" suffix writes a GIF, anything else a movie (e.g. ".mp4").
+        rsteps : Sequence[int] | None, optional
+            Report steps to animate, by default None, which uses every report step
+        fps : float, optional
+            Frames per second, by default 3.0
+        clim : tuple[float, float] | None, optional
+            Colour limits, by default None, which spans every frame so the colours stay
+            comparable throughout
+        wells : bool, optional
+            Redraw wells each frame, by default False. Worth turning on when wells open or shut
+            during the period being animated.
+        title : bool, optional
+            Title each frame with its report date, by default True
+        kwargs : optional
+            Optional arguments passed to set_scalars
+
+        Notes
+        -----
+        Each frame only writes new values into the datasets already on screen, so the geometry
+        is built once for the whole animation. Colour limits are computed once up front rather
+        than per frame, which is what keeps a frame's colours meaningful next to its
+        neighbours'.
+        """
+        if not self._actors:
+            raise RuntimeError(
+                "Nothing to animate! Call add_slice or add_grid before animate."
+            )
+
+        if rsteps is None:
+            rsteps = self.case.report.report_steps()
+        if clim is None:
+            clim = self.global_clim(keyword, rsteps)
+
+        filename = Path(filename)
+        if filename.suffix.lower() == ".gif":
+            self.plotter.open_gif(str(filename), fps=fps)
+        else:
+            # open_movie names the same argument differently, and forwards an unknown fps
+            # straight into imageio where it collides with its own
+            self.plotter.open_movie(str(filename), framerate=fps)
+
+        try:
+            for rstep in rsteps:
+                self.set_scalars(keyword, rstep, clim=clim, **kwargs)
+                if wells:
+                    self.add_wells(rstep)
+                if title:
+                    self.set_title()
+                self.plotter.write_frame()
+        finally:
+            # The file is only written out when the writer is closed. Closing the writer rather
+            # than the plotter leaves the scene usable afterwards.
+            self.plotter.mwriter.close()
+
     def close(self) -> None:
         """Close the render window and release its resources"""
         self.plotter.close()

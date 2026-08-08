@@ -545,6 +545,106 @@ def test_screenshot_writes_a_file(plotter, tmp_path):
     assert target.exists() and target.stat().st_size > 0
 
 
+# ---------------------------------------------------------------------------
+# animate
+# ---------------------------------------------------------------------------
+
+
+def test_animate_writes_a_gif(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+    target = tmp_path / "sgas.gif"
+
+    plotter.animate("SGAS", target, rsteps=range(0, 121, 40))
+
+    assert target.exists() and target.stat().st_size > 0
+
+
+def test_animate_writes_a_movie(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+    target = tmp_path / "sgas.mp4"
+
+    # open_movie names its frame rate differently from open_gif and mangles an fps kwarg
+    plotter.animate("SGAS", target, rsteps=range(0, 121, 40))
+
+    assert target.exists() and target.stat().st_size > 0
+
+
+def test_animate_uses_one_colour_range_for_every_frame(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+    rsteps = [0, 60, 120]
+
+    plotter.animate("SGAS", tmp_path / "a.gif", rsteps=rsteps)
+
+    # Per-frame limits would make a frame's colours meaningless next to its neighbours'
+    assert plotter._actors["k0"].actor.mapper.scalar_range == pytest.approx(
+        plotter.global_clim("SGAS", rsteps)
+    )
+
+
+def test_animate_reuses_the_geometry_for_every_frame(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+    before = plotter._actors["k0"].actor
+
+    plotter.animate("SGAS", tmp_path / "a.gif", rsteps=range(0, 121, 40))
+
+    assert plotter.actor_names() == ["k0"]
+    assert plotter._actors["k0"].actor is before
+
+
+def test_animate_leaves_the_plotter_usable(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+
+    plotter.animate("SGAS", tmp_path / "a.gif", rsteps=[0, 60])
+
+    # Only the writer is closed, not the render window
+    assert plotter.screenshot().shape == (120, 160, 3)
+
+
+def test_animate_titles_each_frame_with_its_report_date(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+
+    plotter.animate("SGAS", tmp_path / "a.gif", rsteps=[0, 120])
+
+    assert plotter.title == "29.12.2024"  # the last frame's report date
+
+
+def test_animate_can_follow_wells(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+
+    plotter.animate("SGAS", tmp_path / "a.gif", rsteps=[60, 120], wells=True)
+
+    assert "pvplot-wells-open" in plotter.actor_names()
+
+
+def test_animate_with_nothing_added_raises(plotter, tmp_path):
+    with pytest.raises(RuntimeError, match="Nothing to animate"):
+        plotter.animate("SGAS", tmp_path / "a.gif", rsteps=[0])
+
+
+def test_animate_rejects_an_unknown_keyword_before_opening_the_file(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+    target = tmp_path / "a.gif"
+
+    with pytest.raises(KeyError, match="not in restart files or .INIT file"):
+        plotter.animate("NOSUCHKW", target, rsteps=[0, 60])
+
+    assert not target.exists()
+
+
+def test_animate_closes_the_writer_even_when_a_frame_fails(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+    target = tmp_path / "a.gif"
+
+    # An explicit clim gets past the up-front range scan, so the failure lands on the second
+    # frame with the writer already open
+    with pytest.raises(ValueError, match="Report step 9999 was not found"):
+        plotter.animate("SGAS", target, rsteps=[0, 9999], clim=(0.0, 1.0))
+
+    # A half-written animation must still be finalised rather than left holding the file open
+    assert plotter.plotter.mwriter.closed
+    assert target.exists()
+
+
 def test_context_manager_closes_the_render_window(case1, offscreen):
     del offscreen
     with GridPlotter([case1], off_screen=True) as gplot:

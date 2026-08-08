@@ -22,7 +22,9 @@ dependencies = [
 dev = ["pytest"]
 # The opm_vis.pvplot backend is optional: it pulls in VTK, which is a large binary
 # dependency that users of the matplotlib backend in opm_vis.plot do not need.
-pyvista = ["pyvista>=0.44"]
+# imageio and imageio-ffmpeg are what PyVista writes GIFs and MP4s through, so
+# GridPlotter.animate needs them.
+pyvista = ["pyvista>=0.44", "imageio", "imageio-ffmpeg"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
