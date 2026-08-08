@@ -7,7 +7,9 @@ import pytest
 
 from opm_vis.utils.summary import SummaryReader
 
-# The case1/data_dir fixtures come from conftest.py. SPE1CASE2_RESTART_60 is a restart of SPE1CASE2 from report step 60: it reproduces
+# The case1/data_dir fixtures come from conftest.py.
+#
+# SPE1CASE2_RESTART_60 is a restart of SPE1CASE2 from report step 60: it reproduces
 # SPE1CASE2's last 60 timesteps bit-for-bit. Together they exercise the restart
 # stitching in _time_and_indices(). Both files share the "SPE1CASE2" filename prefix
 # in tests/data, so glob("...SPE1CASE2*.SMSPEC") would ambiguously match both -

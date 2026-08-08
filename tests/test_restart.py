@@ -7,7 +7,9 @@ import pytest
 
 from opm_vis.utils.restart import Report, RestartReader, Wells
 
-# The case1/data_dir fixtures come from conftest.py. SPE1CASE1 has 121 report steps (0-120), two wells (PROD, INJ) that stay open at
+# The case1/data_dir fixtures come from conftest.py.
+#
+# SPE1CASE1 has 121 report steps (0-120), two wells (PROD, INJ) that stay open at
 # fixed locations for the whole run, and no report step besides 0 lacks well data -
 # so the "well data present but not at rstep 0" branch of Wells is exercised by the
 # real dataset, while the report-step alignment itself (the thing most likely to
