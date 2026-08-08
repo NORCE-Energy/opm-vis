@@ -10,7 +10,7 @@ import pyvista as pv
 from numpy.typing import NDArray
 
 from opm_vis.pvplot.data import CaseData
-from opm_vis.pvplot.labels import axis_titles
+from opm_vis.pvplot.labels import axis_titles, scalar_bar_title
 from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
 from opm_vis.utils.units import Label
 
@@ -119,6 +119,7 @@ class GridPlotter:
         self.rstep: int | None = None
         self.title = ""
         self._colour_map: tuple[str, bool] | None = None
+        self._scalar_bar_title: str | None = None
 
     def add_slice(
         self,
@@ -215,6 +216,7 @@ class GridPlotter:
         clim: tuple[float, float] | None = None,
         cmap: str = "viridis",
         log_scale: bool = False,
+        scalar_bar: bool = True,
     ) -> None:
         """
         Colour everything that has been added by one keyword at one report step
@@ -232,6 +234,8 @@ class GridPlotter:
             Matplotlib colour map name, by default "viridis"
         log_scale : bool, optional
             Map colours logarithmically, by default False. Useful for permeability.
+        scalar_bar : bool, optional
+            Show a scalar bar labelled with the keyword and its unit, by default True
 
         Notes
         -----
@@ -242,6 +246,9 @@ class GridPlotter:
 
         Each dataset is indexed through its own ACTIVE_INDEX array, so slices, the full grid
         and thresholded subsets can all be coloured from one read of the file.
+
+        Every dataset gets the same colour limits, so a single scalar bar is valid for all of
+        them. opm_vis.plot has to warn that its colorbar only describes the first slice.
         """
         targets = [entry for entry in self._actors.values() if entry.carries_scalars]
         if not targets:
@@ -275,6 +282,9 @@ class GridPlotter:
                 mapper.lookup_table.cmap = cmap
                 mapper.lookup_table.log_scale = log_scale
 
+        if scalar_bar:
+            self._update_scalar_bar(targets[0].actor.mapper, keyword)
+
         # Record what is currently shown, for the scalar bar and title
         self.keyword = keyword
         self.rstep = rstep
@@ -283,6 +293,30 @@ class GridPlotter:
         # Assigning cell data marks the dataset modified, but only an explicit render puts it
         # on screen: screenshot() on its own reuses the previous frame buffer.
         self.plotter.render()
+
+    def _update_scalar_bar(self, mapper: Any, keyword: str) -> None:
+        """
+        Show a scalar bar for the keyword, replacing any bar for a different one
+
+        Parameters
+        ----------
+        mapper : Any
+            Mapper of one of the coloured actors. All of them share the same colour limits and
+            lookup table, so any one of them describes the whole scene.
+        keyword : str
+            OPM keyword currently being shown
+        """
+        title = scalar_bar_title(self.label, keyword)
+
+        # Only the report step usually changes, and the bar already reads correctly then
+        if title == self._scalar_bar_title:
+            return
+
+        if self._scalar_bar_title is not None:
+            self.plotter.remove_scalar_bar(self._scalar_bar_title)
+
+        self.plotter.add_scalar_bar(title=title, mapper=mapper)
+        self._scalar_bar_title = title
 
     def global_clim(
         self, keyword: str, rsteps: Sequence[int] | None = None
@@ -497,6 +531,9 @@ class GridPlotter:
             raise ValueError(
                 f"'{name}' has already been added to this plotter! Pass a different name."
             )
+
+        # set_scalars owns the scalar bar, so an actor never brings its own
+        kwargs.setdefault("show_scalar_bar", False)
 
         actor = self.plotter.add_mesh(mesh, name=name, **kwargs)
         self._actors[name] = _MeshActor(

@@ -148,6 +148,14 @@ def test_dimension_reports_grid_size(grid_mesh):
     assert grid_mesh.dimension == (10, 10, 3)
 
 
+def test_bookkeeping_arrays_are_not_the_active_scalars(grid_mesh):
+    # Attaching cell data makes the first array active, and PyVista then colours the mesh by
+    # it on add_mesh - which would show ACTIVE_INDEX instead of the grid
+    assert grid_mesh.mesh.active_scalars_name is None
+    assert grid_mesh.quad_slice("k", 0).active_scalars_name is None
+    assert grid_mesh.extract_slice("k", 0).active_scalars_name is None
+
+
 # ---------------------------------------------------------------------------
 # slice_mask / extract_slice
 # ---------------------------------------------------------------------------

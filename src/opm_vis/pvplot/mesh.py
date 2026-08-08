@@ -207,6 +207,9 @@ class GridMesh:
         quads = pv.PolyData(corners.reshape(-1, 3), faces=faces)
         quads.cell_data[ACTIVE_INDEX] = np.asarray(slc.active_indices(), dtype=np.int64)
 
+        # See the note in _build: ACTIVE_INDEX must not end up as the active scalars
+        quads.set_active_scalars(None)
+
         return quads
 
     def _validate_slice(self, slice_dim: str, slice_ind: int) -> int:
@@ -317,6 +320,11 @@ class GridMesh:
             mesh = mesh.clean(
                 tolerance=0.0, produce_merge_map=False, average_point_data=False
             )
+
+        # Attaching cell data makes the first array active, which would leave PyVista
+        # colouring the grid by ACTIVE_INDEX the moment it is added to a plotter. These are
+        # bookkeeping arrays, never something to look at.
+        mesh.set_active_scalars(None)
 
         return mesh
 

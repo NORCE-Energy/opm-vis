@@ -241,6 +241,54 @@ def test_global_clim_covers_every_report_step_by_default(plotter):
 
 
 # ---------------------------------------------------------------------------
+# Scalar bar
+# ---------------------------------------------------------------------------
+
+
+def test_scalar_bar_is_titled_with_the_keyword_and_its_unit(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("PRESSURE", 60)
+
+    # SPE1CASE1 is a field-units case, and the unit must be plain text, not mathtext
+    assert list(plotter.plotter.scalar_bars.keys()) == ["PRESSURE [psia]"]
+
+
+def test_scalar_bar_omits_empty_brackets_for_an_untabulated_unit(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("SATNUM", 60)
+
+    assert list(plotter.plotter.scalar_bars.keys()) == ["SATNUM"]
+
+
+def test_scalar_bar_is_replaced_when_the_keyword_changes(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("SGAS", 60)
+    plotter.set_scalars("PRESSURE", 60)
+
+    assert list(plotter.plotter.scalar_bars.keys()) == ["PRESSURE [psia]"]
+
+
+def test_scalar_bar_survives_stepping_through_report_steps(plotter):
+    plotter.add_slice("k", 0)
+
+    for rstep in (0, 60, 120):
+        plotter.set_scalars("SGAS", rstep)
+
+    assert list(plotter.plotter.scalar_bars.keys()) == ["SGAS [-]"]
+
+
+def test_scalar_bar_can_be_turned_off(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("SGAS", 60, scalar_bar=False)
+
+    assert list(plotter.plotter.scalar_bars.keys()) == []
+
+
+# ---------------------------------------------------------------------------
 # Camera presets, axes and title
 # ---------------------------------------------------------------------------
 
@@ -265,7 +313,7 @@ def _screen_height_of(plotter, mask):
 
 
 def test_view_3d_puts_shallow_cells_above_deep_ones(plotter):
-    plotter.add_grid(lighting=False, show_scalar_bar=False)
+    plotter.add_grid(lighting=False)
     plotter.view_3d()
     layer = plotter.grid.ijk[:, 2]
 
@@ -278,7 +326,7 @@ def test_view_3d_puts_shallow_cells_above_deep_ones(plotter):
 
 
 def test_view_2d_cross_section_puts_shallow_cells_above_deep_ones(plotter):
-    plotter.add_grid(lighting=False, show_scalar_bar=False)
+    plotter.add_grid(lighting=False)
     plotter.view_2d("j")
     layer = plotter.grid.ijk[:, 2]
 
