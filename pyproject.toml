@@ -16,6 +16,7 @@ dependencies = [
     "numpy",
     "matplotlib",
     "opm",
+    "click",
 ]
 
 [project.optional-dependencies]
@@ -25,6 +26,10 @@ dev = ["pytest"]
 # imageio and imageio-ffmpeg are what PyVista writes GIFs and MP4s through, so
 # GridPlotter.animate needs them.
 pyvista = ["pyvista>=0.44", "imageio", "imageio-ffmpeg"]
+
+[project.scripts]
+opm-vis-pv = "opm_vis.cli.pvplot_cli:main"
+opm-vis-mpl = "opm_vis.cli.plot_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

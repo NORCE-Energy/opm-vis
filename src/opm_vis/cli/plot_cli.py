@@ -1,0 +1,122 @@
+"""opm-vis-mpl: plot a keyword on a grid slice with the (legacy) Matplotlib backend"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import click
+
+from opm_vis.cli.common import (
+    CLIM_OPTION,
+    CMAP_OPTION,
+    COMMAND_SETTINGS,
+    KEYWORD_OPTION,
+    PATHS_ARGUMENT,
+    RSTEP_OR_GIF_OPTIONS,
+    SAVE_OPTION,
+    SLICE_OPTIONS,
+    add_options,
+    default_output_name,
+    handle_errors,
+    is_static_keyword,
+    parse_rstep,
+    require_dynamic_keyword_error,
+    resolve_gif_rsteps,
+    resolve_paths,
+    resolve_slice,
+)
+from opm_vis.plot.collections import SlicePoly2DCollection, SlicePoly3DCollection
+
+
+@click.command(**COMMAND_SETTINGS)
+@PATHS_ARGUMENT
+@KEYWORD_OPTION
+@add_options(SLICE_OPTIONS)
+@add_options(RSTEP_OR_GIF_OPTIONS)
+@SAVE_OPTION
+@CMAP_OPTION
+@CLIM_OPTION
+@click.option(
+    "--view",
+    type=click.Choice(["2d", "3d"]),
+    default="2d",
+    show_default=True,
+    help="Camera preset.",
+)
+@click.option("--no-colorbar", is_flag=True, default=False, help="Hide the colorbar.")
+@handle_errors
+# pylint: disable=too-many-arguments,too-many-locals
+def main(
+    paths: tuple[str, ...],
+    keyword: str,
+    slice_i: int | None,
+    slice_j: int | None,
+    slice_k: int | None,
+    rstep: str | None,
+    gif: bool,
+    fps: int,
+    save: str | None,
+    cmap: str,
+    clim: tuple[float, float] | None,
+    view: str,
+    no_colorbar: bool,
+) -> None:
+    """
+    Plot --keyword on one grid slice with the Matplotlib backend, or animate it over report
+    steps with --gif.
+
+    PATHS are filename prefixes: the first is the main run, any further ones are restart runs.
+    Defaults to searching the working directory (./) if not given.
+
+    This is the legacy backend; opm-vis-pv (PyVista) is the modern one and supports more of the
+    figure/gif options.
+    """
+    slice_dim, slice_index = resolve_slice(slice_i, slice_j, slice_k)
+    rstep_value = parse_rstep(rstep, gif)
+
+    poly_kwargs = {"cmap": cmap}
+    if clim is not None:
+        poly_kwargs["clim"] = clim
+
+    resolved_paths = resolve_paths(paths)
+    if view == "3d":
+        coll = SlicePoly3DCollection(resolved_paths, [(slice_dim, slice_index)])
+    else:
+        coll = SlicePoly2DCollection(resolved_paths, slice_dim, slice_index)
+
+    if gif:
+        steps = resolve_gif_rsteps(coll.report.report_steps(), rstep_value)
+        coll.gif(keyword, rstep_list=steps, **poly_kwargs)
+
+        if save is None:
+            coll.show()
+        else:
+            coll.save_gif(
+                Path(save)
+                if save
+                else default_output_name(keyword, slice_dim, slice_index, rsteps=steps, ext="gif"),
+                fps=fps,
+            )
+        return
+
+    if rstep_value is None:
+        probe_rstep = coll.report.report_steps()[0]
+        if not is_static_keyword(coll.slice_coll[0].restart, keyword, probe_rstep):
+            raise require_dynamic_keyword_error(keyword)
+        actual_rstep = probe_rstep
+    else:
+        actual_rstep = rstep_value
+
+    coll.plot(actual_rstep, keyword, colorbar=not no_colorbar, **poly_kwargs)
+
+    if save is None:
+        coll.show()
+    else:
+        coll.save_plot(
+            Path(save)
+            if save
+            else default_output_name(keyword, slice_dim, slice_index, rstep=actual_rstep, ext="png")
+        )
+
+
+if __name__ == "__main__":
+    main()
