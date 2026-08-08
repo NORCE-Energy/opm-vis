@@ -5,6 +5,7 @@ import datetime as dt
 import warnings
 from collections.abc import Sequence
 from functools import partial
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -381,89 +382,97 @@ class _SlicePolyCollection:
         plt.show()
         plt.close("all")
 
-    def save_plot(self, file_format: str = "png") -> None:
+    def save_plot(self, filename: str | Path | None = None, file_format: str = "png") -> None:
         """
-        Save plot to file. File name is a combination of report date, OPM keyword, and slice info.
+        Save plot to file.
 
         Parameters
         ----------
+        filename : str | Path | None, optional
+            File to write the image to, by default None, which combines the input path, report
+            date, OPM keyword and slice info into a name next to the input case.
         file_format : str, optional
             File format for save file. Must be a valid Matplotlib file format (see savefig
-            documentation), by default 'png'
+            documentation), by default 'png'. Ignored if filename is given.
         """
         # Check if any plot has been made
         if not self.ax_.collections:
             raise RuntimeError("No plot to save! Run plot() method first.")
 
-        # Report date of plot
-        rdate_str = self.rdates[-1].strftime("%d-%m-%Y")
+        if filename is None:
+            # Report date of plot
+            rdate_str = self.rdates[-1].strftime("%d-%m-%Y")
 
-        # Slice info
-        slice_info = ""
-        for i, slc in enumerate(self.slice_coll):
-            slice_info += f"{slc.slice_dim}{slc.slice_ind}"
-            if i < len(self.slice_coll) - 1:
-                slice_info += "_"
-
-        # Create save name
-        savename = (
-            f"{self.paths[0]}{self.keyword}_{rdate_str}_{slice_info}.{file_format}"
-        )
+            filename = (
+                f"{self.paths[0]}{self.keyword}_{rdate_str}_{self._slice_info()}."
+                f"{file_format}"
+            )
 
         # Save file
-        self.fig.savefig(savename)
+        self.fig.savefig(filename)
         plt.close("all")
 
-    def save_grid_plot(self, file_format: str = "png") -> None:
+    def save_grid_plot(
+        self, filename: str | Path | None = None, file_format: str = "png"
+    ) -> None:
         """
         Save plot of just the grid (no data)
 
         Parameters
         ----------
+        filename : str | Path | None, optional
+            File to write the image to, by default None, which combines the input path and
+            slice info into a name next to the input case.
         file_format : str, optional
             File format for save file. Must be a valid Matplotlib file format (see savefig
-            documentation), by default 'png'
+            documentation), by default 'png'. Ignored if filename is given.
         """
-        # Slice info
-        slice_info = ""
-        for i, slc in enumerate(self.slice_coll):
-            slice_info += f"{slc.slice_dim}{slc.slice_ind}"
-            if i < len(self.slice_coll) - 1:
-                slice_info += "_"
-
-        # Create save name
-        savename = f"{self.paths[0]}GRID_{slice_info}.{file_format}"
+        if filename is None:
+            filename = f"{self.paths[0]}GRID_{self._slice_info()}.{file_format}"
 
         # Save file
-        self.fig.savefig(savename)
+        self.fig.savefig(filename)
         plt.close("all")
 
-    def save_gif(self) -> None:
+    def save_gif(self, filename: str | Path | None = None, fps: int = 3) -> None:
         """
         Save plot movie to gif.
+
+        Parameters
+        ----------
+        filename : str | Path | None, optional
+            File to write the gif to, by default None, which combines the input path, date
+            span, OPM keyword and slice info into a name next to the input case.
+        fps : int, optional
+            Frames per second, by default 3
         """
         # Check if any gif have been made
         if self.anim is None:
             raise RuntimeError("No gif to save! Run gif() method first.")
 
-        # Instantiate gif writer
-        writer = animation.PillowWriter(fps=3)
-
-        # Date span included in gif
-        date_span = f"{self.rdates[0].strftime('%d-%m-%Y')}_{self.rdates[-1].strftime('%d-%m-%Y')}"
-
-        # Slice info
-        slice_info = ""
-        for i, slc in enumerate(self.slice_coll):
-            slice_info += f"{slc.slice_dim}{slc.slice_ind}"
-            if i < len(self.slice_coll) - 1:
-                slice_info += "_"
-
-        # Save name
-        savename = f"{self.paths[0]}{self.keyword}_{date_span}_{slice_info}.gif"
+        if filename is None:
+            # Date span included in gif
+            date_span = (
+                f"{self.rdates[0].strftime('%d-%m-%Y')}_"
+                f"{self.rdates[-1].strftime('%d-%m-%Y')}"
+            )
+            filename = (
+                f"{self.paths[0]}{self.keyword}_{date_span}_{self._slice_info()}.gif"
+            )
 
         # Save gif
-        self.anim.save(savename, writer=writer)
+        self.anim.save(filename, writer=animation.PillowWriter(fps=fps))
+
+    def _slice_info(self) -> str:
+        """
+        Slice dimension/index of every slice, joined for use in a filename
+
+        Returns
+        -------
+        str
+            e.g. "k0" for one slice, "k0_j5" for several
+        """
+        return "_".join(f"{slc.slice_dim}{slc.slice_ind}" for slc in self.slice_coll)
 
 
 class SlicePoly3DCollection(_SlicePolyCollection):
