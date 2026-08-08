@@ -42,6 +42,26 @@ def case1() -> str:
 
 
 @pytest.fixture(scope="session")
+def tpsa_lagged() -> str:
+    """
+    Filename prefix of the TPSA_LAGGED dataset
+
+    Returns
+    -------
+    str
+        Path prefix, as the glob() in every opm_vis reader expects
+
+    Notes
+    -----
+    TPSA_LAGGED is a fully active, standard-oriented 5x5x5 Cartesian box grid in metric units,
+    with 16 report steps (0-15) and two vertical wells (INJE, PROD) completed through every
+    layer. Unlike SPE1CASE1 it carries geomechanics output - DISPX, DISPY, DISPZ among
+    others - which is what makes it useful for exercising vector glyphs.
+    """
+    return str(_DATA_DIR / "TPSA_LAGGED")
+
+
+@pytest.fixture(scope="session")
 def offscreen():
     """
     Force PyVista into off-screen rendering, skipping the test if it cannot render
