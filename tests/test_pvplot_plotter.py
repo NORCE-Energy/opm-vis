@@ -548,11 +548,49 @@ def test_view_2d_rejects_an_invalid_slice_dimension(plotter):
 def test_view_3d_accepts_camera_rotations(plotter):
     plotter.add_slice("k", 0)
     plotter.view_3d()
-    straight_on = plotter.plotter.camera_position[0]
+    default = plotter.plotter.camera_position[0]
 
-    plotter.view_3d(azimuth=45.0, elevation=20.0)
+    plotter.view_3d(azimuth=45.0, elevation=60.0)
 
-    assert plotter.plotter.camera_position[0] != straight_on
+    assert plotter.plotter.camera_position[0] != default
+
+
+def _visible_pixels(plotter, mask):
+    """How many pixels the cells picked out by `mask` cover, i.e. are not occluded."""
+    mesh = plotter._actors["grid"].mesh
+    mesh.cell_data["MARK"] = mask.astype(float)
+    mesh.set_active_scalars("MARK")
+    mapper = plotter._actors["grid"].actor.mapper
+    mapper.SetScalarModeToUseCellFieldData()
+    mapper.SelectColorArray("MARK")
+    mapper.scalar_visibility = True
+    mapper.scalar_range = (0.0, 1.0)
+
+    plotter.plotter.background_color = "black"
+    plotter.plotter.render()
+    luminance = plotter.screenshot().mean(axis=2)
+
+    return int((luminance > luminance.max() * 0.9).sum()) if luminance.max() > 40 else 0
+
+
+def test_view_3d_looks_down_on_the_top_of_the_model_by_default(plotter):
+    plotter.add_grid(lighting=False)
+    layer = plotter.grid.ijk[:, 2]
+
+    plotter.view_3d()
+
+    # Flipping the view-up leaves the camera below the model, so the default elevation has to
+    # lift it back over the top or the base occludes everything of interest
+    assert _visible_pixels(plotter, layer == 0) > _visible_pixels(plotter, layer == 2)
+
+
+def test_view_3d_at_zero_elevation_looks_up_at_the_base(plotter):
+    plotter.add_grid(lighting=False)
+    layer = plotter.grid.ijk[:, 2]
+
+    plotter.view_3d(elevation=0.0)
+
+    assert _visible_pixels(plotter, layer == 2) > _visible_pixels(plotter, layer == 0)
 
 
 def test_set_z_scale_stretches_the_depth_axis(plotter):

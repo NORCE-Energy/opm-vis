@@ -561,23 +561,28 @@ class GridPlotter:
         # Remembered so that show_axes_grid can leave out the axis pointing at the camera
         self._view_2d_dim = slice_dim
 
-    def view_3d(self, *, azimuth: float = 0.0, elevation: float = 0.0) -> None:
+    def view_3d(self, *, azimuth: float = 30.0, elevation: float = 45.0) -> None:
         """
-        Look at the model from an angle, with depth increasing downwards
+        Look at the model from above at an angle, with depth increasing downwards
 
         Parameters
         ----------
         azimuth : float, optional
-            Degrees to rotate the camera about the vertical axis from the isometric view, by
-            default 0.0
+            Degrees to rotate the camera about the depth axis, by default 30.0
         elevation : float, optional
-            Degrees to raise the camera from the isometric view, by default 0.0
+            Degrees to lift the camera, by default 45.0
 
         Notes
         -----
         The view-up vector is flipped to -z. PyVista's default assumes z points up, so on
         OPM's depth-positive-down coordinates the isometric view otherwise renders the model
         upside down, with the deepest layer above the shallowest.
+
+        That flip also leaves the camera *below* the model, so an elevation of zero looks up at
+        the base of the reservoir. The elevation needed to get above it depends on the vertical
+        exaggeration - roughly 15 degrees at z_scale 15, but past 25 at z_scale 1 - and the
+        default of 45 clears it either way. Measured by marking the top and bottom layers and
+        checking which one is not occluded.
         """
         self.plotter.disable_parallel_projection()
         self.plotter.view_isometric()
