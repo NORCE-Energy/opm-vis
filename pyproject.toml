@@ -20,6 +20,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# The opm_vis.pvplot backend is optional: it pulls in VTK, which is a large binary
+# dependency that users of the matplotlib backend in opm_vis.plot do not need.
+pyvista = ["pyvista>=0.44"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
