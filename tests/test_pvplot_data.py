@@ -52,6 +52,61 @@ def test_is_static_distinguishes_dynamic_from_init_keywords(case):
 
 
 # ---------------------------------------------------------------------------
+# value_range
+# ---------------------------------------------------------------------------
+
+
+def test_value_range_is_seeded_from_the_data_not_from_zero(case):
+    low, high = case.value_range("PRESSURE", [1])
+
+    data = case.read("PRESSURE", 1)
+    assert low == pytest.approx(data.min())
+    assert high == pytest.approx(data.max())
+    # opm_vis.plot seeds its accumulators at 0, which would report a minimum of 0.0 here
+    assert low > 3000.0
+
+
+def test_value_range_spans_every_requested_report_step(case):
+    rsteps = [0, 60, 120]
+
+    low, high = case.value_range("SGAS", rsteps)
+
+    per_step = [case.read("SGAS", rstep) for rstep in rsteps]
+    assert low == pytest.approx(min(data.min() for data in per_step))
+    assert high == pytest.approx(max(data.max() for data in per_step))
+
+
+def test_value_range_widens_as_more_report_steps_are_added(case):
+    narrow = case.value_range("PRESSURE", [60])
+    wide = case.value_range("PRESSURE", range(0, 121, 10))
+
+    assert wide[0] <= narrow[0]
+    assert wide[1] >= narrow[1]
+
+
+def test_value_range_reads_a_static_keyword_only_once(case1):
+    case = CaseData([case1])
+    seen = []
+    original = case.read
+
+    def counting_read(keyword, rstep):
+        seen.append(rstep)
+        return original(keyword, rstep)
+
+    case.read = counting_read
+
+    low, high = case.value_range("PORO", [0, 60, 120])
+
+    assert seen == [0]  # PORO is the same at every report step
+    assert (low, high) == (pytest.approx(0.3), pytest.approx(0.3))
+
+
+def test_value_range_rejects_an_empty_report_step_list(case):
+    with pytest.raises(ValueError, match="No report steps given"):
+        case.value_range("PRESSURE", [])
+
+
+# ---------------------------------------------------------------------------
 # unit_convention / wells
 # ---------------------------------------------------------------------------
 

@@ -1,8 +1,10 @@
 """ Keyword lookup across the restart and .INIT files of one case """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
+import numpy as np
 from numpy.typing import NDArray
 
 from opm_vis.utils.restart import Report, RestartReader, Wells
@@ -85,6 +87,46 @@ class CaseData:
             return self.static.read(keyword)
 
         raise KeyError(f"{keyword} not in restart files or .INIT file!")
+
+    def value_range(self, keyword: str, rsteps: Sequence[int]) -> tuple[float, float]:
+        """
+        Smallest and largest value a keyword takes over a set of report steps
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword
+        rsteps : Sequence[int]
+            Report steps to include
+
+        Returns
+        -------
+        tuple[float, float]
+            (minimum, maximum) over all the given report steps, ignoring NaNs
+
+        Notes
+        -----
+        Seeded from the data rather than from 0. opm_vis.plot starts its accumulators at zero
+        (see collections.py), so a pressure field in [4000, 6000] psia is given a colour range
+        beginning at zero and most of the colour map goes unused.
+
+        A static keyword has the same values at every report step, so it is only read once.
+        """
+        if len(rsteps) == 0:
+            raise ValueError(
+                f"No report steps given to compute the value range of {keyword}!"
+            )
+
+        # A static keyword does not vary with time, so one report step settles it
+        steps = [rsteps[0]] if self.is_static(keyword, rsteps[0]) else rsteps
+
+        low, high = np.inf, -np.inf
+        for rstep in steps:
+            data = self.read(keyword, rstep)
+            low = min(low, np.nanmin(data))
+            high = max(high, np.nanmax(data))
+
+        return float(low), float(high)
 
     def is_static(self, keyword: str, rstep: int) -> bool:
         """
