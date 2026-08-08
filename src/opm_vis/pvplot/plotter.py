@@ -36,6 +36,9 @@ _VIEW_2D = {
     "k": lambda plotter: plotter.view_xy(),
 }
 
+# Which coordinate axis points at the camera in each 2D view, and so should not be drawn
+_OUT_OF_PLANE_AXIS = {"i": "x", "j": "y", "k": "z"}
+
 # Fixed names for the actors pvplot manages itself, so repeated calls replace rather than stack
 _TITLE_NAME = "pvplot-title"
 _WELLS_OPEN = "pvplot-wells-open"
@@ -124,6 +127,8 @@ class GridPlotter:
         self.title = ""
         self._colour_map: tuple[str, bool] | None = None
         self._scalar_bar_title: str | None = None
+        self._view_2d_dim: str | None = None
+        self._axes_shown = False
 
     def add_slice(
         self,
@@ -208,8 +213,13 @@ class GridPlotter:
 
         # Excluded from set_scalars: a wireframe is context, and colouring it by the same
         # field as the slices in front of it only adds noise.
+        # algorithm is passed explicitly because PyVista is in the middle of changing its
+        # default, and this is the one that returns the boundary faces
         return self._add(
-            self.grid.mesh.extract_surface(), name, carries_scalars=False, **kwargs
+            self.grid.mesh.extract_surface(algorithm="dataset_surface"),
+            name,
+            carries_scalars=False,
+            **kwargs,
         )
 
     def add_threshold(
@@ -548,6 +558,9 @@ class GridPlotter:
         self.plotter.enable_parallel_projection()
         self.plotter.reset_camera()
 
+        # Remembered so that show_axes_grid can leave out the axis pointing at the camera
+        self._view_2d_dim = slice_dim
+
     def view_3d(self, *, azimuth: float = 0.0, elevation: float = 0.0) -> None:
         """
         Look at the model from an angle, with depth increasing downwards
@@ -569,6 +582,9 @@ class GridPlotter:
         self.plotter.disable_parallel_projection()
         self.plotter.view_isometric()
         self.plotter.set_viewup(_DEPTH_UP)
+
+        # All three axes are meaningful again, see show_axes_grid
+        self._view_2d_dim = None
 
         if azimuth:
             self.plotter.camera.Azimuth(azimuth)
@@ -602,13 +618,37 @@ class GridPlotter:
         -----
         Axis titles carry the case's own length unit, so a field-units case is labelled in
         feet. opm_vis.plot hard-codes metres whatever the case uses.
+
+        Call this after choosing the view. In a 2D view the axis pointing at the camera is
+        left out, because drawing it would put a meaningless third axis - and its tick labels -
+        across the middle of the picture; the bounding box has no way of knowing it is being
+        looked at end-on. That decision is made here, from whichever view is current, so
+        changing the view afterwards means calling this again.
+
+        One limitation remains in the 2D cross-sections: VTK draws no ticks along the depth
+        axis when it is looked at edge-on, so those views get a horizontal scale but no vertical
+        one. The mesh geometry is unaffected.
         """
         xtitle, ytitle, ztitle = axis_titles(self.label)
         kwargs.setdefault("xtitle", xtitle)
         kwargs.setdefault("ytitle", ytitle)
         kwargs.setdefault("ztitle", ztitle)
 
+        if self._view_2d_dim is not None:
+            hidden = _OUT_OF_PLANE_AXIS[self._view_2d_dim]
+            kwargs.setdefault(f"show_{hidden}axis", False)
+            kwargs.setdefault(f"show_{hidden}labels", False)
+
+        # Replace any box a previous call left behind rather than adding a second one
+        if self._axes_shown:
+            self.plotter.remove_bounds_axes()
+
         self.plotter.show_bounds(**kwargs)
+        self._axes_shown = True
+
+        # Without this the new box does not appear if anything has already been rendered, in
+        # the same way that set_scalars needs an explicit render to show new values
+        self.plotter.render()
 
     def set_title(self, text: str | None = None) -> None:
         """

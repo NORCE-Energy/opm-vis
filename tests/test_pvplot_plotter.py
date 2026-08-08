@@ -579,6 +579,47 @@ def test_show_axes_grid_labels_axes_in_the_cases_own_units(plotter):
     assert plotter.plotter.renderer.cube_axes_actor.GetZTitle() == "Depth [ft]"
 
 
+def test_show_axes_grid_omits_the_axis_pointing_at_the_camera(plotter):
+    plotter.add_slice("j", 5)
+    plotter.view_2d("j")
+
+    plotter.show_axes_grid()
+
+    # A j-slice is viewed along y, so a y axis would run meaninglessly across the picture
+    axes = plotter.plotter.renderer.cube_axes_actor
+    assert axes.GetXAxisVisibility() == 1
+    assert axes.GetZAxisVisibility() == 1
+    assert axes.GetYAxisVisibility() == 0
+
+
+def test_show_axes_grid_restores_all_axes_in_a_3d_view(plotter):
+    plotter.add_slice("j", 5)
+    plotter.view_2d("j")
+    plotter.show_axes_grid()
+
+    plotter.view_3d()
+    plotter.show_axes_grid()
+
+    axes = plotter.plotter.renderer.cube_axes_actor
+    assert axes.GetYAxisVisibility() == 1
+
+
+def test_show_axes_grid_still_draws_after_a_render_and_a_view_change(plotter):
+    plotter.add_slice("j", 5)
+    plotter.set_scalars("SGAS", 60)
+    plotter.view_3d()
+    plotter.show_axes_grid()
+    plotter.screenshot()
+
+    plotter.view_2d("j")
+    plotter.show_axes_grid()
+
+    # Once something has been rendered, a newly added bounds box needs an explicit render or
+    # it never appears
+    assert plotter.plotter.renderer.cube_axes_actor.GetVisibility() == 1
+    assert len(np.unique(plotter.screenshot().reshape(-1, 3), axis=0)) > 100
+
+
 def test_set_title_uses_the_report_date_by_default(plotter):
     plotter.add_slice("k", 0)
     plotter.set_scalars("SGAS", 0)
