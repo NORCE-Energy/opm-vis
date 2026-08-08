@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import warnings
 from glob import glob
+from typing import cast
 
 import numpy as np
 import pyvista as pv
@@ -162,8 +163,16 @@ class GridMesh:
         -----
         Cell data comes along, so the extracted mesh keeps its own ACTIVE_INDEX array and can
         be given property values without consulting the parent mesh.
+
+        extract_cells() is typed generically over every PyVista dataset, so its declared
+        return type is wider than what it can actually produce from a mesh that is already an
+        UnstructuredGrid. The cast below reflects that narrower, verified invariant rather than
+        working around a real ambiguity.
         """
-        return self.mesh.extract_cells(self.slice_mask(slice_dim, slice_ind))
+        return cast(
+            pv.UnstructuredGrid,
+            self.mesh.extract_cells(self.slice_mask(slice_dim, slice_ind)),
+        )
 
     def quad_slice(self, slice_dim: str, slice_ind: int) -> pv.PolyData:
         """
@@ -317,8 +326,13 @@ class GridMesh:
         mesh.cell_data["K"] = ijk[:, 2]
 
         if self.weld:
-            mesh = mesh.clean(
-                tolerance=0.0, produce_merge_map=False, average_point_data=False
+            # clean() is typed generically over every PyVista dataset, so its declared return
+            # type is wider than what it can actually produce here; see the note on
+            # extract_slice for why the cast is safe. tolerance is int-typed upstream (its
+            # unannotated default of 0 is what pyright infers from), so 0 rather than 0.0.
+            mesh = cast(
+                pv.UnstructuredGrid,
+                mesh.clean(tolerance=0, produce_merge_map=False, average_point_data=False),
             )
 
         # Attaching cell data makes the first array active, which would leave PyVista

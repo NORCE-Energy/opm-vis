@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import pyvista as pv
 from numpy.typing import NDArray
@@ -38,6 +38,10 @@ _VIEW_2D = {
 
 # Which coordinate axis points at the camera in each 2D view, and so should not be drawn
 _OUT_OF_PLANE_AXIS = {"i": "x", "j": "y", "k": "z"}
+
+# The axis names pyvista's own clip() accepts as a `normal`; matches its _NormalsLiteral, kept
+# as our own alias since that name is private to pyvista.
+_AxisName = Literal["x", "y", "z", "-x", "-y", "-z"]
 
 # Fixed names for the actors pvplot manages itself, so repeated calls replace rather than stack
 _TITLE_NAME = "pvplot-title"
@@ -112,8 +116,13 @@ class GridPlotter:
         self.grid = GridMesh(paths[0], weld=weld)
         self.label = Label(self.case.unit_convention())
 
-        # Set up the render window
-        self.plotter = pv.Plotter(off_screen=off_screen, window_size=window_size)
+        # Set up the render window. pv.Plotter wants window_size as a list rather than a
+        # tuple; a tuple is kept in our own signature since it is the immutable, idiomatic
+        # choice for a fixed pair of dimensions.
+        self.plotter = pv.Plotter(
+            off_screen=off_screen,
+            window_size=list(window_size) if window_size is not None else None,
+        )
         if z_scale != 1.0:
             self.plotter.set_scale(zscale=z_scale)
 
@@ -261,6 +270,10 @@ class GridPlotter:
         Useful for showing a plume or a swept region on its own. The subset keeps its
         ACTIVE_INDEX array, so set_scalars can still colour it by any keyword and at any report
         step afterwards - the threshold fixes which cells are shown, not what they show.
+
+        threshold() is typed generically over every PyVista dataset, so its declared return
+        type is wider than what it can actually produce from an UnstructuredGrid input; the
+        cast below reflects that narrower, verified invariant.
         """
         mesh = self.grid.mesh
 
@@ -272,7 +285,9 @@ class GridPlotter:
             mesh.cell_data[ACTIVE_INDEX]
         ]
         try:
-            subset = mesh.threshold(value, scalars=keyword, invert=invert)
+            subset = cast(
+                pv.UnstructuredGrid, mesh.threshold(value, scalars=keyword, invert=invert)
+            )
         finally:
             # threshold() leaves the array it filtered on selected as the grid's active
             # scalars, which would silently start colouring anything already showing it
@@ -282,7 +297,7 @@ class GridPlotter:
 
     def add_clip(
         self,
-        normal: str | tuple[float, float, float] = "z",
+        normal: _AxisName | tuple[float, float, float] = "z",
         origin: tuple[float, float, float] | None = None,
         *,
         invert: bool = True,
@@ -295,8 +310,9 @@ class GridPlotter:
 
         Parameters
         ----------
-        normal : str | tuple[float, float, float], optional
-            Plane normal, either an axis name or a vector, by default "z"
+        normal : _AxisName | tuple[float, float, float], optional
+            Plane normal, either an axis name ("x", "y", "z", "-x", "-y" or "-z") or a vector,
+            by default "z"
         origin : tuple[float, float, float] | None, optional
             Point on the plane, by default None, which uses the centre of the grid
         invert : bool, optional
@@ -318,12 +334,20 @@ class GridPlotter:
         -----
         Cut cells keep the cell data of the cell they came from, ACTIVE_INDEX included, so a
         clipped grid can still be coloured by set_scalars.
+
+        clip() is typed generically over every PyVista dataset (including composite
+        MultiBlocks, which do not apply here), so its declared return type is wider than what
+        it can actually produce from an UnstructuredGrid input; the cast below reflects that
+        narrower, verified invariant.
         """
-        subset = self.grid.mesh.clip(
-            normal=normal,
-            origin=origin if origin is not None else self.grid.mesh.center,
-            invert=invert,
-            crinkle=crinkle,
+        subset = cast(
+            pv.UnstructuredGrid,
+            self.grid.mesh.clip(
+                normal=normal,
+                origin=origin if origin is not None else self.grid.mesh.center,
+                invert=invert,
+                crinkle=crinkle,
+            ),
         )
 
         return self._add(subset, name or "clip", **kwargs)
@@ -729,7 +753,7 @@ class GridPlotter:
         filename: str | Path,
         *,
         rsteps: Sequence[int] | None = None,
-        fps: float = 3.0,
+        fps: int = 3,
         clim: tuple[float, float] | None = None,
         wells: bool = False,
         title: bool = True,
@@ -746,8 +770,8 @@ class GridPlotter:
             File to write. A ".gif" suffix writes a GIF, anything else a movie (e.g. ".mp4").
         rsteps : Sequence[int] | None, optional
             Report steps to animate, by default None, which uses every report step
-        fps : float, optional
-            Frames per second, by default 3.0
+        fps : int, optional
+            Frames per second, by default 3
         clim : tuple[float, float] | None, optional
             Colour limits, by default None, which spans every frame so the colours stay
             comparable throughout
@@ -794,8 +818,11 @@ class GridPlotter:
                 self.plotter.write_frame()
         finally:
             # The file is only written out when the writer is closed. Closing the writer rather
-            # than the plotter leaves the scene usable afterwards.
-            self.plotter.mwriter.close()
+            # than the plotter leaves the scene usable afterwards. mwriter is set by open_gif
+            # or open_movie just above, so it is never actually None here - the guard is only
+            # to satisfy its Optional type.
+            if self.plotter.mwriter is not None:
+                self.plotter.mwriter.close()
 
     def close(self) -> None:
         """Close the render window and release its resources"""
