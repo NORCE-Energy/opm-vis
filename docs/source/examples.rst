@@ -1,9 +1,26 @@
 API examples
 ============
 
-These build on the quick start on the :doc:`front page <index>`. All of them use
-:mod:`opm_vis.pvplot`, the recommended backend; a Matplotlib example is at the bottom for the
-alternative backend.
+All of these use :mod:`opm_vis.pvplot`, the recommended backend; a Matplotlib example is at the
+bottom for the alternative backend.
+
+Basic slice with wells
+-------------------------
+
+.. code-block:: python
+
+   from opm_vis.pvplot import GridPlotter
+
+   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+
+   plotter.add_slice("k", 0)          # map view of the top layer
+   plotter.add_slice("j", 5)          # a cross-section through it
+   plotter.add_wireframe()            # grid outline for context
+
+   plotter.set_scalars("SGAS", rstep=60, clim=plotter.global_clim("SGAS"))
+   plotter.add_wells(60)
+   plotter.view_3d()
+   plotter.show()
 
 Stepping through report steps
 ------------------------------

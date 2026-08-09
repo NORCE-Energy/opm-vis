@@ -12,6 +12,12 @@ developed and covering a smaller subset.
 Examples
 --------
 
+Two slices in a 3D view, with wells (shown by default):
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 0 -j 5 --rstep 60 --view 3d --wells
+
 A single k-slice at report step 60, saved to a PNG instead of opened interactively:
 
 .. code-block:: bash

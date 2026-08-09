@@ -29,34 +29,13 @@ Features
 - **Command-line tools.** ``opm-vis-pv`` and ``opm-vis-mpl`` plot or animate a case without
   writing any Python.
 
-Quick start
------------
+Install
+-------
 
 .. code-block:: bash
 
    pip install -e .                 # Matplotlib backend only
    pip install -e ".[pyvista]"      # adds the PyVista/VTK backend
-
-.. code-block:: python
-
-   from opm_vis.pvplot import GridPlotter
-
-   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
-
-   plotter.add_slice("k", 0)          # map view of the top layer
-   plotter.add_slice("j", 5)          # a cross-section through it
-   plotter.add_wireframe()            # grid outline for context
-
-   plotter.set_scalars("SGAS", rstep=60, clim=plotter.global_clim("SGAS"))
-   plotter.add_wells(60)
-   plotter.view_3d()
-   plotter.show()
-
-Or from the command line:
-
-.. code-block:: bash
-
-   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 0 -j 5 --view 3d --wells
 
 .. toctree::
    :maxdepth: 2
