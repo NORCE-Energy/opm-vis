@@ -221,6 +221,70 @@ class GridMesh:
 
         return quads
 
+    def cell_centers(self) -> pv.PolyData:
+        """
+        Cell centre points for every active cell, without building the hexahedral mesh
+
+        Returns
+        -------
+        pv.PolyData
+            One point per active cell, carrying an ACTIVE_INDEX cell array
+
+        Notes
+        -----
+        Placing something at a cell's centre - a vector glyph, for instance - does not need
+        the cell's actual volume, only a point. This skips hexahedron assembly and point
+        welding entirely, reading just the mean of each cell's 8 corners, which is cheaper
+        than .mesh and gives identical points: welding only merges coincident corners, it does
+        not move them, so the mean of the 8 corners is the same whether or not they have been
+        deduplicated into shared points first.
+        """
+        corners, _, active_index = self._read_corners()
+        points = pv.PolyData(corners.mean(axis=1))
+        points.cell_data[ACTIVE_INDEX] = active_index
+
+        # See the note in _build: ACTIVE_INDEX must not end up as the active scalars
+        points.set_active_scalars(None)
+
+        return points
+
+    def slice_cell_centers(self, slice_dim: str, slice_ind: int) -> pv.PolyData:
+        """
+        Cell centre points for one i-, j- or k-slice, without building the hexahedral mesh
+
+        Parameters
+        ----------
+        slice_dim : str
+            'i', 'j', or 'k' slice of the 3D grid
+        slice_ind : int
+            Index of slice
+
+        Returns
+        -------
+        pv.PolyData
+            One point per slice cell, carrying an ACTIVE_INDEX cell array
+
+        Notes
+        -----
+        Reuses GridSlice3D exactly as quad_slice does, so only the cells on the slice are ever
+        read from the file - not the whole grid.
+
+        The point placed for each cell is the centre of the slice face GridSlice3D already
+        computes, not the true cell-volume centroid: the two coincide in the slice's own
+        plane and differ only along its thickness. Keeping to the face is what places a glyph
+        exactly on a quad_slice's surface instead of at the cell's mid-depth, buried inside it.
+        """
+        self._validate_slice(slice_dim, slice_ind)
+
+        slc = GridSlice3D(self.path, slice_dim, slice_ind)
+        points = pv.PolyData(slc.cell_centers())
+        points.cell_data[ACTIVE_INDEX] = np.asarray(slc.active_indices(), dtype=np.int64)
+
+        # See the note in _build: ACTIVE_INDEX must not end up as the active scalars
+        points.set_active_scalars(None)
+
+        return points
+
     def _validate_slice(self, slice_dim: str, slice_ind: int) -> int:
         """
         Check a slice dimension and index against the grid

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
+import numpy as np
 import pyvista as pv
 from numpy.typing import NDArray
 
@@ -49,6 +50,11 @@ _WELLS_OPEN = "pvplot-wells-open"
 _WELLS_SHUT = "pvplot-wells-shut"
 _WELL_LABELS = "pvplot-well-labels"
 
+# Cell array a vector's components are gathered into before glyphing. Reused across calls
+# rather than named after the keywords, since a glyph actor's source mesh may be shared (the
+# full grid) with other actors that should not see a per-keyword array appear on it.
+_GLYPH_VECTORS = "GLYPH_VECTORS"
+
 
 @dataclass
 class _MeshActor:
@@ -63,6 +69,28 @@ class _MeshActor:
     mesh: pv.DataSet
     actor: Any
     carries_scalars: bool = True
+
+
+@dataclass
+class _GlyphSpec:
+    """
+    Recorded settings needed to rebuild a glyph actor's arrows at a new report step.
+
+    Unlike scalar colouring, moving a glyph field to a new report step is not a matter of
+    writing new values into the existing dataset: the arrows' positions, directions and
+    lengths all come from the vector field itself, so the whole glyph mesh has to be rebuilt
+    from scratch. The source mesh (the full grid or one of its slices) is kept so that rebuild
+    reads the new values through the same ACTIVE_INDEX mapping the rest of pvplot uses, and the
+    scale factor is kept fixed so arrow length stays comparable across report steps.
+    """
+
+    source: pv.DataSet
+    x_keyword: str
+    y_keyword: str
+    z_keyword: str
+    factor: float
+    scale: bool
+    geom: pv.PolyData | None
 
 
 class GridPlotter:
@@ -127,8 +155,11 @@ class GridPlotter:
             self.plotter.set_scale(zscale=z_scale)
 
         # Internal variables. Every dataset added is tracked by name so its scalars can be
-        # updated later; see the _MeshActor docstring.
+        # updated later; see the _MeshActor docstring. Glyph actors are also registered in
+        # _actors (so actor_names() and duplicate-name checks see them for free), with their
+        # extra bookkeeping kept here under the same name; see _GlyphSpec.
         self._actors: dict[str, _MeshActor] = {}
+        self._glyphs: dict[str, _GlyphSpec] = {}
 
         # What is currently coloured, set by set_scalars, and the current title
         self.keyword = ""
@@ -419,6 +450,119 @@ class GridPlotter:
                 always_visible=True,
             )
 
+    def add_glyphs(
+        self,
+        x_keyword: str,
+        y_keyword: str,
+        z_keyword: str,
+        rstep: int,
+        *,
+        slice_dim: str | None = None,
+        slice_ind: int | None = None,
+        quads: bool = False,
+        scale: bool = True,
+        factor: float | None = None,
+        geom: pv.PolyData | None = None,
+        name: str | None = None,
+        **kwargs,
+    ) -> str:
+        """
+        Add vector glyphs (arrows) built from three keyword components
+
+        Parameters
+        ----------
+        x_keyword : str
+            OPM keyword giving the vector's x-component, e.g. "DISPX"
+        y_keyword : str
+            OPM keyword giving the vector's y-component, e.g. "DISPY"
+        z_keyword : str
+            OPM keyword giving the vector's z-component, e.g. "DISPZ"
+        rstep : int
+            Report step to read the components at
+        slice_dim : str | None, optional
+            Restrict the glyphs to one i-, j- or k-slice, by default None, which places one
+            glyph at every active cell of the whole grid
+        slice_ind : int | None, optional
+            Index of the slice; required together with slice_dim
+        quads : bool, optional
+            Place glyphs from cell-centre points alone instead of the full hexahedral mesh,
+            by default False. Cheaper on a large grid, and never builds the full mesh at all -
+            same idea as add_slice's own quads argument, but for a placement point rather than
+            a face. Has no effect on where the arrows end up; see the Notes below.
+        scale : bool, optional
+            Scale each arrow by its own vector's magnitude, by default True. False draws
+            every arrow the same length, showing only direction.
+        factor : float | None, optional
+            Factor the vectors are multiplied by before glyphing, by default None, which
+            picks one that draws the largest vector at about the width of one grid cell.
+        geom : pv.PolyData | None, optional
+            Glyph shape, by default None, which draws PyVista's arrow
+        name : str | None, optional
+            Name to register the glyphs under, by default None, which uses the three
+            keywords (and the slice, if one was given)
+        kwargs : optional
+            Optional arguments passed to pyvista.Plotter.add_mesh
+
+        Returns
+        -------
+        str
+            Name the glyphs were registered under
+
+        Notes
+        -----
+        Physical vector fields (e.g. displacement, in metres) are usually many orders of
+        magnitude smaller than the grid's own coordinates, which is why the vectors are scaled
+        before glyphing rather than drawn at their literal length.
+
+        The factor picked here - or passed explicitly - is reused by every later set_vectors
+        call on this actor, so arrow length stays comparable across report steps rather than
+        each frame being renormalised to fill the same space. Pass global_glyph_factor(...)
+        explicitly if this report step's own largest vector is not representative of the
+        whole run.
+
+        quads only changes how a placement point is obtained, not the arrows themselves: a
+        glyph only ever needs one point per cell, never that cell's actual volume, so skipping
+        the full hexahedral build (and, on a slice, touching only that slice's cells) changes
+        nothing about what gets drawn. The one real difference is on a slice: quads places the
+        point at the slice face GridSlice3D already exposes, which sits exactly on a
+        quads=True add_slice's surface, whereas the default places it at the cell's true
+        volumetric centre - inside a solid add_slice actor if that one is not also using
+        quads, and invisible there as a result.
+
+        Glyph actors take no part in set_scalars: an arrow's points carry per-glyph, not
+        per-cell, data, so there is no ACTIVE_INDEX left to write scalar values through. A
+        flat colour is used by default; pass scalars="GlyphScale" to colour by magnitude
+        instead.
+        """
+        source = self._glyph_source(slice_dim, slice_ind, quads=quads)
+        vectors = self._glyph_vectors(source, x_keyword, y_keyword, z_keyword, rstep)
+
+        if factor is None:
+            peak = float(np.linalg.norm(vectors, axis=1).max())
+            factor = self._auto_glyph_factor(source, peak, scale=scale)
+
+        glyphs = self._build_glyphs(source, vectors, scale=scale, factor=factor, geom=geom)
+
+        default_name = f"{x_keyword}-{y_keyword}-{z_keyword}"
+        if slice_dim is not None:
+            default_name += f"-{slice_dim}{slice_ind}"
+
+        kwargs.setdefault("color", "black")
+        registered = self._add(glyphs, name or default_name, carries_scalars=False, **kwargs)
+
+        self._glyphs[registered] = _GlyphSpec(
+            source=source,
+            x_keyword=x_keyword,
+            y_keyword=y_keyword,
+            z_keyword=z_keyword,
+            factor=factor,
+            scale=scale,
+            geom=geom,
+        )
+        self.rstep = rstep
+
+        return registered
+
     def set_scalars(
         self,
         keyword: str,
@@ -551,6 +695,114 @@ class GridPlotter:
             rsteps = self.case.report.report_steps()
 
         return self.case.value_range(keyword, rsteps)
+
+    def set_vectors(self, rstep: int, *, name: str | None = None) -> None:
+        """
+        Rebuild glyph actors for a new report step's vector field
+
+        Parameters
+        ----------
+        rstep : int
+            Report step
+        name : str | None, optional
+            Update only the glyph actor registered under this name, by default None, which
+            updates every glyph actor added so far
+
+        Notes
+        -----
+        A glyph's position, direction and length all come from the vector field itself, so
+        unlike set_scalars this cannot write new values into the existing dataset - the
+        arrows are rebuilt from scratch and the actor's dataset is swapped for the new one.
+        Each actor's scale factor stays whatever add_glyphs picked or was given, so arrow
+        length remains comparable across report steps.
+        """
+        if name is not None:
+            if name not in self._glyphs:
+                raise KeyError(f"No glyph actor named '{name}' has been added!")
+            targets = [name]
+        else:
+            targets = list(self._glyphs)
+            if not targets:
+                raise RuntimeError("Nothing to update! Call add_glyphs before set_vectors.")
+
+        for target in targets:
+            spec = self._glyphs[target]
+            vectors = self._glyph_vectors(
+                spec.source, spec.x_keyword, spec.y_keyword, spec.z_keyword, rstep
+            )
+            glyphs = self._build_glyphs(
+                spec.source, vectors, scale=spec.scale, factor=spec.factor, geom=spec.geom
+            )
+
+            entry = self._actors[target]
+            entry.mesh = glyphs
+            entry.actor.mapper.dataset = glyphs
+
+        self.rstep = rstep
+
+        # Swapping the mapper's dataset marks it modified, but only an explicit render puts it
+        # on screen, the same as set_scalars.
+        self.plotter.render()
+
+    def global_glyph_factor(
+        self,
+        x_keyword: str,
+        y_keyword: str,
+        z_keyword: str,
+        rsteps: Sequence[int] | None = None,
+        *,
+        slice_dim: str | None = None,
+        slice_ind: int | None = None,
+        quads: bool = False,
+        scale: bool = True,
+    ) -> float:
+        """
+        Scale factor covering a vector field's largest magnitude over several report steps
+
+        Parameters
+        ----------
+        x_keyword : str
+            OPM keyword giving the vector's x-component
+        y_keyword : str
+            OPM keyword giving the vector's y-component
+        z_keyword : str
+            OPM keyword giving the vector's z-component
+        rsteps : Sequence[int] | None, optional
+            Report steps to cover, by default None, which uses every report step in the case
+        slice_dim : str | None, optional
+            Match the slice add_glyphs will be restricted to, by default None
+        slice_ind : int | None, optional
+            Index of the slice; required together with slice_dim
+        quads : bool, optional
+            Match the quads argument add_glyphs will be called with, by default False. The two
+            paths' characteristic lengths differ slightly, so the factor computed here is only
+            exactly right for a later add_glyphs call using the same value.
+        scale : bool, optional
+            Match the scale argument add_glyphs will be called with, by default True
+
+        Returns
+        -------
+        float
+            Factor to pass as add_glyphs' factor, so the same scaling holds at every report
+            step covered here rather than a new one being picked for each
+
+        Notes
+        -----
+        Without this, add_glyphs auto-scales arrows to whatever the given report step's own
+        largest vector happens to be - the same physical displacement would then draw at a
+        different size depending on the step, the same distortion global_clim exists to
+        prevent for colours.
+        """
+        if rsteps is None:
+            rsteps = self.case.report.report_steps()
+
+        source = self._glyph_source(slice_dim, slice_ind, quads=quads)
+        peak = 0.0
+        for rstep in rsteps:
+            vectors = self._glyph_vectors(source, x_keyword, y_keyword, z_keyword, rstep)
+            peak = max(peak, float(np.linalg.norm(vectors, axis=1).max()))
+
+        return self._auto_glyph_factor(source, peak, scale=scale)
 
     def view_2d(self, slice_dim: str) -> None:
         """
@@ -756,6 +1008,7 @@ class GridPlotter:
         fps: int = 3,
         clim: tuple[float, float] | None = None,
         wells: bool = False,
+        vectors: bool = False,
         title: bool = True,
         **kwargs,
     ) -> None:
@@ -778,6 +1031,10 @@ class GridPlotter:
         wells : bool, optional
             Redraw wells each frame, by default False. Worth turning on when wells open or shut
             during the period being animated.
+        vectors : bool, optional
+            Update every glyph actor each frame, by default False. Requires add_glyphs to have
+            been called first; its scale factor is left untouched, so pass factor or
+            global_glyph_factor(...) there if arrow length should stay comparable throughout.
         title : bool, optional
             Title each frame with its report date, by default True
         kwargs : optional
@@ -813,6 +1070,8 @@ class GridPlotter:
                 self.set_scalars(keyword, rstep, clim=clim, **kwargs)
                 if wells:
                     self.add_wells(rstep)
+                if vectors:
+                    self.set_vectors(rstep)
                 if title:
                     self.set_title()
                 self.plotter.write_frame()
@@ -827,6 +1086,171 @@ class GridPlotter:
     def close(self) -> None:
         """Close the render window and release its resources"""
         self.plotter.close()
+
+    def _glyph_source(
+        self, slice_dim: str | None, slice_ind: int | None, *, quads: bool
+    ) -> pv.DataSet:
+        """
+        Resolve the mesh glyphs are placed on, for add_glyphs and global_glyph_factor
+
+        Parameters
+        ----------
+        slice_dim : str | None
+            'i', 'j', or 'k' slice of the 3D grid, or None for the whole active grid
+        slice_ind : int | None
+            Index of slice; required together with slice_dim
+        quads : bool
+            Use the cheap cell-centre-only path instead of the full hexahedral mesh; see
+            add_glyphs
+
+        Returns
+        -------
+        pv.DataSet
+            The whole active grid, or the requested slice of it - either as hexahedra/the full
+            mesh, or as bare cell-centre points when quads is True
+
+        Notes
+        -----
+        Named to match add_slice's own quads argument, even though what it returns here is
+        points rather than quads: glyphing only ever needs a placement point per cell, never
+        the cell's actual geometry.
+        """
+        if slice_dim is None:
+            if slice_ind is not None:
+                raise ValueError("slice_dim is required when slice_ind is given!")
+            return self.grid.cell_centers() if quads else self.grid.mesh
+
+        if slice_ind is None:
+            raise ValueError("slice_ind is required when slice_dim is given!")
+
+        if quads:
+            return self.grid.slice_cell_centers(slice_dim, slice_ind)
+
+        return self.grid.extract_slice(slice_dim, slice_ind)
+
+    def _glyph_vectors(
+        self, source: pv.DataSet, x_keyword: str, y_keyword: str, z_keyword: str, rstep: int
+    ) -> NDArray[Any]:
+        """
+        Read a vector's three components at one report step, aligned to a mesh's cells
+
+        Parameters
+        ----------
+        source : pv.DataSet
+            Mesh to align the components to, via its ACTIVE_INDEX cell array
+        x_keyword : str
+            OPM keyword giving the vector's x-component
+        y_keyword : str
+            OPM keyword giving the vector's y-component
+        z_keyword : str
+            OPM keyword giving the vector's z-component
+        rstep : int
+            Report step
+
+        Returns
+        -------
+        NDArray[Any]
+            Vectors with shape (source.n_cells, 3)
+        """
+        active_index = source.cell_data[ACTIVE_INDEX]
+
+        return np.column_stack(
+            [
+                self.case.read(keyword, rstep)[active_index]
+                for keyword in (x_keyword, y_keyword, z_keyword)
+            ]
+        )
+
+    @staticmethod
+    def _auto_glyph_factor(source: pv.DataSet, peak_magnitude: float, *, scale: bool) -> float:
+        """
+        Pick a factor that draws the largest vector at about the width of one grid cell
+
+        Parameters
+        ----------
+        source : pv.DataSet
+            Mesh the vectors were read onto
+        peak_magnitude : float
+            Largest vector magnitude the factor has to accommodate
+        scale : bool
+            Whether add_glyphs will scale each arrow by its own vector's magnitude
+
+        Returns
+        -------
+        float
+            Factor to multiply the vectors by before glyphing them
+
+        Notes
+        -----
+        The characteristic length is derived from the source mesh's own bounding diagonal and
+        cell count, so it is correct whether source is the whole grid or one of its slices,
+        without needing to know how many cells span each axis.
+
+        When scale is True, an arrow's length is its vector's magnitude times factor, so the
+        peak magnitude has to be divided out to land near the characteristic length. When
+        scale is False every arrow is drawn at the same length regardless of magnitude, so the
+        factor alone sets that length and dividing by peak_magnitude would blow it up instead
+        (a real displacement field is commonly five or six orders of magnitude smaller than
+        the grid's own coordinates).
+        """
+        if source.n_cells == 0:
+            raise ValueError("Cannot glyph an empty slice - it has no active cells!")
+
+        char_length = source.length / source.n_cells ** (1 / 3)
+        if not scale:
+            return 0.8 * char_length
+
+        return 0.8 * char_length / peak_magnitude if peak_magnitude > 0.0 else 1.0
+
+    @staticmethod
+    def _build_glyphs(
+        source: pv.DataSet,
+        vectors: NDArray[Any],
+        *,
+        scale: bool,
+        factor: float,
+        geom: pv.PolyData | None,
+    ) -> pv.PolyData:
+        """
+        Build arrow glyphs for a vector field on a mesh's cells
+
+        Parameters
+        ----------
+        source : pv.DataSet
+            Mesh the vectors were read onto; one glyph is placed at each of its cell centres
+        vectors : NDArray[Any]
+            Vectors with shape (source.n_cells, 3)
+        scale : bool
+            Scale each arrow by its own vector's magnitude
+        factor : float
+            Factor the vectors are multiplied by before glyphing
+        geom : pv.PolyData | None
+            Glyph shape, None for PyVista's default arrow
+
+        Returns
+        -------
+        pv.PolyData
+            One glyph per cell
+
+        Notes
+        -----
+        glyph() is typed generically over every PyVista dataset, so its declared return type
+        is wider than what it can actually produce here; the cast reflects that narrower,
+        verified invariant, matching the same pattern used for extract_cells/clean/threshold/
+        clip elsewhere in this module.
+        """
+        source.cell_data[_GLYPH_VECTORS] = vectors
+        source.set_active_vectors(_GLYPH_VECTORS, preference="cell")
+
+        return cast(
+            pv.PolyData,
+            source.glyph(
+                orient=_GLYPH_VECTORS,
+                scale=_GLYPH_VECTORS if scale else False,
+                factor=factor,
+                geom=geom,
+            ),
+        )
 
     def _add(
         self, mesh: pv.DataSet, name: str, *, carries_scalars: bool = True, **kwargs
