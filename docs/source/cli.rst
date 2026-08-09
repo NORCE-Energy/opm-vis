@@ -31,6 +31,16 @@ Animate a keyword over every report step as a GIF:
 
    opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 0 --gif --fps 4 --save sgas.gif
 
+``--quads`` builds the slice as flat quads instead of hexahedra, touching only the cells on
+that slice rather than materialising the whole 3D mesh. It's faster on large grids, whether for
+a single static slice or a long ``--gif`` animation, at the cost of losing the volume a slice
+would otherwise have (so thresholding/clipping aren't available on it):
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 0 --rstep 60 --quads --save sgas_k0.png
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 0 --gif --quads --save sgas.gif
+
 Overlay vector glyphs from a displacement field on top of a scalar-coloured slice:
 
 .. code-block:: bash

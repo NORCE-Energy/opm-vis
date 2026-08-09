@@ -45,6 +45,25 @@ afterwards:
    plotter.view_3d()
    plotter.show()
 
+Faster slices with quads
+---------------------------
+
+``add_slice(..., quads=True)`` builds the slice as flat quads instead of hexahedra, touching
+only the cells on that slice rather than materialising the whole 3D mesh. It's faster on large
+grids, at the cost of losing the volume a slice would otherwise have — no thresholding or
+clipping on it:
+
+.. code-block:: python
+
+   from opm_vis.pvplot import GridPlotter
+
+   plotter = GridPlotter(["tests/data/SPE1CASE1"], off_screen=True)
+   plotter.add_slice("k", 0, quads=True)
+
+   plotter.set_scalars("SGAS", rstep=60)
+   plotter.view_2d("k")
+   plotter.screenshot("sgas.png")
+
 Saving a screenshot or animation
 ----------------------------------
 
