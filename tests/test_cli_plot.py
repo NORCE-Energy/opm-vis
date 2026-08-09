@@ -107,11 +107,11 @@ def test_paths_default_to_the_working_directory(data_dir, runner, tmp_path, monk
     assert (case_dir / "SGAS_k0_60.png").exists()
 
 
-def test_exactly_one_slice_dimension_is_required(case1, runner):
+def test_at_least_one_slice_dimension_is_required(case1, runner):
     result = runner.invoke(main, [case1, "--keyword", "SGAS", "--rstep", "60"])
 
     assert result.exit_code != 0
-    assert "exactly one of -i, -j, or -k" in result.output
+    assert "at least one of -i, -j, or -k" in result.output
 
 
 def test_more_than_one_slice_dimension_is_rejected(case1, runner):
@@ -120,7 +120,7 @@ def test_more_than_one_slice_dimension_is_rejected(case1, runner):
     )
 
     assert result.exit_code != 0
-    assert "exactly one of -i, -j, or -k" in result.output
+    assert "only supports one slice" in result.output
 
 
 def test_rstep_range_requires_gif(case1, runner):

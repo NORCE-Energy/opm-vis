@@ -67,11 +67,20 @@ def test_add_glyphs_rejects_an_unknown_keyword(plotter):
         plotter.add_glyphs("NOSUCHKW", "DISPY", "DISPZ", 15)
 
 
-def test_add_glyphs_defaults_to_a_flat_colour(plotter):
+def test_add_glyphs_defaults_to_colouring_by_magnitude(plotter):
     name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15)
 
-    # Explicit colour disables PyVista's default scalar-based colouring; without this, arrows
-    # would be coloured by GlyphScale (magnitude) with no scalar bar to explain it
+    mapper = plotter._actors[name].actor.mapper
+    assert mapper.scalar_visibility is True
+    assert mapper.array_name == "GlyphScale"
+
+
+def test_add_glyphs_explicit_colour_overrides_magnitude_colouring(plotter):
+    name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, color="red")
+
+    # PyVista colours by scalars whenever they are given at all, regardless of a colour also
+    # being passed, so an explicit colour must disable scalar visibility outright rather than
+    # relying on the colour to win on its own
     assert plotter._actors[name].actor.mapper.scalar_visibility is False
 
 

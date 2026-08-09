@@ -1,6 +1,7 @@
 """ Tests for the opm-vis-pv CLI, backed by the SPE1CASE1 test dataset """
 import shutil
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
@@ -69,18 +70,28 @@ def test_gif_range_with_step(case1, offscreen, runner, tmp_path):
     assert output.stat().st_size > 0
 
 
-def test_gif_saves_even_without_save_flag(case1, offscreen, runner):
-    del offscreen
+def test_gif_without_save_plays_instead_of_writing_a_file(case1, runner, monkeypatch):
+    # animate(filename=None) opens a real on-screen window (off_screen=False) and blocks until
+    # it is closed, so GridPlotter itself is stubbed out rather than actually constructed - this
+    # only checks that the CLI passes filename=None, with the right report steps, when --save
+    # is not given, instead of an actual path.
+    fake_plotter = MagicMock()
+    fake_plotter.__enter__.return_value = fake_plotter
+    fake_plotter.case.report.report_steps.return_value = list(range(121))
+    monkeypatch.setattr(
+        "opm_vis.cli.pvplot_cli.GridPlotter", MagicMock(return_value=fake_plotter)
+    )
 
-    # There is no interactive animation playback in this backend, so --gif always writes a
-    # file, whether or not --save was given.
-    with runner.isolated_filesystem():
-        result = runner.invoke(
-            main, [case1, "--keyword", "SGAS", "-k", "0", "--gif", "--rstep", "0:20"]
-        )
+    result = runner.invoke(
+        main, [case1, "--keyword", "SGAS", "-k", "0", "--gif", "--rstep", "0:20"]
+    )
 
-        assert result.exit_code == 0, result.output
-        assert Path("SGAS_k0_0-20.gif").exists()
+    assert result.exit_code == 0, result.output
+    fake_plotter.animate.assert_called_once()
+    args, kwargs = fake_plotter.animate.call_args
+    assert args[0] == "SGAS"
+    assert args[1] is None
+    assert kwargs["rsteps"] == list(range(21))
 
 
 def test_static_keyword_does_not_need_rstep(case1, offscreen, runner, tmp_path):
@@ -128,20 +139,112 @@ def test_paths_default_to_the_working_directory(data_dir, offscreen, runner, tmp
     assert (case_dir / "SGAS_k0_60.png").exists()
 
 
-def test_exactly_one_slice_dimension_is_required(case1, runner):
+def test_at_least_one_slice_dimension_is_required(case1, runner):
     result = runner.invoke(main, [case1, "--keyword", "SGAS", "--rstep", "60"])
 
     assert result.exit_code != 0
-    assert "exactly one of -i, -j, or -k" in result.output
+    assert "at least one of -i, -j, or -k" in result.output
 
 
-def test_more_than_one_slice_dimension_is_rejected(case1, runner):
+def test_multiple_slices_with_default_2d_view_is_rejected(case1, runner):
     result = runner.invoke(
         main, [case1, "--keyword", "SGAS", "-k", "0", "-i", "0", "--rstep", "60"]
     )
 
     assert result.exit_code != 0
-    assert "exactly one of -i, -j, or -k" in result.output
+    assert "2d only supports one slice" in result.output
+
+
+def test_duplicate_slice_is_rejected(case1, runner):
+    result = runner.invoke(
+        main, [case1, "--keyword", "SGAS", "-k", "0", "-k", "0", "--rstep", "60"]
+    )
+
+    assert result.exit_code != 0
+    assert "Slice given more than once" in result.output
+
+
+def test_multiple_slices_with_3d_view_writes_output_file(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "sgas.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "-k",
+            "0",
+            "-j",
+            "5",
+            "--rstep",
+            "60",
+            "--view",
+            "3d",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_default_output_name_joins_multiple_slice_tags(case1, offscreen, runner):
+    del offscreen
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            main,
+            [
+                case1,
+                "--keyword",
+                "SGAS",
+                "-k",
+                "0",
+                "-k",
+                "2",
+                "--rstep",
+                "60",
+                "--view",
+                "3d",
+                "-s",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert Path("SGAS_k0_k2_60.png").exists()
+
+
+def test_wells_union_across_multiple_slices(case1, offscreen, runner, tmp_path):
+    # SPE1CASE1's INJ is completed at k=0, PROD at k=2 - requesting both slices should draw
+    # both wells, not just whichever slice happens to be checked first
+    del offscreen
+    output = tmp_path / "sgas.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "-k",
+            "0",
+            "-k",
+            "2",
+            "--rstep",
+            "60",
+            "--view",
+            "3d",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
 
 
 def test_rstep_range_requires_gif(case1, runner):

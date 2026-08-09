@@ -1,6 +1,7 @@
 """ Interactive PyVista plotter for OPM simulation results """
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -387,6 +388,7 @@ class GridPlotter:
         self,
         rstep: int,
         *,
+        slices: Sequence[tuple[str, int]] | None = None,
         labels: bool = True,
         open_color: str = "black",
         shut_color: str = "red",
@@ -400,6 +402,9 @@ class GridPlotter:
         ----------
         rstep : int
             Report step
+        slices : Sequence[tuple[str, int]] | None, optional
+            Only draw wells with a completion on at least one of these (dim, index) i-, j- or
+            k-slices, by default None, which draws every well in the grid
         labels : bool, optional
             Annotate each well with its name, by default True
         open_color : str, optional
@@ -413,12 +418,12 @@ class GridPlotter:
 
         Notes
         -----
-        Trajectories are full 3D paths, so they are drawn once for the whole model rather than
-        filtered per slice the way opm_vis.plot does. Calling this again for another report
-        step replaces what is already there, which is what lets an animation follow wells
-        opening and shutting.
+        Trajectories are full 3D paths, drawn in full even when slices is given: it only
+        decides which wells are included, not how much of one is shown, unlike the per-slice
+        truncation opm_vis.plot does. Calling this again for another report step replaces what
+        is already there, which is what lets an animation follow wells opening and shutting.
         """
-        paths = well_paths(self.grid.egrid, self.case.wells, rstep)
+        paths = well_paths(self.grid.egrid, self.case.wells, rstep, slices=slices)
 
         # Replace whatever a previous call left behind, so report steps do not stack up
         for name in (_WELLS_OPEN, _WELLS_SHUT):
@@ -530,9 +535,11 @@ class GridPlotter:
         quads, and invisible there as a result.
 
         Glyph actors take no part in set_scalars: an arrow's points carry per-glyph, not
-        per-cell, data, so there is no ACTIVE_INDEX left to write scalar values through. A
-        flat colour is used by default; pass scalars="GlyphScale" to colour by magnitude
-        instead.
+        per-cell, data, so there is no ACTIVE_INDEX left to write scalar values through.
+        Coloured by magnitude (scalars="GlyphScale") by default; pass color=... for a flat
+        colour instead. PyVista colours by scalars whenever they are given regardless of a
+        color also being passed, so a caller-given color always takes priority here rather
+        than being silently overridden by the magnitude colouring.
         """
         source = self._glyph_source(slice_dim, slice_ind, quads=quads)
         vectors = self._glyph_vectors(source, x_keyword, y_keyword, z_keyword, rstep)
@@ -547,7 +554,14 @@ class GridPlotter:
         if slice_dim is not None:
             default_name += f"-{slice_dim}{slice_ind}"
 
-        kwargs.setdefault("color", "black")
+        if "color" in kwargs:
+            # An explicit solid colour overrides magnitude colouring. Both cannot simply be
+            # passed together: add_mesh colours by scalars whenever they are given at all, so
+            # scalars has to be left out entirely rather than relying on color to win.
+            kwargs.pop("scalars", None)
+        else:
+            kwargs.setdefault("scalars", "GlyphScale")
+
         registered = self._add(glyphs, name or default_name, carries_scalars=False, **kwargs)
 
         self._glyphs[registered] = _GlyphSpec(
@@ -1002,25 +1016,28 @@ class GridPlotter:
     def animate(
         self,
         keyword: str,
-        filename: str | Path,
+        filename: str | Path | None = None,
         *,
         rsteps: Sequence[int] | None = None,
         fps: int = 3,
         clim: tuple[float, float] | None = None,
         wells: bool = False,
+        wells_slices: Sequence[tuple[str, int]] | None = None,
         vectors: bool = False,
         title: bool = True,
         **kwargs,
     ) -> None:
         """
-        Write an animation of one keyword over several report steps
+        Show or write an animation of one keyword over several report steps
 
         Parameters
         ----------
         keyword : str
             OPM keyword to colour by
-        filename : str | Path
-            File to write. A ".gif" suffix writes a GIF, anything else a movie (e.g. ".mp4").
+        filename : str | Path | None, optional
+            File to write, by default None, which plays the animation in the render window
+            instead of writing anything. A ".gif" suffix writes a GIF, anything else a movie
+            (e.g. ".mp4").
         rsteps : Sequence[int] | None, optional
             Report steps to animate, by default None, which uses every report step
         fps : int, optional
@@ -1031,6 +1048,10 @@ class GridPlotter:
         wells : bool, optional
             Redraw wells each frame, by default False. Worth turning on when wells open or shut
             during the period being animated.
+        wells_slices : Sequence[tuple[str, int]] | None, optional
+            Restrict wells to those with a completion on at least one of these (dim, index)
+            slices, by default None, which draws every well in the grid. Only used when wells
+            is True.
         vectors : bool, optional
             Update every glyph actor each frame, by default False. Requires add_glyphs to have
             been called first; its scale factor is left untouched, so pass factor or
@@ -1046,6 +1067,10 @@ class GridPlotter:
         is built once for the whole animation. Colour limits are computed once up front rather
         than per frame, which is what keeps a frame's colours meaningful next to its
         neighbours'.
+
+        Playing (filename=None) needs an actual on-screen window, so construct the plotter
+        with off_screen=False (the default) in that case - there is nothing to show
+        interactively otherwise.
         """
         if not self._actors:
             raise RuntimeError(
@@ -1057,7 +1082,95 @@ class GridPlotter:
         if clim is None:
             clim = self.global_clim(keyword, rsteps)
 
-        filename = Path(filename)
+        frame_kwargs = {
+            "wells": wells,
+            "wells_slices": wells_slices,
+            "vectors": vectors,
+            "title": title,
+            **kwargs,
+        }
+
+        if filename is None:
+            self._play_frames(keyword, rsteps, fps, clim, **frame_kwargs)
+        else:
+            self._write_frames(keyword, Path(filename), rsteps, fps, clim, **frame_kwargs)
+
+    def _advance_frame(
+        self,
+        keyword: str,
+        rstep: int,
+        clim: tuple[float, float],
+        *,
+        wells: bool,
+        wells_slices: Sequence[tuple[str, int]] | None,
+        vectors: bool,
+        title: bool,
+        **kwargs,
+    ) -> None:
+        """
+        Show one report step of an animation
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword to colour by
+        rstep : int
+            Report step
+        clim : tuple[float, float]
+            Colour limits
+        wells : bool
+            Redraw wells at this report step
+        wells_slices : Sequence[tuple[str, int]] | None
+            Restrict wells to those with a completion on at least one of these slices; see
+            animate()
+        vectors : bool
+            Update every glyph actor at this report step
+        title : bool
+            Title the frame with its report date
+        kwargs : optional
+            Optional arguments passed to set_scalars
+
+        Notes
+        -----
+        Shared by animate()'s two ways of stepping through report steps - writing frames to a
+        movie file, or playing them in the render window - since advancing to the next report
+        step is identical either way; only what happens with the rendered frame differs.
+        """
+        self.set_scalars(keyword, rstep, clim=clim, **kwargs)
+        if wells:
+            self.add_wells(rstep, slices=wells_slices)
+        if vectors:
+            self.set_vectors(rstep)
+        if title:
+            self.set_title()
+
+    def _write_frames(
+        self,
+        keyword: str,
+        filename: Path,
+        rsteps: Sequence[int],
+        fps: int,
+        clim: tuple[float, float],
+        **frame_kwargs,
+    ) -> None:
+        """
+        Write an animation to file; see animate()
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword to colour by
+        filename : Path
+            File to write. A ".gif" suffix writes a GIF, anything else a movie (e.g. ".mp4").
+        rsteps : Sequence[int]
+            Report steps to animate
+        fps : int
+            Frames per second
+        clim : tuple[float, float]
+            Colour limits
+        frame_kwargs : optional
+            wells/vectors/title and any further kwargs, passed on to _advance_frame
+        """
         if filename.suffix.lower() == ".gif":
             self.plotter.open_gif(str(filename), fps=fps)
         else:
@@ -1067,13 +1180,7 @@ class GridPlotter:
 
         try:
             for rstep in rsteps:
-                self.set_scalars(keyword, rstep, clim=clim, **kwargs)
-                if wells:
-                    self.add_wells(rstep)
-                if vectors:
-                    self.set_vectors(rstep)
-                if title:
-                    self.set_title()
+                self._advance_frame(keyword, rstep, clim, **frame_kwargs)
                 self.plotter.write_frame()
         finally:
             # The file is only written out when the writer is closed. Closing the writer rather
@@ -1082,6 +1189,61 @@ class GridPlotter:
             # to satisfy its Optional type.
             if self.plotter.mwriter is not None:
                 self.plotter.mwriter.close()
+
+    def _play_frames(
+        self,
+        keyword: str,
+        rsteps: Sequence[int],
+        fps: int,
+        clim: tuple[float, float],
+        **frame_kwargs,
+    ) -> None:
+        """
+        Play an animation in the render window; see animate()
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword to colour by
+        rsteps : Sequence[int]
+            Report steps to animate
+        fps : int
+            Frames per second
+        clim : tuple[float, float]
+            Colour limits
+        frame_kwargs : optional
+            wells/vectors/title and any further kwargs, passed on to _advance_frame
+
+        Notes
+        -----
+        Uses the same pattern PyVista's own streaming-data examples use for a live view:
+        show(interactive_update=True) once up front so it returns immediately instead of
+        blocking, then update() every frame to render and process window events (letting the
+        user rotate or pan mid-animation) rather than a fresh blocking show() call each time.
+
+        A window closed part-way through stops the loop early rather than raising, the same
+        way closing a window during a plain show() is not an error. The window is left open
+        afterwards - whether the animation ran to completion or was stopped early - so the
+        last frame shown stays interactive until the caller closes it.
+        """
+        delay = 1.0 / fps if fps > 0 else 0.0
+
+        self.plotter.show(auto_close=False, interactive_update=True)
+
+        for rstep in rsteps:
+            if self.plotter.iren is None:
+                break  # the window was closed by the user
+
+            self._advance_frame(keyword, rstep, clim, **frame_kwargs)
+
+            self.plotter.update()
+            time.sleep(delay)
+
+        if self.plotter.iren is not None:
+            # Re-enter a blocking show() so the last frame stays interactive (rotate/pan/zoom)
+            # until the caller closes the window, instead of it going unresponsive the moment
+            # this loop stops polling it.
+            self.plotter.show()
 
     def close(self) -> None:
         """Close the render window and release its resources"""
