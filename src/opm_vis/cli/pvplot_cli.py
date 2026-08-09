@@ -48,6 +48,30 @@ def _glyph_color_kwargs(glyph_color: str) -> dict:
     return {} if glyph_color.lower() == _GLYPH_MAGNITUDE else {"color": glyph_color}
 
 
+def _wells_slice(
+    all_wells: bool, slice_dim: str, slice_index: int
+) -> tuple[str | None, int | None]:
+    """
+    Resolve which slice, if any, add_wells/animate should restrict wells to
+
+    Parameters
+    ----------
+    all_wells : bool
+        Value of --all-wells; takes priority over --wells since it is the broader request
+    slice_dim : str
+        The plot's own slice dimension
+    slice_index : int
+        The plot's own slice index
+
+    Returns
+    -------
+    tuple[str | None, int | None]
+        (None, None) to draw every well in the grid, or the plot's own slice to restrict wells
+        to those with a completion on it
+    """
+    return (None, None) if all_wells else (slice_dim, slice_index)
+
+
 @click.command(**COMMAND_SETTINGS)
 @PATHS_ARGUMENT
 @KEYWORD_OPTION
@@ -78,10 +102,17 @@ def _glyph_color_kwargs(glyph_color: str) -> dict:
 )
 @click.option("--log-scale", is_flag=True, default=False, help="Map colours logarithmically.")
 @click.option(
-    "--wells",
+    "--wells/--no-wells",
+    default=True,
+    show_default=True,
+    help="Draw wells with a completion on the chosen slice.",
+)
+@click.option(
+    "--all-wells",
     is_flag=True,
     default=False,
-    help="Draw wells present at the report step(s) shown.",
+    help="Draw every well in the grid, not just ones on the chosen slice. Takes priority "
+    "over --wells if both are given.",
 )
 @click.option("--wireframe", is_flag=True, default=False, help="Add the grid outline for context.")
 @click.option(
@@ -149,6 +180,7 @@ def main(
     axes: bool,
     log_scale: bool,
     wells: bool,
+    all_wells: bool,
     wireframe: bool,
     quads: bool,
     window_size: tuple[int, int] | None,
@@ -225,13 +257,16 @@ def main(
                 output = Path(save) if save else default_output_name(
                     keyword, slice_dim, slice_index, rsteps=steps, ext="gif"
                 )
+            wells_dim, wells_ind = _wells_slice(all_wells, slice_dim, slice_index)
             plotter.animate(
                 keyword,
                 output,
                 rsteps=steps,
                 fps=fps,
                 clim=clim,
-                wells=wells,
+                wells=wells or all_wells,
+                wells_slice_dim=wells_dim,
+                wells_slice_ind=wells_ind,
                 vectors=glyphs is not None,
                 title=not no_title,
                 cmap=cmap,
@@ -255,8 +290,9 @@ def main(
             log_scale=log_scale,
             scalar_bar=not no_colorbar,
         )
-        if wells:
-            plotter.add_wells(actual_rstep)
+        if wells or all_wells:
+            wells_dim, wells_ind = _wells_slice(all_wells, slice_dim, slice_index)
+            plotter.add_wells(actual_rstep, slice_dim=wells_dim, slice_ind=wells_ind)
         if glyphs is not None:
             x_kw, y_kw, z_kw = glyphs
             plotter.add_glyphs(

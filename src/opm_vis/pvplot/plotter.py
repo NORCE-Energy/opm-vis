@@ -388,6 +388,8 @@ class GridPlotter:
         self,
         rstep: int,
         *,
+        slice_dim: str | None = None,
+        slice_ind: int | None = None,
         labels: bool = True,
         open_color: str = "black",
         shut_color: str = "red",
@@ -401,6 +403,11 @@ class GridPlotter:
         ----------
         rstep : int
             Report step
+        slice_dim : str | None, optional
+            Only draw wells with a completion on this i-, j- or k-slice, by default None,
+            which draws every well in the grid
+        slice_ind : int | None, optional
+            Index of the slice; required together with slice_dim
         labels : bool, optional
             Annotate each well with its name, by default True
         open_color : str, optional
@@ -414,12 +421,21 @@ class GridPlotter:
 
         Notes
         -----
-        Trajectories are full 3D paths, so they are drawn once for the whole model rather than
-        filtered per slice the way opm_vis.plot does. Calling this again for another report
-        step replaces what is already there, which is what lets an animation follow wells
-        opening and shutting.
+        Trajectories are full 3D paths, drawn in full even when slice_dim/slice_ind is given:
+        the slice only decides which wells are included, not how much of one is shown, unlike
+        the per-slice truncation opm_vis.plot does. Calling this again for another report step
+        replaces what is already there, which is what lets an animation follow wells opening
+        and shutting.
         """
-        paths = well_paths(self.grid.egrid, self.case.wells, rstep)
+        if slice_dim is None:
+            if slice_ind is not None:
+                raise ValueError("slice_dim is required when slice_ind is given!")
+        elif slice_ind is None:
+            raise ValueError("slice_ind is required when slice_dim is given!")
+
+        paths = well_paths(
+            self.grid.egrid, self.case.wells, rstep, slice_dim=slice_dim, slice_ind=slice_ind
+        )
 
         # Replace whatever a previous call left behind, so report steps do not stack up
         for name in (_WELLS_OPEN, _WELLS_SHUT):
@@ -1018,6 +1034,8 @@ class GridPlotter:
         fps: int = 3,
         clim: tuple[float, float] | None = None,
         wells: bool = False,
+        wells_slice_dim: str | None = None,
+        wells_slice_ind: int | None = None,
         vectors: bool = False,
         title: bool = True,
         **kwargs,
@@ -1043,6 +1061,11 @@ class GridPlotter:
         wells : bool, optional
             Redraw wells each frame, by default False. Worth turning on when wells open or shut
             during the period being animated.
+        wells_slice_dim : str | None, optional
+            Restrict wells to those with a completion on this i-, j- or k-slice, by default
+            None, which draws every well in the grid. Only used when wells is True.
+        wells_slice_ind : int | None, optional
+            Index of the slice; required together with wells_slice_dim
         vectors : bool, optional
             Update every glyph actor each frame, by default False. Requires add_glyphs to have
             been called first; its scale factor is left untouched, so pass factor or
@@ -1073,22 +1096,19 @@ class GridPlotter:
         if clim is None:
             clim = self.global_clim(keyword, rsteps)
 
+        frame_kwargs = {
+            "wells": wells,
+            "wells_slice_dim": wells_slice_dim,
+            "wells_slice_ind": wells_slice_ind,
+            "vectors": vectors,
+            "title": title,
+            **kwargs,
+        }
+
         if filename is None:
-            self._play_frames(
-                keyword, rsteps, fps, clim, wells=wells, vectors=vectors, title=title, **kwargs
-            )
+            self._play_frames(keyword, rsteps, fps, clim, **frame_kwargs)
         else:
-            self._write_frames(
-                keyword,
-                Path(filename),
-                rsteps,
-                fps,
-                clim,
-                wells=wells,
-                vectors=vectors,
-                title=title,
-                **kwargs,
-            )
+            self._write_frames(keyword, Path(filename), rsteps, fps, clim, **frame_kwargs)
 
     def _advance_frame(
         self,
@@ -1097,6 +1117,8 @@ class GridPlotter:
         clim: tuple[float, float],
         *,
         wells: bool,
+        wells_slice_dim: str | None,
+        wells_slice_ind: int | None,
         vectors: bool,
         title: bool,
         **kwargs,
@@ -1114,6 +1136,10 @@ class GridPlotter:
             Colour limits
         wells : bool
             Redraw wells at this report step
+        wells_slice_dim : str | None
+            Restrict wells to those with a completion on this slice; see animate()
+        wells_slice_ind : int | None
+            Index of the slice; required together with wells_slice_dim
         vectors : bool
             Update every glyph actor at this report step
         title : bool
@@ -1129,7 +1155,7 @@ class GridPlotter:
         """
         self.set_scalars(keyword, rstep, clim=clim, **kwargs)
         if wells:
-            self.add_wells(rstep)
+            self.add_wells(rstep, slice_dim=wells_slice_dim, slice_ind=wells_slice_ind)
         if vectors:
             self.set_vectors(rstep)
         if title:
