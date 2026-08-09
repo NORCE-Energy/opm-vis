@@ -136,7 +136,7 @@ class GridMesh:
 
         Returns
         -------
-        NDArray[np.bool_]
+        NDArray[np.bool\_]
             Mask with shape (n_cells,)
         """
         axis = self._validate_slice(slice_dim, slice_ind)
