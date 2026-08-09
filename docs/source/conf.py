@@ -33,7 +33,6 @@ autodoc_member_order = "bysource"
 napoleon_numpy_docstring = True
 napoleon_google_docstring = False
 
-templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 intersphinx_mapping = {
@@ -43,5 +42,4 @@ intersphinx_mapping = {
 }
 
 html_theme = "furo"
-html_static_path = ["_static"]
 html_title = "opm-vis"
