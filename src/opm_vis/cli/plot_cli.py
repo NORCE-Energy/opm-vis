@@ -1,4 +1,4 @@
-"""opm-vis-mpl: plot a keyword on a grid slice with the (legacy) Matplotlib backend"""
+"""opm-vis-mpl: plot a keyword on a grid slice with the alternative Matplotlib backend"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -67,8 +67,8 @@ def main(
     PATHS are filename prefixes: the first is the main run, any further ones are restart runs.
     Defaults to searching the working directory (./) if not given.
 
-    This is the legacy backend; opm-vis-pv (PyVista) is the modern one and supports more of the
-    figure/gif options, including multiple slices at once.
+    This is the alternative backend, with fewer figure/gif options and less development effort
+    than opm-vis-pv (PyVista); opm-vis-pv also supports multiple slices at once.
     """
     slices = resolve_slices(slice_i, slice_j, slice_k)
     if len(slices) > 1:
