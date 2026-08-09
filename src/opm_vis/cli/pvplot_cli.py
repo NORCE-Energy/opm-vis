@@ -102,9 +102,9 @@ def _wells_slice(
 )
 @click.option("--log-scale", is_flag=True, default=False, help="Map colours logarithmically.")
 @click.option(
-    "--wells/--no-wells",
-    default=True,
-    show_default=True,
+    "--wells",
+    is_flag=True,
+    default=False,
     help="Draw wells with a completion on the chosen slice.",
 )
 @click.option(
