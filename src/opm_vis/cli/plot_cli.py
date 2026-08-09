@@ -22,7 +22,7 @@ from opm_vis.cli.common import (
     require_dynamic_keyword_error,
     resolve_gif_rsteps,
     resolve_paths,
-    resolve_slice,
+    resolve_slices,
 )
 from opm_vis.plot.collections import SlicePoly2DCollection, SlicePoly3DCollection
 
@@ -48,9 +48,9 @@ from opm_vis.plot.collections import SlicePoly2DCollection, SlicePoly3DCollectio
 def main(
     paths: tuple[str, ...],
     keyword: str,
-    slice_i: int | None,
-    slice_j: int | None,
-    slice_k: int | None,
+    slice_i: tuple[int, ...],
+    slice_j: tuple[int, ...],
+    slice_k: tuple[int, ...],
     rstep: str | None,
     gif: bool,
     fps: int,
@@ -68,9 +68,15 @@ def main(
     Defaults to searching the working directory (./) if not given.
 
     This is the legacy backend; opm-vis-pv (PyVista) is the modern one and supports more of the
-    figure/gif options.
+    figure/gif options, including multiple slices at once.
     """
-    slice_dim, slice_index = resolve_slice(slice_i, slice_j, slice_k)
+    slices = resolve_slices(slice_i, slice_j, slice_k)
+    if len(slices) > 1:
+        raise click.UsageError(
+            "opm-vis-mpl only supports one slice; pass -i/-j/-k once. Use opm-vis-pv for "
+            "multiple slices."
+        )
+    slice_dim, slice_index = slices[0]
     rstep_value = parse_rstep(rstep, gif)
 
     poly_kwargs = {"cmap": cmap}
@@ -93,7 +99,7 @@ def main(
             coll.save_gif(
                 Path(save)
                 if save
-                else default_output_name(keyword, slice_dim, slice_index, rsteps=steps, ext="gif"),
+                else default_output_name(keyword, slices, rsteps=steps, ext="gif"),
                 fps=fps,
             )
         return
@@ -114,7 +120,7 @@ def main(
         coll.save_plot(
             Path(save)
             if save
-            else default_output_name(keyword, slice_dim, slice_index, rstep=actual_rstep, ext="png")
+            else default_output_name(keyword, slices, rstep=actual_rstep, ext="png")
         )
 
 

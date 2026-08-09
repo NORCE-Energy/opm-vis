@@ -25,36 +25,36 @@ KEYWORD_OPTION = click.option(
     "--keyword", required=True, help="OPM keyword to plot, e.g. SGAS or PRESSURE."
 )
 
-# -i/-j/-k replace the old --slice-dim/--slice-index pair: exactly one of them is given, and its
-# value is the index of the slice on that dimension. This is also why --keyword lost its -k
-# short form.
+# -i/-j/-k replace the old --slice-dim/--slice-index pair: at least one is given, and its
+# value is the index of the slice on that dimension. Each is repeatable (-k 0 -k 5 -j 2) so
+# several slices can be plotted together; this is also why --keyword lost its -k short form.
 SLICE_OPTIONS = [
     click.option(
         "-i",
         "--i-index",
         "slice_i",
         type=int,
-        default=None,
+        multiple=True,
         metavar="INDEX",
-        help="Slice on the i dimension at this index.",
+        help="Slice on the i dimension at this index. Repeatable.",
     ),
     click.option(
         "-j",
         "--j-index",
         "slice_j",
         type=int,
-        default=None,
+        multiple=True,
         metavar="INDEX",
-        help="Slice on the j dimension at this index.",
+        help="Slice on the j dimension at this index. Repeatable.",
     ),
     click.option(
         "-k",
         "--k-index",
         "slice_k",
         type=int,
-        default=None,
+        multiple=True,
         metavar="INDEX",
-        help="Slice on the k dimension at this index.",
+        help="Slice on the k dimension at this index. Repeatable.",
     ),
 ]
 
@@ -151,38 +151,47 @@ def resolve_paths(paths: tuple[str, ...]) -> list[str]:
     return list(paths) if paths else ["./"]
 
 
-def resolve_slice(slice_i: int | None, slice_j: int | None, slice_k: int | None) -> tuple[str, int]:
+def resolve_slices(
+    slice_i: Sequence[int], slice_j: Sequence[int], slice_k: Sequence[int]
+) -> list[tuple[str, int]]:
     """
-    Check that exactly one of -i/-j/-k was given
+    Collect every -i/-j/-k value given into a list of (dim, index) slices
 
     Parameters
     ----------
-    slice_i : int | None
-        Value of -i
-    slice_j : int | None
-        Value of -j
-    slice_k : int | None
-        Value of -k
+    slice_i : Sequence[int]
+        Values of -i
+    slice_j : Sequence[int]
+        Values of -j
+    slice_k : Sequence[int]
+        Values of -k
 
     Returns
     -------
-    tuple[str, int]
-        (slice_dim, slice_index)
+    list[tuple[str, int]]
+        One (dim, index) pair per -i/-j/-k given, at least one, grouped by dimension in i/j/k
+        order (the order between different dimensions on the command line isn't tracked, only
+        repeats of the same option)
 
     Raises
     ------
     click.UsageError
-        If none or more than one of -i/-j/-k was given
+        If none were given, or the same (dim, index) pair was given more than once
     """
-    given = [
-        (dim, value)
-        for dim, value in (("i", slice_i), ("j", slice_j), ("k", slice_k))
-        if value is not None
-    ]
-    if len(given) != 1:
-        raise click.UsageError("Pass exactly one of -i, -j, or -k to select the slice.")
+    slices = (
+        [("i", value) for value in slice_i]
+        + [("j", value) for value in slice_j]
+        + [("k", value) for value in slice_k]
+    )
+    if not slices:
+        raise click.UsageError("Pass at least one of -i, -j, or -k to select a slice.")
 
-    return given[0]
+    duplicates = sorted({s for s in slices if slices.count(s) > 1})
+    if duplicates:
+        tags = ", ".join(f"{dim}{index}" for dim, index in duplicates)
+        raise click.UsageError(f"Slice given more than once: {tags}.")
+
+    return slices
 
 
 def parse_rstep(raw: str | None, gif: bool) -> int | tuple[int, int, int] | None:
@@ -279,8 +288,7 @@ def resolve_gif_rsteps(
 
 def default_output_name(
     keyword: str,
-    slice_dim: str,
-    slice_index: int,
+    slices: Sequence[tuple[str, int]],
     *,
     rstep: int | None = None,
     rsteps: Sequence[int] | None = None,
@@ -293,10 +301,8 @@ def default_output_name(
     ----------
     keyword : str
         OPM keyword being plotted
-    slice_dim : str
-        Slice dimension
-    slice_index : int
-        Slice index
+    slices : Sequence[tuple[str, int]]
+        Every (dim, index) slice being plotted
     rstep : int | None, optional
         Single report step, for a still image
     rsteps : Sequence[int] | None, optional
@@ -307,7 +313,7 @@ def default_output_name(
     Returns
     -------
     str
-        e.g. "SGAS_k0_60.png" or "SGAS_k0_0-120.gif", written to the current directory
+        e.g. "SGAS_k0_60.png" or "SGAS_k0_j5_0-120.gif", written to the current directory
     """
     if rsteps is not None:
         step_tag = f"{rsteps[0]}-{rsteps[-1]}"
@@ -316,7 +322,9 @@ def default_output_name(
     else:
         step_tag = "all"
 
-    return f"{keyword}_{slice_dim}{slice_index}_{step_tag}.{ext}"
+    slice_tag = "_".join(f"{dim}{index}" for dim, index in slices)
+
+    return f"{keyword}_{slice_tag}_{step_tag}.{ext}"
 
 
 def require_dynamic_keyword_error(keyword: str) -> click.UsageError:
