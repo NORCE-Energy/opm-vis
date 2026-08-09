@@ -104,6 +104,85 @@ def test_add_glyphs_renders(plotter):
 
 
 # ---------------------------------------------------------------------------
+# add_glyphs(quads=True) - the cell-centre-only fast path
+# ---------------------------------------------------------------------------
+
+
+def test_quads_does_not_need_the_full_mesh(plotter):
+    plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, quads=True)
+
+    assert plotter.grid._mesh is None  # the expensive hexahedral build was never triggered
+
+
+def test_quads_does_not_need_the_full_mesh_on_a_slice(plotter):
+    plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, slice_dim="k", slice_ind=0, quads=True)
+
+    assert plotter.grid._mesh is None
+
+
+def test_quads_places_the_same_number_of_glyphs_as_the_default_path(plotter):
+    quads_name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, quads=True, name="q")
+    default_name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, name="d")
+
+    quads_points = plotter._actors[quads_name].mesh.point_data["ACTIVE_INDEX"]
+    default_points = plotter._actors[default_name].mesh.point_data["ACTIVE_INDEX"]
+    assert len(np.unique(quads_points)) == len(np.unique(default_points)) == 125
+
+
+def test_quads_on_a_slice_places_the_same_number_of_glyphs(plotter):
+    quads_name = plotter.add_glyphs(
+        "DISPX", "DISPY", "DISPZ", 15, slice_dim="k", slice_ind=0, quads=True, name="q"
+    )
+
+    glyphs = plotter._actors[quads_name].mesh
+    assert len(np.unique(glyphs.point_data["ACTIVE_INDEX"])) == 25  # one 5x5 layer
+
+
+def test_quads_sits_on_the_slice_face_not_mid_cell(plotter):
+    # TPSA_LAGGED's k=0 layer spans depth 1000-1020 m; the face the quads path uses must sit
+    # exactly on the shallow face, not at the layer's mid-depth
+    name = plotter.add_glyphs(
+        "DISPX", "DISPY", "DISPZ", 15, slice_dim="k", slice_ind=0, quads=True
+    )
+
+    source = plotter._glyphs[name].source
+    np.testing.assert_allclose(source.points[:, 2], 1000.0)
+
+
+def test_quads_renders_visibly_on_a_matching_quad_slice(plotter):
+    # Regression test for the occlusion this option exists to avoid: glyphs placed at a
+    # cell's true volumetric centre are buried inside a solid, opaque add_slice actor and
+    # never show up at all; the quads path keeps them on the same surface as a quads=True
+    # add_slice, where they are always visible.
+    plotter.add_slice("k", 0, quads=True)
+    plotter.set_scalars("PRESSURE", 15)
+    plotter.view_3d()
+    without_glyphs = plotter.screenshot()
+
+    plotter.add_glyphs(
+        "DISPX", "DISPY", "DISPZ", 15, slice_dim="k", slice_ind=0, quads=True, color="black"
+    )
+    with_glyphs = plotter.screenshot()
+
+    assert not np.array_equal(without_glyphs, with_glyphs)
+    assert (with_glyphs.reshape(-1, 3) == 0).all(axis=1).sum() > 0  # black arrows present
+
+
+def test_default_glyphs_are_invisible_on_a_solid_matching_slice(plotter):
+    # The mirror image of the test above: without quads=True, glyphs sit at the cell's true
+    # volumetric centre, which a solid (non-quads) add_slice actor completely occludes
+    plotter.add_slice("k", 0)  # default: solid opaque hexahedra, not quads
+    plotter.set_scalars("PRESSURE", 15)
+    plotter.view_3d()
+    without_glyphs = plotter.screenshot()
+
+    plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, slice_dim="k", slice_ind=0, color="black")
+    with_glyphs = plotter.screenshot()
+
+    assert np.array_equal(without_glyphs, with_glyphs)
+
+
+# ---------------------------------------------------------------------------
 # Auto factor: the largest vector should land near one cell's width, and the
 # scale=False case must not divide by the (tiny) peak displacement magnitude
 # ---------------------------------------------------------------------------
@@ -266,6 +345,20 @@ def test_global_glyph_factor_matches_add_glyphs_own_auto_factor_for_one_step(plo
     name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15)
 
     assert factor == pytest.approx(plotter._glyphs[name].factor)
+
+
+def test_global_glyph_factor_quads_matches_add_glyphs_quads(plotter):
+    factor = plotter.global_glyph_factor("DISPX", "DISPY", "DISPZ", [15], quads=True)
+
+    name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, quads=True)
+
+    assert factor == pytest.approx(plotter._glyphs[name].factor)
+
+
+def test_global_glyph_factor_quads_does_not_need_the_full_mesh(plotter):
+    plotter.global_glyph_factor("DISPX", "DISPY", "DISPZ", [15], quads=True)
+
+    assert plotter.grid._mesh is None
 
 
 def test_global_glyph_factor_respects_scale_false(plotter):

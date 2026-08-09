@@ -459,6 +459,7 @@ class GridPlotter:
         *,
         slice_dim: str | None = None,
         slice_ind: int | None = None,
+        quads: bool = False,
         scale: bool = True,
         factor: float | None = None,
         geom: pv.PolyData | None = None,
@@ -483,6 +484,11 @@ class GridPlotter:
             glyph at every active cell of the whole grid
         slice_ind : int | None, optional
             Index of the slice; required together with slice_dim
+        quads : bool, optional
+            Place glyphs from cell-centre points alone instead of the full hexahedral mesh,
+            by default False. Cheaper on a large grid, and never builds the full mesh at all -
+            same idea as add_slice's own quads argument, but for a placement point rather than
+            a face. Has no effect on where the arrows end up; see the Notes below.
         scale : bool, optional
             Scale each arrow by its own vector's magnitude, by default True. False draws
             every arrow the same length, showing only direction.
@@ -514,12 +520,21 @@ class GridPlotter:
         explicitly if this report step's own largest vector is not representative of the
         whole run.
 
+        quads only changes how a placement point is obtained, not the arrows themselves: a
+        glyph only ever needs one point per cell, never that cell's actual volume, so skipping
+        the full hexahedral build (and, on a slice, touching only that slice's cells) changes
+        nothing about what gets drawn. The one real difference is on a slice: quads places the
+        point at the slice face GridSlice3D already exposes, which sits exactly on a
+        quads=True add_slice's surface, whereas the default places it at the cell's true
+        volumetric centre - inside a solid add_slice actor if that one is not also using
+        quads, and invisible there as a result.
+
         Glyph actors take no part in set_scalars: an arrow's points carry per-glyph, not
         per-cell, data, so there is no ACTIVE_INDEX left to write scalar values through. A
         flat colour is used by default; pass scalars="GlyphScale" to colour by magnitude
         instead.
         """
-        source = self._glyph_source(slice_dim, slice_ind)
+        source = self._glyph_source(slice_dim, slice_ind, quads=quads)
         vectors = self._glyph_vectors(source, x_keyword, y_keyword, z_keyword, rstep)
 
         if factor is None:
@@ -738,6 +753,7 @@ class GridPlotter:
         *,
         slice_dim: str | None = None,
         slice_ind: int | None = None,
+        quads: bool = False,
         scale: bool = True,
     ) -> float:
         """
@@ -757,6 +773,10 @@ class GridPlotter:
             Match the slice add_glyphs will be restricted to, by default None
         slice_ind : int | None, optional
             Index of the slice; required together with slice_dim
+        quads : bool, optional
+            Match the quads argument add_glyphs will be called with, by default False. The two
+            paths' characteristic lengths differ slightly, so the factor computed here is only
+            exactly right for a later add_glyphs call using the same value.
         scale : bool, optional
             Match the scale argument add_glyphs will be called with, by default True
 
@@ -776,7 +796,7 @@ class GridPlotter:
         if rsteps is None:
             rsteps = self.case.report.report_steps()
 
-        source = self._glyph_source(slice_dim, slice_ind)
+        source = self._glyph_source(slice_dim, slice_ind, quads=quads)
         peak = 0.0
         for rstep in rsteps:
             vectors = self._glyph_vectors(source, x_keyword, y_keyword, z_keyword, rstep)
@@ -1067,7 +1087,9 @@ class GridPlotter:
         """Close the render window and release its resources"""
         self.plotter.close()
 
-    def _glyph_source(self, slice_dim: str | None, slice_ind: int | None) -> pv.DataSet:
+    def _glyph_source(
+        self, slice_dim: str | None, slice_ind: int | None, *, quads: bool
+    ) -> pv.DataSet:
         """
         Resolve the mesh glyphs are placed on, for add_glyphs and global_glyph_factor
 
@@ -1077,19 +1099,32 @@ class GridPlotter:
             'i', 'j', or 'k' slice of the 3D grid, or None for the whole active grid
         slice_ind : int | None
             Index of slice; required together with slice_dim
+        quads : bool
+            Use the cheap cell-centre-only path instead of the full hexahedral mesh; see
+            add_glyphs
 
         Returns
         -------
         pv.DataSet
-            The whole active grid, or the requested slice of it
+            The whole active grid, or the requested slice of it - either as hexahedra/the full
+            mesh, or as bare cell-centre points when quads is True
+
+        Notes
+        -----
+        Named to match add_slice's own quads argument, even though what it returns here is
+        points rather than quads: glyphing only ever needs a placement point per cell, never
+        the cell's actual geometry.
         """
         if slice_dim is None:
             if slice_ind is not None:
                 raise ValueError("slice_dim is required when slice_ind is given!")
-            return self.grid.mesh
+            return self.grid.cell_centers() if quads else self.grid.mesh
 
         if slice_ind is None:
             raise ValueError("slice_ind is required when slice_dim is given!")
+
+        if quads:
+            return self.grid.slice_cell_centers(slice_dim, slice_ind)
 
         return self.grid.extract_slice(slice_dim, slice_ind)
 

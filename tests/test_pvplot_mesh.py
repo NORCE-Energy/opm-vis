@@ -253,6 +253,73 @@ def test_quad_slice_does_not_need_the_full_mesh(case1):
 
 
 # ---------------------------------------------------------------------------
+# cell_centers / slice_cell_centers
+# ---------------------------------------------------------------------------
+
+
+def test_cell_centers_places_one_point_per_active_cell(grid_mesh):
+    centers = grid_mesh.cell_centers()
+
+    assert centers.n_points == 300  # 10x10x3, fully active
+    np.testing.assert_array_equal(
+        sorted(centers.cell_data[ACTIVE_INDEX]), np.arange(300)
+    )
+
+
+def test_cell_centers_matches_the_hexahedral_meshs_own_centers(case1):
+    # Two separate GridMesh instances, so building one's full mesh for comparison cannot
+    # accidentally make the other's cell_centers() look cheap when it was not
+    cheap = GridMesh(case1).cell_centers()
+    from_hex = GridMesh(case1).mesh.cell_centers()
+
+    np.testing.assert_allclose(cheap.points, from_hex.points, atol=1e-3)
+
+
+def test_cell_centers_does_not_need_the_full_mesh(case1):
+    gmesh = GridMesh(case1)
+
+    gmesh.cell_centers()
+
+    assert gmesh._mesh is None  # the expensive hexahedral build was never triggered
+
+
+@pytest.mark.parametrize("slice_dim, slice_ind", [("i", 4), ("j", 5), ("k", 1)])
+def test_slice_cell_centers_covers_the_same_cells_as_quad_slice(
+    grid_mesh, slice_dim, slice_ind
+):
+    centers = grid_mesh.slice_cell_centers(slice_dim, slice_ind)
+    quads = grid_mesh.quad_slice(slice_dim, slice_ind)
+
+    assert centers.n_points == quads.n_cells
+    np.testing.assert_array_equal(
+        sorted(centers.cell_data[ACTIVE_INDEX]), sorted(quads.cell_data[ACTIVE_INDEX])
+    )
+
+
+def test_slice_cell_centers_sits_on_the_slice_face_not_mid_cell(grid_mesh):
+    # SPE1CASE1's k=0 layer spans depth 8325-8345 ft; the face centre for a k-slice must sit
+    # exactly on the shallow face, not at the layer's mid-depth
+    centers = grid_mesh.slice_cell_centers("k", 0)
+
+    np.testing.assert_allclose(centers.points[:, 2], 8325.0)
+
+
+def test_slice_cell_centers_validates_its_arguments(grid_mesh):
+    with pytest.raises(TypeError, match="slice dimension is not valid"):
+        grid_mesh.slice_cell_centers("x", 0)
+    with pytest.raises(ValueError, match="out of bounds"):
+        grid_mesh.slice_cell_centers("k", 3)
+
+
+def test_slice_cell_centers_does_not_need_the_full_mesh(case1):
+    gmesh = GridMesh(case1)
+
+    gmesh.slice_cell_centers("k", 0)
+
+    assert gmesh._mesh is None  # the expensive hexahedral build was never triggered
+
+
+# ---------------------------------------------------------------------------
 # Point welding
 # ---------------------------------------------------------------------------
 
