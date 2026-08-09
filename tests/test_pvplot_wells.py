@@ -85,6 +85,52 @@ def test_label_points_line_up_with_label_names(egrid, wells):
 
 
 # ---------------------------------------------------------------------------
+# well_paths(slices=...) - restricting to one or several slices
+# ---------------------------------------------------------------------------
+
+
+def test_slices_restricts_to_wells_completed_there(egrid, wells):
+    # INJ is completed at k=0 only, PROD at k=2 only
+    paths = well_paths(egrid, wells, 60, slices=[("k", 0)])
+
+    assert paths.label_names == ["INJ"]
+
+
+def test_slices_is_a_union_not_an_intersection(egrid, wells):
+    paths = well_paths(egrid, wells, 60, slices=[("k", 0), ("k", 2)])
+
+    assert sorted(paths.label_names) == ["INJ", "PROD"]
+
+
+def test_slices_on_an_i_or_j_slice_matches_the_well_head(egrid, wells):
+    # PROD's head is at (i, j) = (9, 9)
+    paths = well_paths(egrid, wells, 60, slices=[("i", 9)])
+
+    assert paths.label_names == ["PROD"]
+
+    paths = well_paths(egrid, wells, 60, slices=[("j", 9)])
+
+    assert paths.label_names == ["PROD"]
+
+
+def test_slices_excluding_every_well_gives_an_empty_result(egrid, wells):
+    paths = well_paths(egrid, wells, 60, slices=[("k", 1)])
+
+    assert paths.is_empty() is True
+
+
+def test_no_slices_includes_every_well(egrid, wells):
+    paths = well_paths(egrid, wells, 60, slices=None)
+
+    assert sorted(paths.label_names) == ["INJ", "PROD"]
+
+
+def test_slices_rejects_an_invalid_dimension(egrid, wells):
+    with pytest.raises(ValueError, match="not valid"):
+        well_paths(egrid, wells, 60, slices=[("x", 0)])
+
+
+# ---------------------------------------------------------------------------
 # well_paths edge cases (synthetic well info)
 # ---------------------------------------------------------------------------
 

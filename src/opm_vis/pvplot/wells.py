@@ -1,6 +1,7 @@
 """ Well trajectories as PyVista polylines """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -45,8 +46,7 @@ def well_paths(
     wells: Wells,
     rstep: int,
     *,
-    slice_dim: str | None = None,
-    slice_ind: int | None = None,
+    slices: Sequence[tuple[str, int]] | None = None,
 ) -> WellPaths:
     """
     Build well trajectories for one report step
@@ -59,11 +59,9 @@ def well_paths(
         Well information for every report step
     rstep : int
         Report step
-    slice_dim : str | None, optional
-        Only include wells with a completion on this i-, j- or k-slice, by default None, which
-        includes every well in the grid
-    slice_ind : int | None, optional
-        Index of the slice; required together with slice_dim
+    slices : Sequence[tuple[str, int]] | None, optional
+        Only include wells with a completion on at least one of these (dim, index) i-, j- or
+        k-slices, by default None, which includes every well in the grid
 
     Returns
     -------
@@ -73,8 +71,8 @@ def well_paths(
     Notes
     -----
     Trajectories are full 3D paths through the grid, so unlike opm_vis.plot there is no need
-    to truncate a well to the intersecting portion of a slice - slice_dim/slice_ind only
-    decide which wells are included, each still drawn in full.
+    to truncate a well to the intersecting portion of a slice - slices only decides which
+    wells are included, each still drawn in full.
 
     Wells are still assumed vertical, which is what opm_vis.utils.restart records: the i and j
     indices are the well head's and only the completed k indices vary.
@@ -89,7 +87,7 @@ def well_paths(
         if len(info) < 4:
             continue
 
-        if slice_dim is not None and not _has_completion_in_slice(info, slice_dim, slice_ind):
+        if slices is not None and not _has_completion_in_any_slice(info, slices):
             continue
 
         track = _completion_track(egrid, info[0], info[1], info[2:-1])
@@ -114,24 +112,22 @@ def well_paths(
     )
 
 
-def _has_completion_in_slice(info: list[Any], slice_dim: str, slice_ind: int) -> bool:
+def _has_completion_in_any_slice(info: list[Any], slices: Sequence[tuple[str, int]]) -> bool:
     """
-    Check whether a well has a completion on one i-, j- or k-slice
+    Check whether a well has a completion on at least one of several i-, j- or k-slices
 
     Parameters
     ----------
     info : list[Any]
         Well info as [i, j, k0, ..., kend, status]
-    slice_dim : str
-        'i', 'j', or 'k'
-    slice_ind : int
-        Index of the slice
+    slices : Sequence[tuple[str, int]]
+        (dim, index) pairs to check against
 
     Returns
     -------
     bool
-        True if the well's head lies on the slice (i or j) or one of its completed layers
-        does (k)
+        True if the well's head lies on any i- or j-slice given, or one of its completed
+        layers matches any k-slice given
 
     Notes
     -----
@@ -142,14 +138,22 @@ def _has_completion_in_slice(info: list[Any], slice_dim: str, slice_ind: int) ->
     i, j, *k_and_status = info
     k_values = k_and_status[:-1]
 
-    if slice_dim == "k":
-        return slice_ind in k_values
-    if slice_dim == "i":
-        return i == slice_ind
-    if slice_dim == "j":
-        return j == slice_ind
+    for slice_dim, slice_ind in slices:
+        if slice_dim == "k":
+            if slice_ind in k_values:
+                return True
+        elif slice_dim == "i":
+            if i == slice_ind:
+                return True
+        elif slice_dim == "j":
+            if j == slice_ind:
+                return True
+        else:
+            raise ValueError(
+                f'{slice_dim} slice dimension is not valid! Choose "i", "j", or "k"'
+            )
 
-    raise ValueError(f'{slice_dim} slice dimension is not valid! Choose "i", "j", or "k"')
+    return False
 
 
 def _completion_track(

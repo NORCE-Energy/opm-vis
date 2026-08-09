@@ -48,11 +48,11 @@ def _glyph_color_kwargs(glyph_color: str) -> dict:
     return {} if glyph_color.lower() == _GLYPH_MAGNITUDE else {"color": glyph_color}
 
 
-def _wells_slice(
+def _wells_slices(
     all_wells: bool, slice_dim: str, slice_index: int
-) -> tuple[str | None, int | None]:
+) -> list[tuple[str, int]] | None:
     """
-    Resolve which slice, if any, add_wells/animate should restrict wells to
+    Resolve which slices, if any, add_wells/animate should restrict wells to
 
     Parameters
     ----------
@@ -65,11 +65,11 @@ def _wells_slice(
 
     Returns
     -------
-    tuple[str | None, int | None]
-        (None, None) to draw every well in the grid, or the plot's own slice to restrict wells
-        to those with a completion on it
+    list[tuple[str, int]] | None
+        None to draw every well in the grid, or the plot's own slice to restrict wells to
+        those with a completion on it
     """
-    return (None, None) if all_wells else (slice_dim, slice_index)
+    return None if all_wells else [(slice_dim, slice_index)]
 
 
 @click.command(**COMMAND_SETTINGS)
@@ -257,7 +257,6 @@ def main(
                 output = Path(save) if save else default_output_name(
                     keyword, slice_dim, slice_index, rsteps=steps, ext="gif"
                 )
-            wells_dim, wells_ind = _wells_slice(all_wells, slice_dim, slice_index)
             plotter.animate(
                 keyword,
                 output,
@@ -265,8 +264,7 @@ def main(
                 fps=fps,
                 clim=clim,
                 wells=wells or all_wells,
-                wells_slice_dim=wells_dim,
-                wells_slice_ind=wells_ind,
+                wells_slices=_wells_slices(all_wells, slice_dim, slice_index),
                 vectors=glyphs is not None,
                 title=not no_title,
                 cmap=cmap,
@@ -291,8 +289,7 @@ def main(
             scalar_bar=not no_colorbar,
         )
         if wells or all_wells:
-            wells_dim, wells_ind = _wells_slice(all_wells, slice_dim, slice_index)
-            plotter.add_wells(actual_rstep, slice_dim=wells_dim, slice_ind=wells_ind)
+            plotter.add_wells(actual_rstep, slices=_wells_slices(all_wells, slice_dim, slice_index))
         if glyphs is not None:
             x_kw, y_kw, z_kw = glyphs
             plotter.add_glyphs(

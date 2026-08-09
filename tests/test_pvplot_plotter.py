@@ -349,6 +349,24 @@ def test_add_wells_is_not_restricted_to_the_slices_on_screen(plotter):
     assert plotter._actors["pvplot-wells-open"].mesh.n_cells == 2
 
 
+def test_add_wells_slices_restricts_to_wells_completed_there(plotter):
+    # INJ is completed at k=0 only, PROD at k=2 only
+    plotter.add_slice("k", 0)
+
+    plotter.add_wells(60, slices=[("k", 0)])
+
+    assert plotter._actors["pvplot-wells-open"].mesh.n_cells == 1
+
+
+def test_add_wells_slices_is_a_union_across_several_slices(plotter):
+    plotter.add_slice("k", 0)
+    plotter.add_slice("k", 2)
+
+    plotter.add_wells(60, slices=[("k", 0), ("k", 2)])
+
+    assert plotter._actors["pvplot-wells-open"].mesh.n_cells == 2
+
+
 def test_add_wells_replaces_rather_than_stacks(plotter):
     plotter.add_slice("k", 0)
 
