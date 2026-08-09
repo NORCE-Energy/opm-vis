@@ -70,6 +70,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/source/_autosummary/
 
 # PyBuilder
 target/
@@ -127,3 +128,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# LLMs
+.claude/
+
+# IDEs
+.vscode/
+
+vopmvis/
