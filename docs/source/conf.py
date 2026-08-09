@@ -16,6 +16,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
+    "sphinx_click",
 ]
 
 # opm-vis and its dependencies (opm, pyvista, matplotlib, click) must be

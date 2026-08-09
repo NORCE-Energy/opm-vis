@@ -62,4 +62,5 @@ Or from the command line:
    :maxdepth: 2
    :caption: Contents
 
+   cli
    api
