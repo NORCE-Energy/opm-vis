@@ -119,6 +119,13 @@ def _wells_slices(
     default=False,
     help="Cheaper flat-quad slice instead of hexahedra.",
 )
+@click.option(
+    "--opacity",
+    type=click.FloatRange(0.0, 1.0),
+    default=1.0,
+    show_default=True,
+    help="Opacity of the slice(s), from 0 (transparent) to 1 (opaque).",
+)
 @click.option("--window-size", type=(int, int), default=None, metavar="WIDTH HEIGHT")
 @click.option("--no-colorbar", is_flag=True, default=False, help="Hide the scalar bar.")
 @click.option("--no-title", is_flag=True, default=False, help="Hide the report-date title.")
@@ -181,6 +188,7 @@ def main(
     all_wells: bool,
     wireframe: bool,
     quads: bool,
+    opacity: float,
     window_size: tuple[int, int] | None,
     no_colorbar: bool,
     no_title: bool,
@@ -214,7 +222,7 @@ def main(
         z_scale=z_scale,
     ) as plotter:
         for slice_dim, slice_index in slices:
-            plotter.add_slice(slice_dim, slice_index, quads=quads)
+            plotter.add_slice(slice_dim, slice_index, quads=quads, opacity=opacity)
         if wireframe:
             plotter.add_wireframe()
 
