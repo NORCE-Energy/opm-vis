@@ -10,7 +10,7 @@ pip install -e ".[pyvista]"      # adds the PyVista/VTK backend
 
 ## Documentation
 
-Usage guide and API reference: https://norce-energy.github.io/opm-vis/
+Usage guide and API reference coming soon!
 
 ## Tests
 
