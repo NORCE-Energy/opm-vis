@@ -6,8 +6,8 @@ filename-prefix ``PATHS`` convention as the Python API: the first path is the ma
 further paths are restart runs, and the working directory is searched if none is given.
 
 ``opm-vis-pv`` (PyVista backend) supports the full option set, including multiple slices,
-wells, glyphs and 3D views. ``opm-vis-mpl`` (Matplotlib backend) is the legacy tool and covers
-a smaller subset.
+wells, glyphs and 3D views. ``opm-vis-mpl`` (Matplotlib backend) is the alternative tool, less
+developed and covering a smaller subset.
 
 Examples
 --------
@@ -37,7 +37,7 @@ Overlay vector glyphs from a displacement field on top of a scalar-coloured slic
 
    opm-vis-pv tests/data/TPSA_LAGGED --keyword DISPZ -k 0 --rstep 15 --glyphs DISPX DISPY DISPZ
 
-The same keyword and slice with the older Matplotlib backend:
+The same keyword and slice with the alternative Matplotlib backend:
 
 .. code-block:: bash
 

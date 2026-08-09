@@ -13,8 +13,8 @@ Features
 
 - **Two plotting backends.** :mod:`opm_vis.pvplot` renders the grid as real VTK geometry — one
   hexahedron per active cell — with an interactive camera, correct depth sorting, thresholding,
-  clipping and cheap animation. :mod:`opm_vis.plot` is the older Matplotlib backend, drawing each
-  cell as a flat quad.
+  clipping and cheap animation. :mod:`opm_vis.plot` is an alternative, less developed
+  Matplotlib backend, drawing each cell as a flat quad.
 - **Grid slicing.** Cut i-, j- or k-slices through the 3D grid, alone or several at once, coloured
   by any keyword (``SGAS``, ``PRESSURE``, ...).
 - **Wells.** Overlay wells with a completion on the chosen slice(s), or every well in the grid.

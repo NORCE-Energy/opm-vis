@@ -3,7 +3,7 @@ API examples
 
 These build on the quick start on the :doc:`front page <index>`. All of them use
 :mod:`opm_vis.pvplot`, the recommended backend; a Matplotlib example is at the bottom for the
-legacy backend.
+alternative backend.
 
 Stepping through report steps
 ------------------------------
@@ -80,8 +80,8 @@ plotter, e.g. to pull values into NumPy for your own analysis:
    sgas = case.read("SGAS", 60)                     # one value per active cell
    prange = case.value_range("PRESSURE", [0, 60])   # taken from the data, never clamped to zero
 
-Legacy Matplotlib backend
-----------------------------
+Alternative Matplotlib backend
+---------------------------------
 
 :mod:`opm_vis.plot` draws each cell as a flat quad instead of real geometry. It has no camera,
 thresholding or clipping, but covers the same basic slice-and-colour workflow:
