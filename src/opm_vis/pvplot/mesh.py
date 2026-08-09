@@ -124,7 +124,7 @@ class GridMesh:
         )
 
     def slice_mask(self, slice_dim: str, slice_ind: int) -> NDArray[np.bool_]:
-        """
+        r"""
         Boolean mask selecting the mesh cells that lie on one i-, j- or k-slice
 
         Parameters
