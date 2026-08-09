@@ -70,6 +70,12 @@ def _glyph_color_kwargs(glyph_color: str) -> dict:
 @click.option(
     "--z-scale", type=float, default=5.0, show_default=True, help="Vertical exaggeration."
 )
+@click.option(
+    "--axes/--no-axes",
+    default=True,
+    show_default=True,
+    help="Show a labelled bounding box with axis titles and ticks.",
+)
 @click.option("--log-scale", is_flag=True, default=False, help="Map colours logarithmically.")
 @click.option(
     "--wells",
@@ -140,6 +146,7 @@ def main(
     azimuth: float,
     elevation: float,
     z_scale: float,
+    axes: bool,
     log_scale: bool,
     wells: bool,
     wireframe: bool,
@@ -177,6 +184,9 @@ def main(
             plotter.view_2d(slice_dim)
         else:
             plotter.view_3d(azimuth=azimuth, elevation=elevation)
+
+        if axes:
+            plotter.show_axes_grid()
 
         if gif:
             # There is no interactive animation playback in this backend, so --gif always
