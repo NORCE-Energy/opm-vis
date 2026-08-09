@@ -173,7 +173,7 @@ def main(
     rstep_value = parse_rstep(rstep, gif)
 
     with GridPlotter(
-        resolve_paths(paths), off_screen=save is not None or gif, window_size=window_size,
+        resolve_paths(paths), off_screen=save is not None, window_size=window_size,
         z_scale=z_scale,
     ) as plotter:
         plotter.add_slice(slice_dim, slice_index, quads=quads)
@@ -189,8 +189,6 @@ def main(
             plotter.show_axes_grid()
 
         if gif:
-            # There is no interactive animation playback in this backend, so --gif always
-            # writes a file regardless of --save.
             steps = resolve_gif_rsteps(plotter.case.report.report_steps(), rstep_value)
 
             if glyphs is not None:
@@ -222,9 +220,11 @@ def main(
                     **_glyph_color_kwargs(glyph_color),
                 )
 
-            output = Path(save) if save else default_output_name(
-                keyword, slice_dim, slice_index, rsteps=steps, ext="gif"
-            )
+            output = None
+            if save is not None:
+                output = Path(save) if save else default_output_name(
+                    keyword, slice_dim, slice_index, rsteps=steps, ext="gif"
+                )
             plotter.animate(
                 keyword,
                 output,

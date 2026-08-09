@@ -1,6 +1,7 @@
 """ Tests for the opm-vis-pv CLI, backed by the SPE1CASE1 test dataset """
 import shutil
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
@@ -69,18 +70,28 @@ def test_gif_range_with_step(case1, offscreen, runner, tmp_path):
     assert output.stat().st_size > 0
 
 
-def test_gif_saves_even_without_save_flag(case1, offscreen, runner):
-    del offscreen
+def test_gif_without_save_plays_instead_of_writing_a_file(case1, runner, monkeypatch):
+    # animate(filename=None) opens a real on-screen window (off_screen=False) and blocks until
+    # it is closed, so GridPlotter itself is stubbed out rather than actually constructed - this
+    # only checks that the CLI passes filename=None, with the right report steps, when --save
+    # is not given, instead of an actual path.
+    fake_plotter = MagicMock()
+    fake_plotter.__enter__.return_value = fake_plotter
+    fake_plotter.case.report.report_steps.return_value = list(range(121))
+    monkeypatch.setattr(
+        "opm_vis.cli.pvplot_cli.GridPlotter", MagicMock(return_value=fake_plotter)
+    )
 
-    # There is no interactive animation playback in this backend, so --gif always writes a
-    # file, whether or not --save was given.
-    with runner.isolated_filesystem():
-        result = runner.invoke(
-            main, [case1, "--keyword", "SGAS", "-k", "0", "--gif", "--rstep", "0:20"]
-        )
+    result = runner.invoke(
+        main, [case1, "--keyword", "SGAS", "-k", "0", "--gif", "--rstep", "0:20"]
+    )
 
-        assert result.exit_code == 0, result.output
-        assert Path("SGAS_k0_0-20.gif").exists()
+    assert result.exit_code == 0, result.output
+    fake_plotter.animate.assert_called_once()
+    args, kwargs = fake_plotter.animate.call_args
+    assert args[0] == "SGAS"
+    assert args[1] is None
+    assert kwargs["rsteps"] == list(range(21))
 
 
 def test_static_keyword_does_not_need_rstep(case1, offscreen, runner, tmp_path):
