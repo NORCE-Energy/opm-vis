@@ -530,9 +530,11 @@ class GridPlotter:
         quads, and invisible there as a result.
 
         Glyph actors take no part in set_scalars: an arrow's points carry per-glyph, not
-        per-cell, data, so there is no ACTIVE_INDEX left to write scalar values through. A
-        flat colour is used by default; pass scalars="GlyphScale" to colour by magnitude
-        instead.
+        per-cell, data, so there is no ACTIVE_INDEX left to write scalar values through.
+        Coloured by magnitude (scalars="GlyphScale") by default; pass color=... for a flat
+        colour instead. PyVista colours by scalars whenever they are given regardless of a
+        color also being passed, so a caller-given color always takes priority here rather
+        than being silently overridden by the magnitude colouring.
         """
         source = self._glyph_source(slice_dim, slice_ind, quads=quads)
         vectors = self._glyph_vectors(source, x_keyword, y_keyword, z_keyword, rstep)
@@ -547,7 +549,14 @@ class GridPlotter:
         if slice_dim is not None:
             default_name += f"-{slice_dim}{slice_ind}"
 
-        kwargs.setdefault("color", "black")
+        if "color" in kwargs:
+            # An explicit solid colour overrides magnitude colouring. Both cannot simply be
+            # passed together: add_mesh colours by scalars whenever they are given at all, so
+            # scalars has to be left out entirely rather than relying on color to win.
+            kwargs.pop("scalars", None)
+        else:
+            kwargs.setdefault("scalars", "GlyphScale")
+
         registered = self._add(glyphs, name or default_name, carries_scalars=False, **kwargs)
 
         self._glyphs[registered] = _GlyphSpec(

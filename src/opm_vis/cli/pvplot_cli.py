@@ -25,6 +25,28 @@ from opm_vis.cli.common import (
 )
 from opm_vis.pvplot import GridPlotter
 
+# --glyph-color's default: colour arrows by vector magnitude (add_glyphs' own "scalars" default)
+# rather than a flat colour. Not a real colour name, so it can't collide with one.
+_GLYPH_MAGNITUDE = "glyphscale"
+
+
+def _glyph_color_kwargs(glyph_color: str) -> dict:
+    """
+    Build add_glyphs' colour kwarg, or none at all to keep its magnitude-colouring default
+
+    Parameters
+    ----------
+    glyph_color : str
+        Value of --glyph-color
+
+    Returns
+    -------
+    dict
+        {} to leave add_glyphs colouring by magnitude, or {"color": glyph_color} for a flat
+        colour, which add_glyphs treats as overriding magnitude colouring
+    """
+    return {} if glyph_color.lower() == _GLYPH_MAGNITUDE else {"color": glyph_color}
+
 
 @click.command(**COMMAND_SETTINGS)
 @PATHS_ARGUMENT
@@ -65,6 +87,41 @@ from opm_vis.pvplot import GridPlotter
 @click.option("--window-size", type=(int, int), default=None, metavar="WIDTH HEIGHT")
 @click.option("--no-colorbar", is_flag=True, default=False, help="Hide the scalar bar.")
 @click.option("--no-title", is_flag=True, default=False, help="Hide the report-date title.")
+@click.option(
+    "--glyphs",
+    type=(str, str, str),
+    default=None,
+    metavar="X Y Z",
+    help=(
+        "Add vector glyphs (arrows) on the same slice from these three keyword components, "
+        "e.g. DISPX DISPY DISPZ."
+    ),
+)
+@click.option(
+    "--glyph-scale/--no-glyph-scale",
+    default=True,
+    show_default=True,
+    help="Scale each arrow by its own vector's magnitude.",
+)
+@click.option(
+    "--glyph-factor",
+    type=float,
+    default=None,
+    help=(
+        "Factor to multiply vectors by before glyphing. Defaults to a size that draws the "
+        "largest vector at about one grid cell's width, computed across every animated report "
+        "step with --gif so arrow length stays comparable."
+    ),
+)
+@click.option(
+    "--glyph-color",
+    default=_GLYPH_MAGNITUDE,
+    show_default=True,
+    help=(
+        'Arrow colour, or "glyphscale" (default) to colour by vector magnitude instead of a '
+        "flat colour. An explicit colour overrides magnitude colouring."
+    ),
+)
 @handle_errors
 # pylint: disable=too-many-arguments,too-many-locals
 def main(
@@ -90,6 +147,10 @@ def main(
     window_size: tuple[int, int] | None,
     no_colorbar: bool,
     no_title: bool,
+    glyphs: tuple[str, str, str] | None,
+    glyph_scale: bool,
+    glyph_factor: float | None,
+    glyph_color: str,
 ) -> None:
     """
     Plot --keyword on one grid slice with the PyVista backend, or animate it over report steps
@@ -97,6 +158,9 @@ def main(
 
     PATHS are filename prefixes: the first is the main run, any further ones are restart runs.
     Defaults to searching the working directory (./) if not given.
+
+    --glyphs overlays vector arrows on the same slice, from three keyword components (e.g. a
+    displacement vector), alongside --keyword's scalar colouring.
     """
     slice_dim, slice_index = resolve_slice(slice_i, slice_j, slice_k)
     rstep_value = parse_rstep(rstep, gif)
@@ -118,6 +182,36 @@ def main(
             # There is no interactive animation playback in this backend, so --gif always
             # writes a file regardless of --save.
             steps = resolve_gif_rsteps(plotter.case.report.report_steps(), rstep_value)
+
+            if glyphs is not None:
+                x_kw, y_kw, z_kw = glyphs
+                factor = glyph_factor
+                if factor is None:
+                    # Computed across every animated step, so arrow length stays comparable
+                    # from frame to frame instead of each one rescaling to its own peak.
+                    factor = plotter.global_glyph_factor(
+                        x_kw,
+                        y_kw,
+                        z_kw,
+                        steps,
+                        slice_dim=slice_dim,
+                        slice_ind=slice_index,
+                        quads=quads,
+                        scale=glyph_scale,
+                    )
+                plotter.add_glyphs(
+                    x_kw,
+                    y_kw,
+                    z_kw,
+                    steps[0],
+                    slice_dim=slice_dim,
+                    slice_ind=slice_index,
+                    quads=quads,
+                    scale=glyph_scale,
+                    factor=factor,
+                    **_glyph_color_kwargs(glyph_color),
+                )
+
             output = Path(save) if save else default_output_name(
                 keyword, slice_dim, slice_index, rsteps=steps, ext="gif"
             )
@@ -128,6 +222,7 @@ def main(
                 fps=fps,
                 clim=clim,
                 wells=wells,
+                vectors=glyphs is not None,
                 title=not no_title,
                 cmap=cmap,
                 log_scale=log_scale,
@@ -152,6 +247,20 @@ def main(
         )
         if wells:
             plotter.add_wells(actual_rstep)
+        if glyphs is not None:
+            x_kw, y_kw, z_kw = glyphs
+            plotter.add_glyphs(
+                x_kw,
+                y_kw,
+                z_kw,
+                actual_rstep,
+                slice_dim=slice_dim,
+                slice_ind=slice_index,
+                quads=quads,
+                scale=glyph_scale,
+                factor=glyph_factor,
+                **_glyph_color_kwargs(glyph_color),
+            )
         if not no_title:
             plotter.set_title()
 
