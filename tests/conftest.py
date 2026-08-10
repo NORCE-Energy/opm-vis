@@ -42,6 +42,26 @@ def case1() -> str:
 
 
 @pytest.fixture(scope="session")
+def mapaxes_case() -> str:
+    """
+    Filename prefix of the MAPAXES dataset
+
+    Returns
+    -------
+    str
+        Path prefix, as the glob() in every opm_vis reader expects
+
+    Notes
+    -----
+    MAPAXES is an EGRID-only file (no INIT/UNRST/SMSPEC) whose grid carries a MAPAXES keyword:
+    a translation with no rotation, from a local (x, y) origin at (0, 0) to a UTM-like origin
+    at (527495.5, 6771119.0). Useful only for exercising the MAPAXES transform itself, not for
+    anything that reads simulation results.
+    """
+    return str(_DATA_DIR / "MAPAXES")
+
+
+@pytest.fixture(scope="session")
 def tpsa_lagged() -> str:
     """
     Filename prefix of the TPSA_LAGGED dataset

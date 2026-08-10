@@ -131,7 +131,8 @@ class _BoxEGrid:
     def ijk_from_active_index(self, act):
         return list(self._active[act])
 
-    def xyz_from_active_index(self, act):
+    def xyz_from_active_index(self, act, apply_mapaxes=False):
+        del apply_mapaxes  # no MAPAXES on this synthetic grid
         i, j, k = self._active[act]
         xs = [float(i + (c & 1)) for c in range(8)]
         ys = [float(j + ((c >> 1) & 1)) for c in range(8)]
@@ -236,7 +237,8 @@ def test_cell_corners_drops_rows_with_nan():
     }
 
     class _StubCornerEGrid:
-        def xyz_from_active_index(self, act):
+        def xyz_from_active_index(self, act, apply_mapaxes=False):
+            del apply_mapaxes
             return corners[act]
 
     obj = _bypass_init(

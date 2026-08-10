@@ -170,3 +170,48 @@ def test_no_wells_at_all_gives_an_empty_result(egrid):
 
     assert paths.is_empty() is True
     assert paths.label_points.shape == (0, 3)
+
+
+# ---------------------------------------------------------------------------
+# well_paths(apply_mapaxes=...)
+# ---------------------------------------------------------------------------
+
+
+class _MapaxesAwareEGrid:
+    """Stands in for an EGrid whose grid has a MAPAXES translating by (dx, dy); reports
+    active_index like a single fully-active cell and mirrors the real xyz_from_ijk overload
+    of taking apply_mapaxes as an optional 4th argument."""
+
+    def __init__(self, dx, dy):
+        self._dx = dx
+        self._dy = dy
+
+    def active_index(self, i, j, k):
+        del i, j, k
+        return 0
+
+    def xyz_from_ijk(self, i, j, k, apply_mapaxes=False):
+        del j, k
+        offset = (self._dx, self._dy) if apply_mapaxes else (0.0, 0.0)
+        xs = [float(i) + offset[0]] * 8
+        ys = [0.0 + offset[1]] * 8
+        zs = [float(c >> 2 & 1) for c in range(8)]
+        return xs, ys, zs
+
+
+def test_apply_mapaxes_false_leaves_coordinates_untranslated():
+    egrid = _MapaxesAwareEGrid(dx=1000.0, dy=2000.0)
+    stub = _StubWells({"W": [0, 0, 0, True]})
+
+    paths = well_paths(egrid, stub, 0, apply_mapaxes=False)
+
+    np.testing.assert_allclose(paths.open_wells.points[:, :2], [[0.0, 0.0]] * 2)
+
+
+def test_apply_mapaxes_true_translates_coordinates():
+    egrid = _MapaxesAwareEGrid(dx=1000.0, dy=2000.0)
+    stub = _StubWells({"W": [0, 0, 0, True]})
+
+    paths = well_paths(egrid, stub, 0, apply_mapaxes=True)
+
+    np.testing.assert_allclose(paths.open_wells.points[:, :2], [[1000.0, 2000.0]] * 2)

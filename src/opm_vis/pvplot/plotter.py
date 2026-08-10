@@ -423,7 +423,13 @@ class GridPlotter:
         truncation opm_vis.plot does. Calling this again for another report step replaces what
         is already there, which is what lets an animation follow wells opening and shutting.
         """
-        paths = well_paths(self.grid.egrid, self.case.wells, rstep, slices=slices)
+        paths = well_paths(
+            self.grid.egrid,
+            self.case.wells,
+            rstep,
+            slices=slices,
+            apply_mapaxes=self.grid.apply_mapaxes,
+        )
 
         # Replace whatever a previous call left behind, so report steps do not stack up
         for name in (_WELLS_OPEN, _WELLS_SHUT):

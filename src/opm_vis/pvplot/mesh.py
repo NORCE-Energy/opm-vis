@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from opm.io.ecl import EGrid
 
 from opm_vis.utils.grid import GridSlice3D
+from opm_vis.utils.mapaxes import has_mapaxes
 
 # OPM numbers the 8 corners of a cell so that bit 0 of the corner index selects i, bit 1
 # selects j and bit 2 selects k, where k (depth) increases downwards. A VTK_HEXAHEDRON
@@ -46,6 +47,10 @@ class GridMesh:
     cell array.
     """
 
+    # Overridden in __init__ once the EGRID file has been located; kept as a class default so
+    # instances built by bypassing __init__ (test doubles with no MAPAXES) still have it.
+    apply_mapaxes = False
+
     def __init__(self, path: str, *, weld: bool = True) -> None:
         """
         Initialize EGrid class from input path
@@ -66,6 +71,7 @@ class GridMesh:
                     f"Multiple .EGRID files in {path}. Importing {egrid_files[0]}."
                 )
             self.egrid = EGrid(egrid_files[0])
+            self.apply_mapaxes = has_mapaxes(egrid_files[0])
         else:
             raise FileNotFoundError(f"No .EGRID file found in {path}!")
 
@@ -352,7 +358,7 @@ class GridMesh:
                 corners[act, :, 0],
                 corners[act, :, 1],
                 corners[act, :, 2],
-            ) = self.egrid.xyz_from_active_index(act)
+            ) = self.egrid.xyz_from_active_index(act, self.apply_mapaxes)
             ijk[act, :] = self.egrid.ijk_from_active_index(act)
 
         # Drop pinched-out cells, keeping the active index of everything that survives

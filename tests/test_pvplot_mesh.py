@@ -43,7 +43,8 @@ class _BoxEGrid:
     def ijk_from_active_index(self, act):
         return list(self._active[act])
 
-    def xyz_from_active_index(self, act):
+    def xyz_from_active_index(self, act, apply_mapaxes=False):
+        del apply_mapaxes  # no MAPAXES on this synthetic grid
         if act in self._nan_cells:
             return [np.nan] * 8, [np.nan] * 8, [np.nan] * 8
         i, j, k = self._active[act]
@@ -66,7 +67,8 @@ class _FaultedPairEGrid:
     def ijk_from_active_index(self, act):
         return [act, 0, 0]
 
-    def xyz_from_active_index(self, act):
+    def xyz_from_active_index(self, act, apply_mapaxes=False):
+        del apply_mapaxes  # no MAPAXES on this synthetic grid
         offset = self._throw if act == 1 else 0.0
         xs = [float(act + (c & 1)) for c in range(8)]
         ys = [float((c >> 1) & 1) for c in range(8)]
@@ -90,6 +92,26 @@ def test_multiple_egrid_files_warns_and_loads_first(tmp_path, data_dir):
 
     with pytest.warns(UserWarning, match="Multiple .EGRID files"):
         GridMesh(str(tmp_path / "CASE"))
+
+
+def test_grid_mesh_without_mapaxes_is_unaffected(case1):
+    assert GridMesh(case1).apply_mapaxes is False
+
+
+def test_grid_mesh_detects_and_applies_mapaxes(mapaxes_case):
+    from opm.io.ecl import EGrid  # pylint: disable=import-outside-toplevel
+
+    x1, y1, x2, y2, x3, y3 = EGrid(mapaxes_case + ".EGRID").export_mapaxes()
+    assert (x3 - x2, y3 - y2) == pytest.approx((821.375, 0.0))
+    assert (x1 - x2, y1 - y2) == pytest.approx((0.0, 1473.0))
+
+    gmesh = GridMesh(mapaxes_case)
+    assert gmesh.apply_mapaxes is True
+
+    # MAPAXES.EGRID's transform is a pure translation to (x2, y2); cell (i=0, j=0) sits at the
+    # grid's local (x, y) origin, so the mesh's minimum bound should land exactly there.
+    assert gmesh.mesh.bounds.x_min == pytest.approx(x2)
+    assert gmesh.mesh.bounds.y_min == pytest.approx(y2)
 
 
 # ---------------------------------------------------------------------------

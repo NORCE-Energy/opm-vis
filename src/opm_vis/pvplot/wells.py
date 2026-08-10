@@ -47,6 +47,7 @@ def well_paths(
     rstep: int,
     *,
     slices: Sequence[tuple[str, int]] | None = None,
+    apply_mapaxes: bool = False,
 ) -> WellPaths:
     """
     Build well trajectories for one report step
@@ -62,6 +63,9 @@ def well_paths(
     slices : Sequence[tuple[str, int]] | None, optional
         Only include wells with a completion on at least one of these (dim, index) i-, j- or
         k-slices, by default None, which includes every well in the grid
+    apply_mapaxes : bool, optional
+        Have OPM apply the grid's MAPAXES transform to well coordinates, by default False.
+        Should match whatever the rest of the scene was built with, e.g. GridMesh.apply_mapaxes.
 
     Returns
     -------
@@ -90,7 +94,9 @@ def well_paths(
         if slices is not None and not _has_completion_in_any_slice(info, slices):
             continue
 
-        track = _completion_track(egrid, info[0], info[1], info[2:-1])
+        track = _completion_track(
+            egrid, info[0], info[1], info[2:-1], apply_mapaxes=apply_mapaxes
+        )
         if track is None:
             continue
 
@@ -157,7 +163,7 @@ def _has_completion_in_any_slice(info: list[Any], slices: Sequence[tuple[str, in
 
 
 def _completion_track(
-    egrid: Any, i: int, j: int, kvalues: list[int]
+    egrid: Any, i: int, j: int, kvalues: list[int], *, apply_mapaxes: bool = False
 ) -> NDArray[np.float64] | None:
     """
     Trace a well through the cells it is completed in
@@ -172,6 +178,9 @@ def _completion_track(
         Well head j index
     kvalues : list[int]
         Completed k indices
+    apply_mapaxes : bool, optional
+        Have OPM apply the grid's MAPAXES transform to the corner coordinates, by default
+        False
 
     Returns
     -------
@@ -192,7 +201,7 @@ def _completion_track(
         if egrid.active_index(i, j, k) < 0:
             continue
 
-        corners = np.column_stack(egrid.xyz_from_ijk(i, j, k))
+        corners = np.column_stack(egrid.xyz_from_ijk(i, j, k, apply_mapaxes))
 
         # OPM's corner index has bit 2 selecting k, so 0-3 is the shallow face and 4-7 the deep
         points.append(corners[:4].mean(axis=0))
