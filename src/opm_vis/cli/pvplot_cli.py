@@ -15,6 +15,7 @@ from opm_vis.cli.common import (
     PATHS_ARGUMENT,
     RSTEP_OR_ANIMATE_OPTIONS,
     SAVE_OPTION,
+    SHOW_EDGES_OPTION,
     SLICE_OPTIONS,
     add_options,
     default_output_name,
@@ -122,6 +123,7 @@ def _wells_slices(
     "over --wells if both are given.",
 )
 @click.option("--wireframe", is_flag=True, default=False, help="Add the grid outline for context.")
+@SHOW_EDGES_OPTION
 @click.option(
     "--quads",
     is_flag=True,
@@ -209,6 +211,7 @@ def main(
     wells: bool,
     all_wells: bool,
     wireframe: bool,
+    show_edges: bool,
     quads: bool,
     opacity: float,
     window_size: tuple[int, int] | None,
@@ -273,10 +276,15 @@ def main(
         if slices:
             for slice_dim, slice_index in slices:
                 plotter.add_slice(
-                    slice_dim, slice_index, quads=quads, opacity=opacity, **grid_kwargs
+                    slice_dim,
+                    slice_index,
+                    quads=quads,
+                    opacity=opacity,
+                    show_edges=show_edges,
+                    **grid_kwargs,
                 )
         else:
-            plotter.add_grid(opacity=opacity, **grid_kwargs)
+            plotter.add_grid(opacity=opacity, show_edges=show_edges, **grid_kwargs)
         if wireframe:
             plotter.add_wireframe()
 

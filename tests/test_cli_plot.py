@@ -214,6 +214,46 @@ def test_grid_only_default_output_name_uses_grid_tag(case1, runner):
         assert Path("GRID_k1_all.png").exists()
 
 
+# ---------------------------------------------------------------------------
+# --show-edges
+# ---------------------------------------------------------------------------
+
+
+def test_show_edges_writes_output_file(case1, runner, tmp_path):
+    output = tmp_path / "edges.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "-k",
+            "1",
+            "--rstep",
+            "60",
+            "--show-edges",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_show_edges_works_with_grid_only(case1, runner, tmp_path):
+    output = tmp_path / "edges.png"
+
+    result = runner.invoke(
+        main, [case1, "-k", "1", "--grid-only", "--show-edges", "-s", str(output)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
 def test_grid_only_and_keyword_together_is_rejected(case1, runner):
     result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "1", "--grid-only"])
 

@@ -168,6 +168,16 @@ GRID_ONLY_OPTIONS = [
     ),
 ]
 
+# Draws each cell's outline on top of its fill colour - the two backends take this as a
+# different kwarg (show_edges vs. edgecolor), so each CLI translates this flag itself rather
+# than a shared helper forcing one shape on both.
+SHOW_EDGES_OPTION = click.option(
+    "--show-edges",
+    is_flag=True,
+    default=False,
+    help="Draw each cell's outline on top of its fill colour.",
+)
+
 
 def add_options(options: Sequence[Callable]) -> Callable:
     """

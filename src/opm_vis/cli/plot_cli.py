@@ -15,6 +15,7 @@ from opm_vis.cli.common import (
     PATHS_ARGUMENT,
     RSTEP_OR_ANIMATE_OPTIONS,
     SAVE_OPTION,
+    SHOW_EDGES_OPTION,
     SLICE_OPTIONS,
     add_options,
     default_output_name,
@@ -50,6 +51,7 @@ from opm_vis.plot.collections import SlicePoly2DCollection, SlicePoly3DCollectio
     help="Camera preset.",
 )
 @click.option("--no-colorbar", is_flag=True, default=False, help="Hide the colorbar.")
+@SHOW_EDGES_OPTION
 @handle_errors
 # pylint: disable=too-many-arguments,too-many-locals
 def main(
@@ -71,6 +73,7 @@ def main(
     clim: tuple[float, float] | None,
     view: str,
     no_colorbar: bool,
+    show_edges: bool,
 ) -> None:
     """
     Plot --keyword on one grid slice with the Matplotlib backend, or animate it over report
@@ -109,7 +112,11 @@ def main(
     # matching note in pvplot_cli.py.
     resolved_diff_rstep = None if grid_only else resolve_diff_rstep(diff, diff_rstep)
 
-    poly_kwargs = {"cmap": cmap}
+    # PolyCollection/Poly3DCollection draw no visible edge by default; an explicit edgecolor is
+    # what --show-edges needs, unlike PyVista's own boolean show_edges kwarg.
+    edge_kwargs = {"edgecolor": "black"} if show_edges else {}
+
+    poly_kwargs = {"cmap": cmap, **edge_kwargs}
     if clim is not None:
         poly_kwargs["clim"] = clim
 
@@ -150,7 +157,7 @@ def main(
     if grid_only:
         # Time-invariant: unlike a keyword's own values, the bare grid has no report step to
         # pick, so plot_grid()/save_grid_plot() need none either.
-        coll.plot_grid(**grid_color_kwargs(grid_color))
+        coll.plot_grid(**grid_color_kwargs(grid_color), **edge_kwargs)
 
         if save is None:
             coll.show()
