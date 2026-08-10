@@ -22,7 +22,10 @@ COMMAND_SETTINGS = {
 PATHS_ARGUMENT = click.argument("paths", nargs=-1, required=False)
 
 KEYWORD_OPTION = click.option(
-    "--keyword", required=True, help="OPM keyword to plot, e.g. SGAS or PRESSURE."
+    "-K",
+    "--keyword",
+    required=True,
+    help="OPM keyword to plot, e.g. SGAS or PRESSURE.",
 )
 
 # -i/-j/-k replace the old --slice-dim/--slice-index pair: at least one is given, and its
@@ -95,6 +98,7 @@ CLIM_OPTION = click.option(
 # at all, and --animate covers every report step in the case.
 RSTEP_OR_ANIMATE_OPTIONS = [
     click.option(
+        "-r",
         "--rstep",
         default=None,
         metavar="STEP | START:END[:STEP]",
@@ -117,6 +121,7 @@ RSTEP_OR_ANIMATE_OPTIONS = [
 # part of the 1-based -i/-j/-k convention.
 DIFF_OPTIONS = [
     click.option(
+        "-d",
         "--diff",
         is_flag=True,
         default=False,
