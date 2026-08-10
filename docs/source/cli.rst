@@ -31,6 +31,13 @@ Several slices at once in a 3D view, with wells and the grid outline for context
    opm-vis-pv tests/data/SPE1CASE1 --keyword PRESSURE -k 1 -j 6 --rstep 60 \
        --view 3d --wells --wireframe --z-scale 15
 
+Leave out -i/-j/-k entirely to plot the whole active grid instead of a slice - this needs
+``--view 3d``, since the 2D view (the default) has no whole-grid concept to look down onto:
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS --rstep 60 --view 3d --wells --save sgas_grid.png
+
 Animate a keyword over every report step as a GIF:
 
 .. code-block:: bash
