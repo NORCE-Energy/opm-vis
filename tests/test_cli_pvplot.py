@@ -228,6 +228,82 @@ def test_diff_kind_is_rejected_when_not_one_of_the_three(case1, runner):
     assert "Invalid value for '--diff-kind'" in result.output
 
 
+# ---------------------------------------------------------------------------
+# --grid-only / --grid-color
+# ---------------------------------------------------------------------------
+
+
+def test_grid_only_writes_output_file(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "grid.png"
+
+    result = runner.invoke(
+        main, [case1, "-k", "1", "--grid-only", "-s", str(output)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_grid_only_plots_the_whole_grid_without_a_slice(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "grid.png"
+
+    result = runner.invoke(
+        main, [case1, "--grid-only", "--view", "3d", "-s", str(output)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_grid_only_accepts_a_custom_color(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "grid.png"
+
+    result = runner.invoke(
+        main, [case1, "-k", "1", "--grid-only", "--grid-color", "tan", "-s", str(output)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_grid_only_default_output_name_uses_grid_tag(case1, offscreen, runner):
+    del offscreen
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(main, [case1, "-k", "1", "--grid-only", "--save"])
+
+        assert result.exit_code == 0, result.output
+        assert Path("GRID_k1_0.png").exists()
+
+
+def test_grid_only_and_keyword_together_is_rejected(case1, runner):
+    result = runner.invoke(
+        main, [case1, "--keyword", "SGAS", "-k", "1", "--grid-only"]
+    )
+
+    assert result.exit_code != 0
+    assert "--keyword is not allowed together with --grid-only" in result.output
+
+
+def test_neither_keyword_nor_grid_only_is_rejected(case1, runner):
+    result = runner.invoke(main, [case1, "-k", "1"])
+
+    assert result.exit_code != 0
+    assert "Pass --keyword, or --grid-only" in result.output
+
+
+def test_grid_only_with_animate_is_rejected(case1, runner):
+    result = runner.invoke(main, [case1, "-k", "1", "--grid-only", "--animate"])
+
+    assert result.exit_code != 0
+    assert "--grid-only does not support --animate" in result.output
+
+
 def test_paths_default_to_the_working_directory(data_dir, offscreen, runner, tmp_path, monkeypatch):
     del offscreen
 

@@ -24,8 +24,8 @@ PATHS_ARGUMENT = click.argument("paths", nargs=-1, required=False)
 KEYWORD_OPTION = click.option(
     "-K",
     "--keyword",
-    required=True,
-    help="OPM keyword to plot, e.g. SGAS or PRESSURE.",
+    default=None,
+    help="OPM keyword to plot, e.g. SGAS or PRESSURE. Required unless --grid-only is given.",
 )
 
 # -i/-j/-k replace the old --slice-dim/--slice-index pair: at least one is given, and its
@@ -147,6 +147,27 @@ DIFF_OPTIONS = [
     ),
 ]
 
+# --grid-only skips scalar colouring entirely and plots the grid (or a slice of it, for
+# opm-vis-mpl always a slice) in a solid colour instead; --keyword is then neither needed nor
+# allowed. --grid-color customizes the fill colour, left as None to keep the backend's own
+# default.
+GRID_ONLY_OPTIONS = [
+    click.option(
+        "--grid-only",
+        is_flag=True,
+        default=False,
+        help="Plot the grid in a solid colour instead of colouring by --keyword. --keyword "
+        "must not be given in this mode.",
+    ),
+    click.option(
+        "--grid-color",
+        default=None,
+        metavar="COLOR",
+        help="Solid fill colour for --grid-only, e.g. a name or hex code. Defaults to the "
+        "backend's own fill colour.",
+    ),
+]
+
 
 def add_options(options: Sequence[Callable]) -> Callable:
     """
@@ -205,6 +226,53 @@ def resolve_diff_rstep(diff: bool, diff_rstep: int) -> int | None:
         diff_rstep if --diff was given, otherwise None (plot keyword's own values)
     """
     return diff_rstep if diff else None
+
+
+def resolve_keyword(keyword: str | None, grid_only: bool) -> str | None:
+    """
+    Validate --keyword/--grid-only are used correctly
+
+    Parameters
+    ----------
+    keyword : str | None
+        Value of --keyword
+    grid_only : bool
+        Value of --grid-only
+
+    Returns
+    -------
+    str | None
+        keyword unchanged - always a str unless grid_only, since exactly one of the two is
+        required
+
+    Raises
+    ------
+    click.UsageError
+        If --grid-only was given together with --keyword, or neither was given at all
+    """
+    if grid_only and keyword is not None:
+        raise click.UsageError("--keyword is not allowed together with --grid-only.")
+    if not grid_only and keyword is None:
+        raise click.UsageError("Pass --keyword, or --grid-only to plot without colouring it.")
+
+    return keyword
+
+
+def grid_color_kwargs(grid_color: str | None) -> dict:
+    """
+    Build the fill-colour kwarg for --grid-only, or none at all to keep the backend's default
+
+    Parameters
+    ----------
+    grid_color : str | None
+        Value of --grid-color
+
+    Returns
+    -------
+    dict
+        {} to leave the default fill colour, or {"color": grid_color}
+    """
+    return {} if grid_color is None else {"color": grid_color}
 
 
 def resolve_slices(

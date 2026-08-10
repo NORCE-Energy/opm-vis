@@ -10,6 +10,7 @@ from opm_vis.cli.common import (
     CMAP_OPTION,
     COMMAND_SETTINGS,
     DIFF_OPTIONS,
+    GRID_ONLY_OPTIONS,
     KEYWORD_OPTION,
     PATHS_ARGUMENT,
     RSTEP_OR_ANIMATE_OPTIONS,
@@ -17,11 +18,13 @@ from opm_vis.cli.common import (
     SLICE_OPTIONS,
     add_options,
     default_output_name,
+    grid_color_kwargs,
     handle_errors,
     parse_rstep,
     require_dynamic_keyword_error,
     resolve_animate_rsteps,
     resolve_diff_rstep,
+    resolve_keyword,
     resolve_paths,
     resolve_slices,
 )
@@ -76,6 +79,7 @@ def _wells_slices(
 @click.command(**COMMAND_SETTINGS)
 @PATHS_ARGUMENT
 @KEYWORD_OPTION
+@add_options(GRID_ONLY_OPTIONS)
 @add_options(SLICE_OPTIONS)
 @add_options(RSTEP_OR_ANIMATE_OPTIONS)
 @add_options(DIFF_OPTIONS)
@@ -181,7 +185,9 @@ def _wells_slices(
 # pylint: disable=too-many-arguments,too-many-locals
 def main(
     paths: tuple[str, ...],
-    keyword: str,
+    keyword: str | None,
+    grid_only: bool,
+    grid_color: str | None,
     slice_i: tuple[int, ...],
     slice_j: tuple[int, ...],
     slice_k: tuple[int, ...],
@@ -230,7 +236,14 @@ def main(
 
     --diff colours by the difference from --diff-rstep (default: report step 0) instead of
     --keyword's own values; --diff-kind picks plain/absolute/relative(%).
+
+    --grid-only plots the grid (or the chosen slice(s)) in a solid colour instead - --keyword
+    is not needed, and not allowed, in this mode. --animate is not supported with --grid-only.
     """
+    keyword = resolve_keyword(keyword, grid_only)
+    if grid_only and animate:
+        raise click.UsageError("--grid-only does not support --animate yet.")
+
     slices = resolve_slices(slice_i, slice_j, slice_k)
     if view == "2d" and len(slices) > 1:
         raise click.UsageError(
@@ -246,7 +259,12 @@ def main(
             "--quads needs a slice; pass -i/-j/-k, or drop --quads to plot the whole grid."
         )
     rstep_value = parse_rstep(rstep, animate)
-    resolved_diff_rstep = resolve_diff_rstep(diff, diff_rstep)
+    # --diff has no effect in --grid-only (there is no --keyword to difference), so it is
+    # forced off here rather than left to silently do nothing while still showing up in the
+    # default filename.
+    resolved_diff_rstep = None if grid_only else resolve_diff_rstep(diff, diff_rstep)
+
+    grid_kwargs = grid_color_kwargs(grid_color)
 
     with GridPlotter(
         resolve_paths(paths), off_screen=save is not None, window_size=window_size,
@@ -254,9 +272,11 @@ def main(
     ) as plotter:
         if slices:
             for slice_dim, slice_index in slices:
-                plotter.add_slice(slice_dim, slice_index, quads=quads, opacity=opacity)
+                plotter.add_slice(
+                    slice_dim, slice_index, quads=quads, opacity=opacity, **grid_kwargs
+                )
         else:
-            plotter.add_grid(opacity=opacity)
+            plotter.add_grid(opacity=opacity, **grid_kwargs)
         if wireframe:
             plotter.add_wireframe()
 
@@ -332,7 +352,15 @@ def main(
             )
             return
 
-        if rstep_value is None:
+        if grid_only:
+            # A solid-colour grid is time-invariant, so no report step is strictly needed;
+            # one is still resolved for --wells/the title, defaulting to the first available.
+            actual_rstep = (
+                rstep_value
+                if rstep_value is not None
+                else plotter.case.report.report_steps()[0]
+            )
+        elif rstep_value is None:
             probe_rstep = plotter.case.report.report_steps()[0]
             if not plotter.case.is_static(keyword, probe_rstep):
                 raise require_dynamic_keyword_error(keyword)
@@ -340,16 +368,18 @@ def main(
         else:
             actual_rstep = rstep_value
 
-        plotter.set_scalars(
-            keyword,
-            actual_rstep,
-            clim=clim,
-            cmap=cmap,
-            log_scale=log_scale,
-            scalar_bar=not no_colorbar,
-            diff_rstep=resolved_diff_rstep,
-            diff_kind=diff_kind,
-        )
+        plotter.rstep = actual_rstep
+        if not grid_only:
+            plotter.set_scalars(
+                keyword,
+                actual_rstep,
+                clim=clim,
+                cmap=cmap,
+                log_scale=log_scale,
+                scalar_bar=not no_colorbar,
+                diff_rstep=resolved_diff_rstep,
+                diff_kind=diff_kind,
+            )
         if wells or all_wells:
             plotter.add_wells(actual_rstep, slices=_wells_slices(all_wells, slices))
         if glyphs is not None:
@@ -376,7 +406,7 @@ def main(
             plotter.show()
         else:
             output = Path(save) if save else default_output_name(
-                keyword,
+                keyword or "GRID",
                 slices,
                 rstep=actual_rstep,
                 ext="png",

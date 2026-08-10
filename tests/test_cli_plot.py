@@ -173,6 +173,68 @@ def test_diff_animate_writes_output_file(case1, runner, tmp_path):
     assert output.stat().st_size > 0
 
 
+# ---------------------------------------------------------------------------
+# --grid-only / --grid-color
+# ---------------------------------------------------------------------------
+
+
+def test_grid_only_writes_output_file(case1, runner, tmp_path):
+    output = tmp_path / "grid.png"
+
+    result = runner.invoke(main, [case1, "-k", "1", "--grid-only", "-s", str(output)])
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_grid_only_accepts_a_custom_color(case1, runner, tmp_path):
+    output = tmp_path / "grid.png"
+
+    result = runner.invoke(
+        main, [case1, "-k", "1", "--grid-only", "--grid-color", "tan", "-s", str(output)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_grid_only_requires_a_slice(case1, runner):
+    result = runner.invoke(main, [case1, "--grid-only"])
+
+    assert result.exit_code != 0
+    assert "at least one of -i, -j, or -k" in result.output
+
+
+def test_grid_only_default_output_name_uses_grid_tag(case1, runner):
+    with runner.isolated_filesystem():
+        result = runner.invoke(main, [case1, "-k", "1", "--grid-only", "--save"])
+
+        assert result.exit_code == 0, result.output
+        assert Path("GRID_k1_all.png").exists()
+
+
+def test_grid_only_and_keyword_together_is_rejected(case1, runner):
+    result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "1", "--grid-only"])
+
+    assert result.exit_code != 0
+    assert "--keyword is not allowed together with --grid-only" in result.output
+
+
+def test_neither_keyword_nor_grid_only_is_rejected(case1, runner):
+    result = runner.invoke(main, [case1, "-k", "1"])
+
+    assert result.exit_code != 0
+    assert "Pass --keyword, or --grid-only" in result.output
+
+
+def test_grid_only_with_animate_is_rejected(case1, runner):
+    result = runner.invoke(main, [case1, "-k", "1", "--grid-only", "--animate"])
+
+    assert result.exit_code != 0
+    assert "--grid-only does not support --animate" in result.output
+
+
 def test_paths_default_to_the_working_directory(data_dir, runner, tmp_path, monkeypatch):
     case_dir = tmp_path / "case"
     case_dir.mkdir()

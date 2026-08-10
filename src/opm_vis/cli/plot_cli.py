@@ -10,6 +10,7 @@ from opm_vis.cli.common import (
     CMAP_OPTION,
     COMMAND_SETTINGS,
     DIFF_OPTIONS,
+    GRID_ONLY_OPTIONS,
     KEYWORD_OPTION,
     PATHS_ARGUMENT,
     RSTEP_OR_ANIMATE_OPTIONS,
@@ -17,12 +18,14 @@ from opm_vis.cli.common import (
     SLICE_OPTIONS,
     add_options,
     default_output_name,
+    grid_color_kwargs,
     handle_errors,
     is_static_keyword,
     parse_rstep,
     require_dynamic_keyword_error,
     resolve_animate_rsteps,
     resolve_diff_rstep,
+    resolve_keyword,
     resolve_paths,
     resolve_slices,
 )
@@ -32,6 +35,7 @@ from opm_vis.plot.collections import SlicePoly2DCollection, SlicePoly3DCollectio
 @click.command(**COMMAND_SETTINGS)
 @PATHS_ARGUMENT
 @KEYWORD_OPTION
+@add_options(GRID_ONLY_OPTIONS)
 @add_options(SLICE_OPTIONS)
 @add_options(RSTEP_OR_ANIMATE_OPTIONS)
 @add_options(DIFF_OPTIONS)
@@ -50,7 +54,9 @@ from opm_vis.plot.collections import SlicePoly2DCollection, SlicePoly3DCollectio
 # pylint: disable=too-many-arguments,too-many-locals
 def main(
     paths: tuple[str, ...],
-    keyword: str,
+    keyword: str | None,
+    grid_only: bool,
+    grid_color: str | None,
     slice_i: tuple[int, ...],
     slice_j: tuple[int, ...],
     slice_k: tuple[int, ...],
@@ -78,7 +84,14 @@ def main(
 
     --diff colours by the difference from --diff-rstep (default: report step 0) instead of
     --keyword's own values; --diff-kind picks plain/absolute/relative(%).
+
+    --grid-only plots the slice in a solid colour instead - --keyword is not needed, and not
+    allowed, in this mode. --animate is not supported with --grid-only.
     """
+    keyword = resolve_keyword(keyword, grid_only)
+    if grid_only and animate:
+        raise click.UsageError("--grid-only does not support --animate yet.")
+
     slices = resolve_slices(slice_i, slice_j, slice_k)
     if not slices:
         raise click.UsageError(
@@ -92,7 +105,9 @@ def main(
         )
     slice_dim, slice_index = slices[0]
     rstep_value = parse_rstep(rstep, animate)
-    resolved_diff_rstep = resolve_diff_rstep(diff, diff_rstep)
+    # --diff has no effect in --grid-only (there is no --keyword to difference); see the
+    # matching note in pvplot_cli.py.
+    resolved_diff_rstep = None if grid_only else resolve_diff_rstep(diff, diff_rstep)
 
     poly_kwargs = {"cmap": cmap}
     if clim is not None:
@@ -129,6 +144,19 @@ def main(
                     diff_kind=diff_kind,
                 ),
                 fps=fps,
+            )
+        return
+
+    if grid_only:
+        # Time-invariant: unlike a keyword's own values, the bare grid has no report step to
+        # pick, so plot_grid()/save_grid_plot() need none either.
+        coll.plot_grid(**grid_color_kwargs(grid_color))
+
+        if save is None:
+            coll.show()
+        else:
+            coll.save_grid_plot(
+                Path(save) if save else default_output_name("GRID", slices, ext="png")
             )
         return
 
