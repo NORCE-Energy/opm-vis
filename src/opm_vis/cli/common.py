@@ -112,6 +112,36 @@ RSTEP_OR_GIF_OPTIONS = [
     ),
 ]
 
+# --diff turns on difference mode; --diff-rstep/--diff-kind customize it and are otherwise
+# ignored. --diff-rstep is a report step number like --rstep, not a grid index, so it is not
+# part of the 1-based -i/-j/-k convention.
+DIFF_OPTIONS = [
+    click.option(
+        "--diff",
+        is_flag=True,
+        default=False,
+        help="Plot the difference from --diff-rstep instead of --keyword's own values.",
+    ),
+    click.option(
+        "--diff-rstep",
+        type=int,
+        default=0,
+        show_default=True,
+        metavar="STEP",
+        help="Report step to difference against. Only used with --diff.",
+    ),
+    click.option(
+        "--diff-kind",
+        type=click.Choice(["plain", "absolute", "relative"]),
+        default="plain",
+        show_default=True,
+        help=(
+            "plain: value minus reference. absolute: the plain difference's magnitude. "
+            "relative: percent change from the reference. Only used with --diff."
+        ),
+    ),
+]
+
 
 def add_options(options: Sequence[Callable]) -> Callable:
     """
@@ -151,6 +181,25 @@ def resolve_paths(paths: tuple[str, ...]) -> list[str]:
         paths itself if non-empty, otherwise ["./"]
     """
     return list(paths) if paths else ["./"]
+
+
+def resolve_diff_rstep(diff: bool, diff_rstep: int) -> int | None:
+    """
+    Resolve --diff/--diff-rstep into the diff_rstep value set_scalars/plot/animate/gif expect
+
+    Parameters
+    ----------
+    diff : bool
+        Value of --diff
+    diff_rstep : int
+        Value of --diff-rstep
+
+    Returns
+    -------
+    int | None
+        diff_rstep if --diff was given, otherwise None (plot keyword's own values)
+    """
+    return diff_rstep if diff else None
 
 
 def resolve_slices(
@@ -305,6 +354,8 @@ def default_output_name(
     rstep: int | None = None,
     rsteps: Sequence[int] | None = None,
     ext: str = "png",
+    diff_rstep: int | None = None,
+    diff_kind: str = "plain",
 ) -> str:
     """
     Build an output filename when --save is given with no path
@@ -321,11 +372,18 @@ def default_output_name(
         Report steps being animated, for a gif
     ext : str, optional
         File extension, by default "png"
+    diff_rstep : int | None, optional
+        Report step being differenced against, by default None (not a diff plot). See
+        resolve_diff_rstep.
+    diff_kind : str, optional
+        See opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by default
+        "plain"
 
     Returns
     -------
     str
-        e.g. "SGAS_k1_60.png" or "SGAS_k1_j6_0-120.gif", written to the current directory
+        e.g. "SGAS_k1_60.png", "SGAS_k1_j6_0-120.gif", or "SGAS-diff0-absolute_k1_60.png"
+        with --diff, written to the current directory
 
     Notes
     -----
@@ -341,7 +399,13 @@ def default_output_name(
 
     slice_tag = "_".join(f"{dim}{index + 1}" for dim, index in slices)
 
-    return f"{keyword}_{slice_tag}_{step_tag}.{ext}"
+    keyword_tag = keyword
+    if diff_rstep is not None:
+        keyword_tag += f"-diff{diff_rstep}"
+        if diff_kind != "plain":
+            keyword_tag += f"-{diff_kind}"
+
+    return f"{keyword_tag}_{slice_tag}_{step_tag}.{ext}"
 
 
 def require_dynamic_keyword_error(keyword: str) -> click.UsageError:

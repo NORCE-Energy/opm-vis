@@ -7,6 +7,7 @@ from copy import copy
 from matplotlib.collections import PolyCollection
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+from opm_vis.utils.diff import compute_diff
 from opm_vis.utils.grid import GridSlice2D, GridSlice3D, _GridSlice
 from opm_vis.utils.restart import RestartReader, Wells
 from opm_vis.utils.static import InitReader
@@ -44,7 +45,13 @@ class _SlicePoly(_GridSlice, ABC):
         self.wells = []  # see Wells class
 
     def generate(
-        self, keyword: str, rstep: int, **kwargs
+        self,
+        keyword: str,
+        rstep: int,
+        *,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
+        **kwargs,
     ) -> PolyCollection | Poly3DCollection:
         """
         Generate data from keyword at one report step
@@ -55,6 +62,12 @@ class _SlicePoly(_GridSlice, ABC):
             OPM keyword
         rstep : int
             Report step
+        diff_rstep : int | None, optional
+            Use the difference from this report step instead of keyword's own values, by
+            default None (the values themselves)
+        diff_kind : str, optional
+            One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
+            default "plain"
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -63,20 +76,11 @@ class _SlicePoly(_GridSlice, ABC):
         polyc : PolyCollection | Poly3DCollection
             Matplotlib polygons with data from keyword
         """
-        # Get active indices
         act_ind = self.active_indices()
-
-        # Read keyword
-        if keyword in self.restart.available_keywords(rstep):
-            data = self.restart.read(keyword, rstep, act_ind)
-        elif keyword in [
-            key
-            for key in self.static.available_keywords()
-            if key not in self.restart.available_keywords(rstep)
-        ]:
-            data = self.static.read(keyword, act_ind)
-        else:
-            raise KeyError(f"{keyword} not in restart files or .INIT file!")
+        data = self._read_keyword(keyword, rstep, act_ind)
+        if diff_rstep is not None:
+            reference = self._read_keyword(keyword, diff_rstep, act_ind)
+            data = compute_diff(data, reference, diff_kind)
 
         # Generate polygon collection
         polyc = self.generate_poly(**kwargs)
@@ -86,6 +90,35 @@ class _SlicePoly(_GridSlice, ABC):
 
         # Return polygon collection
         return polyc
+
+    def _read_keyword(self, keyword: str, rstep: int, act_ind: list[int]):
+        """
+        Read one keyword at one report step, restart files taking priority over .INIT
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword
+        rstep : int
+            Report step
+        act_ind : list[int]
+            Active indices to read, as returned by active_indices()
+
+        Returns
+        -------
+        ndarray
+            One value per entry in act_ind
+        """
+        if keyword in self.restart.available_keywords(rstep):
+            return self.restart.read(keyword, rstep, act_ind)
+        if keyword in [
+            key
+            for key in self.static.available_keywords()
+            if key not in self.restart.available_keywords(rstep)
+        ]:
+            return self.static.read(keyword, act_ind)
+
+        raise KeyError(f"{keyword} not in restart files or .INIT file!")
 
     def _filter_wells(self, paths: list[str]) -> None:
         """

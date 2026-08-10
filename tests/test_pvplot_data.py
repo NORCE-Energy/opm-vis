@@ -109,6 +109,77 @@ def test_value_range_rejects_an_empty_report_step_list(case):
 
 
 # ---------------------------------------------------------------------------
+# diff / value_range(diff_rstep=...)
+# ---------------------------------------------------------------------------
+
+
+def test_diff_default_ref_rstep_is_zero(case):
+    plain = case.diff("SGAS", 60)
+
+    np.testing.assert_allclose(plain, case.read("SGAS", 60) - case.read("SGAS", 0))
+
+
+def test_diff_absolute_is_the_plain_difference_magnitude(case):
+    plain = case.diff("SGAS", 60, kind="plain")
+    absolute = case.diff("SGAS", 60, kind="absolute")
+
+    np.testing.assert_allclose(absolute, np.abs(plain))
+
+
+def test_diff_relative_is_percent_change_from_ref_rstep(case):
+    relative = case.diff("PRESSURE", 60, kind="relative")
+
+    initial = case.read("PRESSURE", 0)
+    current = case.read("PRESSURE", 60)
+    np.testing.assert_allclose(relative, (current - initial) / initial * 100.0)
+
+
+def test_diff_ref_rstep_can_be_any_report_step(case):
+    diff_from_60 = case.diff("SGAS", 120, ref_rstep=60)
+
+    np.testing.assert_allclose(diff_from_60, case.read("SGAS", 120) - case.read("SGAS", 60))
+
+
+def test_diff_against_itself_is_zero(case):
+    np.testing.assert_allclose(case.diff("PRESSURE", 60, ref_rstep=60), 0.0)
+
+
+def test_value_range_diff_rstep_spans_every_requested_report_step(case):
+    rsteps = [0, 60, 120]
+
+    low, high = case.value_range("SGAS", rsteps, diff_rstep=0)
+
+    per_step = [case.diff("SGAS", rstep, ref_rstep=0) for rstep in rsteps]
+    assert low == pytest.approx(min(data.min() for data in per_step))
+    assert high == pytest.approx(max(data.max() for data in per_step))
+
+
+def test_value_range_diff_rstep_covers_the_diff_not_the_values(case):
+    # PRESSURE is nonzero at report step 0, unlike SGAS, so its diff range is not coincidentally
+    # identical to its value range
+    values = case.value_range("PRESSURE", [60])
+    diff = case.value_range("PRESSURE", [60], diff_rstep=0)
+
+    assert diff != values
+    data = case.diff("PRESSURE", 60, ref_rstep=0)
+    assert diff == pytest.approx((data.min(), data.max()))
+
+
+def test_value_range_diff_kind_absolute_is_never_negative(case):
+    low, high = case.value_range("SGAS", [60], diff_rstep=0, diff_kind="absolute")
+
+    assert low >= 0.0
+    assert high >= 0.0
+
+
+def test_value_range_diff_kind_relative_matches_diff_directly(case):
+    low, high = case.value_range("PRESSURE", [60], diff_rstep=0, diff_kind="relative")
+
+    relative = case.diff("PRESSURE", 60, ref_rstep=0, kind="relative")
+    assert (low, high) == pytest.approx((relative.min(), relative.max()))
+
+
+# ---------------------------------------------------------------------------
 # unit_convention / wells
 # ---------------------------------------------------------------------------
 

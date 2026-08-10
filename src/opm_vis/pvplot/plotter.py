@@ -592,6 +592,8 @@ class GridPlotter:
         cmap: str = "viridis",
         log_scale: bool = False,
         scalar_bar: bool = True,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
     ) -> None:
         """
         Colour everything that has been added by one keyword at one report step
@@ -611,6 +613,12 @@ class GridPlotter:
             Map colours logarithmically, by default False. Useful for permeability.
         scalar_bar : bool, optional
             Show a scalar bar labelled with the keyword and its unit, by default True
+        diff_rstep : int | None, optional
+            Colour by the difference from this report step instead of keyword's own values,
+            by default None (colour by the values themselves)
+        diff_kind : str, optional
+            One of opm_vis.utils.diff.DIFF_KINDS: "plain", "absolute" or "relative" (percent);
+            only used when diff_rstep is given, by default "plain"
 
         Notes
         -----
@@ -631,9 +639,17 @@ class GridPlotter:
                 "Nothing to colour! Call add_slice or add_grid before set_scalars."
             )
 
-        data = self.case.read(keyword, rstep)
+        if diff_rstep is None:
+            data = self.case.read(keyword, rstep)
+        else:
+            data = self.case.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
+
         scalar_range = (
-            clim if clim is not None else self.case.value_range(keyword, [rstep])
+            clim
+            if clim is not None
+            else self.case.value_range(
+                keyword, [rstep], diff_rstep=diff_rstep, diff_kind=diff_kind
+            )
         )
 
         for entry in targets:
@@ -658,7 +674,11 @@ class GridPlotter:
                 mapper.lookup_table.log_scale = log_scale
 
         if scalar_bar:
-            self._update_scalar_bar(targets[0].actor.mapper, keyword)
+            self._update_scalar_bar(
+                targets[0].actor.mapper,
+                keyword,
+                diff_kind=diff_kind if diff_rstep is not None else None,
+            )
 
         # Record what is currently shown, for the scalar bar and title
         self.keyword = keyword
@@ -669,7 +689,9 @@ class GridPlotter:
         # on screen: screenshot() on its own reuses the previous frame buffer.
         self.plotter.render()
 
-    def _update_scalar_bar(self, mapper: Any, keyword: str) -> None:
+    def _update_scalar_bar(
+        self, mapper: Any, keyword: str, *, diff_kind: str | None = None
+    ) -> None:
         """
         Show a scalar bar for the keyword, replacing any bar for a different one
 
@@ -680,8 +702,11 @@ class GridPlotter:
             lookup table, so any one of them describes the whole scene.
         keyword : str
             OPM keyword currently being shown
+        diff_kind : str | None, optional
+            Passed straight through to labels.scalar_bar_title; see set_scalars, by default
+            None
         """
-        title = scalar_bar_title(self.label, keyword)
+        title = scalar_bar_title(self.label, keyword, diff_kind=diff_kind)
 
         # Only the report step usually changes, and the bar already reads correctly then
         if title == self._scalar_bar_title:
@@ -694,7 +719,12 @@ class GridPlotter:
         self._scalar_bar_title = title
 
     def global_clim(
-        self, keyword: str, rsteps: Sequence[int] | None = None
+        self,
+        keyword: str,
+        rsteps: Sequence[int] | None = None,
+        *,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
     ) -> tuple[float, float]:
         """
         Colour limits covering a keyword's full range over several report steps
@@ -705,6 +735,12 @@ class GridPlotter:
             OPM keyword
         rsteps : Sequence[int] | None, optional
             Report steps to cover, by default None, which uses every report step in the case
+        diff_rstep : int | None, optional
+            Cover the difference from this report step instead of keyword's own values, by
+            default None (the values themselves). Match whatever set_scalars/animate is
+            called with.
+        diff_kind : str, optional
+            See set_scalars; only used when diff_rstep is given, by default "plain"
 
         Returns
         -------
@@ -714,7 +750,9 @@ class GridPlotter:
         if rsteps is None:
             rsteps = self.case.report.report_steps()
 
-        return self.case.value_range(keyword, rsteps)
+        return self.case.value_range(
+            keyword, rsteps, diff_rstep=diff_rstep, diff_kind=diff_kind
+        )
 
     def set_vectors(self, rstep: int, *, name: str | None = None) -> None:
         """
@@ -1031,6 +1069,8 @@ class GridPlotter:
         wells_slices: Sequence[tuple[str, int]] | None = None,
         vectors: bool = False,
         title: bool = True,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
         **kwargs,
     ) -> None:
         """
@@ -1064,6 +1104,12 @@ class GridPlotter:
             global_glyph_factor(...) there if arrow length should stay comparable throughout.
         title : bool, optional
             Title each frame with its report date, by default True
+        diff_rstep : int | None, optional
+            Animate the difference from this (fixed) report step instead of keyword's own
+            values, by default None (the values themselves). rstep still varies frame to
+            frame; diff_rstep is the one report step every frame is differenced against.
+        diff_kind : str, optional
+            See set_scalars; only used when diff_rstep is given, by default "plain"
         kwargs : optional
             Optional arguments passed to set_scalars
 
@@ -1086,13 +1132,17 @@ class GridPlotter:
         if rsteps is None:
             rsteps = self.case.report.report_steps()
         if clim is None:
-            clim = self.global_clim(keyword, rsteps)
+            clim = self.global_clim(
+                keyword, rsteps, diff_rstep=diff_rstep, diff_kind=diff_kind
+            )
 
         frame_kwargs = {
             "wells": wells,
             "wells_slices": wells_slices,
             "vectors": vectors,
             "title": title,
+            "diff_rstep": diff_rstep,
+            "diff_kind": diff_kind,
             **kwargs,
         }
 

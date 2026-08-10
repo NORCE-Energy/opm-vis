@@ -53,6 +53,19 @@ Overlay vector glyphs from a displacement field on top of a scalar-coloured slic
 
    opm-vis-pv tests/data/TPSA_LAGGED --keyword DISPZ -k 1 --rstep 15 --glyphs DISPX DISPY DISPZ
 
+Plot how much a keyword has changed since report step 0 (the default), as a percentage:
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 --keyword PRESSURE -k 1 --rstep 60 --diff --diff-kind relative
+
+``--diff`` also works with ``--gif``, differencing every animated frame against the same fixed
+``--diff-rstep``:
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 1 --gif --diff --save sgas_diff.gif
+
 The same keyword and slice with the alternative Matplotlib backend:
 
 .. code-block:: bash

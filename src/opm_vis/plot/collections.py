@@ -15,6 +15,7 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from opm_vis.plot.slice_poly import SlicePoly2D, SlicePoly3D
+from opm_vis.utils.diff import diff_label
 from opm_vis.utils.restart import Report
 from opm_vis.utils.units import Label
 
@@ -169,6 +170,9 @@ class _SlicePolyCollection:
         equal_clim: bool = True,
         polyc_dict: dict[int, list[Poly3DCollection] | list[PolyCollection]]
         | None = None,
+        *,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
         **kwargs,
     ) -> None:
         """
@@ -186,6 +190,13 @@ class _SlicePolyCollection:
             Equal colormap range for all slices, by default True
         polyc_dict : dict, optional
             Pre-generated slices (list of Poly3DCollection/PolyCollection), by default None.
+        diff_rstep : int | None, optional
+            Plot the difference from this report step instead of keyword's own values, by
+            default None (the values themselves). Ignored when polyc_dict is given, since its
+            data was already generated (see gif()).
+        diff_kind : str, optional
+            One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
+            default "plain"
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -201,7 +212,10 @@ class _SlicePolyCollection:
         # Else, generate data for each slice and add to axes collection
         else:
             polyc_rstep = [
-                slc.generate(keyword, rstep, **kwargs) for slc in self.slice_coll
+                slc.generate(
+                    keyword, rstep, diff_rstep=diff_rstep, diff_kind=diff_kind, **kwargs
+                )
+                for slc in self.slice_coll
             ]
 
         # Set equal color range if there are more than one slice.
@@ -228,8 +242,8 @@ class _SlicePolyCollection:
         rdate = self.report.report_date(rstep)
         self.rdates.append(rdate)
 
-        # Save keyword
-        self.keyword = keyword
+        # Save keyword, for save_plot's filename; see _keyword_tag
+        self.keyword = self._keyword_tag(keyword, diff_rstep, diff_kind)
 
         # Set title
         self.set_title(rdate)
@@ -245,8 +259,36 @@ class _SlicePolyCollection:
                 )
 
             # Following above warning, we only need to use the first slice
-            clabel = keyword + " [" + self.label(keyword) + "]"
+            clabel = self._colorbar_label(keyword, diff_rstep, diff_kind)
             self.fig.colorbar(polyc_rstep[0], ax=self.ax_, label=clabel)
+
+    def _colorbar_label(
+        self, keyword: str, diff_rstep: int | None, diff_kind: str
+    ) -> str:
+        """
+        Colour bar label for one keyword, or its difference
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword
+        diff_rstep : int | None
+            Report step being differenced against, or None for keyword's own values
+        diff_kind : str
+            One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given
+
+        Returns
+        -------
+        str
+            e.g. "PRESSURE [barsa]", or "ΔPRESSURE [barsa]"/"ΔSGAS [%]" for a diff
+        """
+        if diff_rstep is None:
+            return keyword + " [" + self.label(keyword) + "]"
+
+        name = diff_label(keyword, diff_kind)
+        if diff_kind == "relative":
+            return f"{name} [%]"
+        return name + " [" + self.label(keyword) + "]"
 
     def plot_grid(self, **kwargs) -> None:
         """
@@ -270,6 +312,8 @@ class _SlicePolyCollection:
         rsteps: list[int] | None = None,
         *,
         rstep_list: Sequence[int] | None = None,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
         **kwargs,
     ) -> None:
         """
@@ -287,6 +331,12 @@ class _SlicePolyCollection:
             rsteps: use this instead of rsteps when the steps to include are not a contiguous
             range, e.g. every 5th report step, since rsteps assumes every integer between start
             and end is a real report step.
+        diff_rstep : int | None, optional
+            Animate the difference from this (fixed) report step instead of keyword's own
+            values, by default None (the values themselves)
+        diff_kind : str, optional
+            One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
+            default "plain"
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -308,17 +358,21 @@ class _SlicePolyCollection:
             rsteps_gif = list(range(rsteps[0], rsteps[1] + 1))
             self.rdates = [all_rdates[all_rsteps.index(i)] for i in rsteps_gif]
 
-        # Save keyword
-        self.keyword = keyword
+        # Save keyword, for save_gif's filename; see _keyword_tag
+        self.keyword = self._keyword_tag(keyword, diff_rstep, diff_kind)
 
         # Generate slices for all report dates to be able to set one colorbar for whole gif
-        polyc_dict = self._data_for_gif(rsteps_gif, keyword, **kwargs)
+        polyc_dict = self._data_for_gif(
+            rsteps_gif, keyword, diff_rstep=diff_rstep, diff_kind=diff_kind, **kwargs
+        )
 
         # Set colorbar for gif
-        clabel = keyword + " [" + self.label(keyword) + "]"
+        clabel = self._colorbar_label(keyword, diff_rstep, diff_kind)
         self.fig.colorbar(polyc_dict[rsteps_gif[0]][0], ax=self.ax_, label=clabel)
 
-        # Setup plot function to fit with FuncAnimation
+        # Setup plot function to fit with FuncAnimation. diff_rstep/diff_kind are not passed
+        # through here: polyc_dict already carries the (possibly diff'd) data, and plot()
+        # ignores its own diff_rstep/diff_kind whenever polyc_dict is given.
         plot_func = partial(
             self.plot,
             keyword=keyword,
@@ -332,7 +386,13 @@ class _SlicePolyCollection:
         self.anim = animation.FuncAnimation(self.fig, plot_func, frames=rsteps_gif)
 
     def _data_for_gif(
-        self, rsteps: list[int], keyword: str, **kwargs
+        self,
+        rsteps: list[int],
+        keyword: str,
+        *,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
+        **kwargs,
     ) -> dict[int, list[Poly3DCollection] | list[PolyCollection]]:
         """
         Pre-generate data for report steps.
@@ -343,6 +403,12 @@ class _SlicePolyCollection:
             List of report steps to generate plot data
         keyword : str
             OPM keyword to plot
+        diff_rstep : int | None, optional
+            Generate the difference from this report step instead of keyword's own values,
+            by default None (the values themselves)
+        diff_kind : str, optional
+            One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
+            default "plain"
 
         Returns
         -------
@@ -356,7 +422,10 @@ class _SlicePolyCollection:
         # Generate data for each slice at each report step
         for rstep in rsteps:
             polyc_dict[rstep] = [
-                slc.generate(keyword, rstep, **kwargs) for slc in self.slice_coll
+                slc.generate(
+                    keyword, rstep, diff_rstep=diff_rstep, diff_kind=diff_kind, **kwargs
+                )
+                for slc in self.slice_coll
             ]
 
         # If clim have not been set in kwargs, we must loop over all polyc and set clim to min/max
@@ -473,6 +542,31 @@ class _SlicePolyCollection:
             e.g. "k0" for one slice, "k0_j5" for several
         """
         return "_".join(f"{slc.slice_dim}{slc.slice_ind}" for slc in self.slice_coll)
+
+    @staticmethod
+    def _keyword_tag(keyword: str, diff_rstep: int | None, diff_kind: str) -> str:
+        """
+        Keyword string used in auto-generated filenames, reflecting diff mode if active
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword
+        diff_rstep : int | None
+            Report step being differenced against, or None for keyword's own values
+        diff_kind : str
+            One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given
+
+        Returns
+        -------
+        str
+            keyword unchanged, or e.g. "SGAS-diff0-relative" for a diff
+        """
+        if diff_rstep is None:
+            return keyword
+
+        tag = f"{keyword}-diff{diff_rstep}"
+        return tag if diff_kind == "plain" else f"{tag}-{diff_kind}"
 
 
 class SlicePoly3DCollection(_SlicePolyCollection):

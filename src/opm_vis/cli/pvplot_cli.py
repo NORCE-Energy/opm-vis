@@ -9,6 +9,7 @@ from opm_vis.cli.common import (
     CLIM_OPTION,
     CMAP_OPTION,
     COMMAND_SETTINGS,
+    DIFF_OPTIONS,
     KEYWORD_OPTION,
     PATHS_ARGUMENT,
     RSTEP_OR_GIF_OPTIONS,
@@ -19,6 +20,7 @@ from opm_vis.cli.common import (
     handle_errors,
     parse_rstep,
     require_dynamic_keyword_error,
+    resolve_diff_rstep,
     resolve_gif_rsteps,
     resolve_paths,
     resolve_slices,
@@ -75,6 +77,7 @@ def _wells_slices(
 @KEYWORD_OPTION
 @add_options(SLICE_OPTIONS)
 @add_options(RSTEP_OR_GIF_OPTIONS)
+@add_options(DIFF_OPTIONS)
 @SAVE_OPTION
 @CMAP_OPTION
 @CLIM_OPTION
@@ -175,6 +178,9 @@ def main(
     rstep: str | None,
     gif: bool,
     fps: int,
+    diff: bool,
+    diff_rstep: int,
+    diff_kind: str,
     save: str | None,
     cmap: str,
     clim: tuple[float, float] | None,
@@ -204,11 +210,14 @@ def main(
     PATHS are filename prefixes: the first is the main run, any further ones are restart runs.
     Defaults to searching the working directory (./) if not given.
 
-    -i/-j/-k are repeatable (e.g. -k 0 -k 5 -j 2) to plot several slices at once, all coloured
+    -i/-j/-k are repeatable (e.g. -k 1 -k 6 -j 3) to plot several slices at once, all coloured
     by the same --keyword; --view 3d is required whenever more than one is given.
 
     --glyphs overlays vector arrows on every chosen slice, from three keyword components (e.g.
     a displacement vector), alongside --keyword's scalar colouring.
+
+    --diff colours by the difference from --diff-rstep (default: report step 0) instead of
+    --keyword's own values; --diff-kind picks plain/absolute/relative(%).
     """
     slices = resolve_slices(slice_i, slice_j, slice_k)
     if view == "2d" and len(slices) > 1:
@@ -216,6 +225,7 @@ def main(
             "--view 2d only supports one slice; pass --view 3d for multiple slices."
         )
     rstep_value = parse_rstep(rstep, gif)
+    resolved_diff_rstep = resolve_diff_rstep(diff, diff_rstep)
 
     with GridPlotter(
         resolve_paths(paths), off_screen=save is not None, window_size=window_size,
@@ -271,7 +281,12 @@ def main(
             output = None
             if save is not None:
                 output = Path(save) if save else default_output_name(
-                    keyword, slices, rsteps=steps, ext="gif"
+                    keyword,
+                    slices,
+                    rsteps=steps,
+                    ext="gif",
+                    diff_rstep=resolved_diff_rstep,
+                    diff_kind=diff_kind,
                 )
             plotter.animate(
                 keyword,
@@ -285,6 +300,8 @@ def main(
                 title=not no_title,
                 cmap=cmap,
                 log_scale=log_scale,
+                diff_rstep=resolved_diff_rstep,
+                diff_kind=diff_kind,
             )
             return
 
@@ -303,6 +320,8 @@ def main(
             cmap=cmap,
             log_scale=log_scale,
             scalar_bar=not no_colorbar,
+            diff_rstep=resolved_diff_rstep,
+            diff_kind=diff_kind,
         )
         if wells or all_wells:
             plotter.add_wells(actual_rstep, slices=_wells_slices(all_wells, slices))
@@ -328,7 +347,12 @@ def main(
             plotter.show()
         else:
             output = Path(save) if save else default_output_name(
-                keyword, slices, rstep=actual_rstep, ext="png"
+                keyword,
+                slices,
+                rstep=actual_rstep,
+                ext="png",
+                diff_rstep=resolved_diff_rstep,
+                diff_kind=diff_kind,
             )
             plotter.screenshot(output)
 

@@ -124,6 +124,99 @@ def test_save_with_no_path_generates_a_name(case1, offscreen, runner):
         assert Path("SGAS_k1_60.png").exists()
 
 
+# ---------------------------------------------------------------------------
+# --diff / --diff-rstep / --diff-kind
+# ---------------------------------------------------------------------------
+
+
+def test_diff_writes_output_file(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "sgas.png"
+
+    result = runner.invoke(
+        main,
+        [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "--diff", "-s", str(output)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_diff_default_name_reflects_diff_rstep_and_kind(case1, offscreen, runner):
+    del offscreen
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            main,
+            [
+                case1,
+                "--keyword",
+                "PRESSURE",
+                "-k",
+                "1",
+                "--rstep",
+                "60",
+                "--diff",
+                "--diff-rstep",
+                "0",
+                "--diff-kind",
+                "relative",
+                "--save",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert Path("PRESSURE-diff0-relative_k1_60.png").exists()
+
+
+def test_diff_gif_writes_output_file(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "sgas.gif"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "-k",
+            "1",
+            "--gif",
+            "--rstep",
+            "0:60:20",
+            "--diff",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_diff_kind_is_rejected_when_not_one_of_the_three(case1, runner):
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "-k",
+            "1",
+            "--rstep",
+            "60",
+            "--diff",
+            "--diff-kind",
+            "bogus",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Invalid value for '--diff-kind'" in result.output
+
+
 def test_paths_default_to_the_working_directory(data_dir, offscreen, runner, tmp_path, monkeypatch):
     del offscreen
 

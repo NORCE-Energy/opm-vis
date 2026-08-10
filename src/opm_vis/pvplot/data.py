@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from opm_vis.utils.diff import compute_diff
 from opm_vis.utils.restart import Report, RestartReader, Wells
 from opm_vis.utils.static import InitReader
 
@@ -88,9 +89,41 @@ class CaseData:
 
         raise KeyError(f"{keyword} not in restart files or .INIT file!")
 
-    def value_range(self, keyword: str, rsteps: Sequence[int]) -> tuple[float, float]:
+    def diff(
+        self, keyword: str, rstep: int, *, ref_rstep: int = 0, kind: str = "plain"
+    ) -> NDArray[Any]:
         """
-        Smallest and largest value a keyword takes over a set of report steps
+        Difference of a keyword's values from a reference report step
+
+        Parameters
+        ----------
+        keyword : str
+            OPM keyword
+        rstep : int
+            Report step to plot
+        ref_rstep : int, optional
+            Report step to difference against, by default 0
+        kind : str, optional
+            One of opm_vis.utils.diff.DIFF_KINDS: "plain" (rstep - ref_rstep), "absolute"
+            (its magnitude), or "relative" (percent change from ref_rstep), by default "plain"
+
+        Returns
+        -------
+        NDArray[Any]
+            One value per active cell, in active index order
+        """
+        return compute_diff(self.read(keyword, rstep), self.read(keyword, ref_rstep), kind)
+
+    def value_range(
+        self,
+        keyword: str,
+        rsteps: Sequence[int],
+        *,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
+    ) -> tuple[float, float]:
+        """
+        Smallest and largest value (or difference) a keyword takes over a set of report steps
 
         Parameters
         ----------
@@ -98,6 +131,11 @@ class CaseData:
             OPM keyword
         rsteps : Sequence[int]
             Report steps to include
+        diff_rstep : int | None, optional
+            Cover the difference from this report step instead of keyword's own values, by
+            default None (the values themselves)
+        diff_kind : str, optional
+            See diff(); only used when diff_rstep is given, by default "plain"
 
         Returns
         -------
@@ -110,7 +148,9 @@ class CaseData:
         (see collections.py), so a pressure field in [4000, 6000] psia is given a colour range
         beginning at zero and most of the colour map goes unused.
 
-        A static keyword has the same values at every report step, so it is only read once.
+        A static keyword has the same values at every report step, so it is only read once -
+        this also holds under diff_rstep, since the difference of two constants is itself
+        constant.
         """
         if len(rsteps) == 0:
             raise ValueError(
@@ -122,7 +162,11 @@ class CaseData:
 
         low, high = np.inf, -np.inf
         for rstep in steps:
-            data = self.read(keyword, rstep)
+            data = (
+                self.read(keyword, rstep)
+                if diff_rstep is None
+                else self.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
+            )
             low = min(low, np.nanmin(data))
             high = max(high, np.nanmax(data))
 
