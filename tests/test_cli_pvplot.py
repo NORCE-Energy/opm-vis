@@ -389,6 +389,60 @@ def test_duplicate_slice_is_rejected(case1, runner):
     assert "Slice given more than once" in result.output
 
 
+def test_glyph_every_n_writes_output_file(tpsa_lagged, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "disp.png"
+
+    result = runner.invoke(
+        main,
+        [
+            tpsa_lagged,
+            "--keyword",
+            "DISPZ",
+            "-k",
+            "1",
+            "--rstep",
+            "15",
+            "--glyphs",
+            "DISPX",
+            "DISPY",
+            "DISPZ",
+            "--glyph-every-n",
+            "2",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_glyph_every_n_rejects_less_than_one(tpsa_lagged, runner):
+    result = runner.invoke(
+        main,
+        [
+            tpsa_lagged,
+            "--keyword",
+            "DISPZ",
+            "-k",
+            "1",
+            "--rstep",
+            "15",
+            "--glyphs",
+            "DISPX",
+            "DISPY",
+            "DISPZ",
+            "--glyph-every-n",
+            "0",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "not in the range" in result.output
+
+
 def test_multiple_slices_with_3d_view_writes_output_file(case1, offscreen, runner, tmp_path):
     del offscreen
     output = tmp_path / "sgas.png"

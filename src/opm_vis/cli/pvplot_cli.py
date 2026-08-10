@@ -151,6 +151,14 @@ def _wells_slices(
     help="Scale each arrow by its own vector's magnitude.",
 )
 @click.option(
+    "--glyph-every-n",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    help="Draw only 1 arrow out of every this many, to thin out a dense grid. Arrow size is "
+    "unaffected.",
+)
+@click.option(
     "--glyph-factor",
     type=float,
     default=None,
@@ -202,6 +210,7 @@ def main(
     no_title: bool,
     glyphs: tuple[str, str, str] | None,
     glyph_scale: bool,
+    glyph_every_n: int,
     glyph_factor: float | None,
     glyph_color: str,
 ) -> None:
@@ -292,6 +301,7 @@ def main(
                         quads=quads,
                         scale=glyph_scale,
                         factor=factor,
+                        every_n=glyph_every_n,
                         **_glyph_color_kwargs(glyph_color),
                     )
 
@@ -356,6 +366,7 @@ def main(
                     quads=quads,
                     scale=glyph_scale,
                     factor=glyph_factor,
+                    every_n=glyph_every_n,
                     **_glyph_color_kwargs(glyph_color),
                 )
         if not no_title:

@@ -229,6 +229,51 @@ def test_auto_factor_rejects_an_empty_source():
         GridPlotter._auto_glyph_factor(pv.PolyData(), peak_magnitude=1.0, scale=True)
 
 
+def test_every_n_default_places_one_glyph_per_active_cell(plotter):
+    name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, every_n=1)
+
+    glyphs = plotter._actors[name].mesh
+    assert len(np.unique(glyphs.point_data["ACTIVE_INDEX"])) == 125  # 5x5x5, fully active
+
+
+def test_every_n_thins_the_glyphs(plotter):
+    name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, every_n=2)
+
+    glyphs = plotter._actors[name].mesh
+    # ceil(125 / 2): one glyph out of every two of TPSA_LAGGED's 125 active cells
+    assert len(np.unique(glyphs.point_data["ACTIVE_INDEX"])) == 63
+
+
+def test_every_n_thins_a_slices_glyphs_too(plotter):
+    name = plotter.add_glyphs(
+        "DISPX", "DISPY", "DISPZ", 15, slice_dim="k", slice_ind=0, every_n=2
+    )
+
+    glyphs = plotter._actors[name].mesh
+    assert len(np.unique(glyphs.point_data["ACTIVE_INDEX"])) == 13  # ceil(25 / 2)
+
+
+def test_every_n_thins_the_quads_placement_points_too(plotter):
+    name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, quads=True, every_n=2)
+
+    glyphs = plotter._actors[name].mesh
+    assert len(np.unique(glyphs.point_data["ACTIVE_INDEX"])) == 63
+
+
+def test_every_n_does_not_change_the_arrow_scale_factor(plotter):
+    full = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, name="full")
+    thinned = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, every_n=4, name="thinned")
+
+    # Thinning removes arrows, but the remaining ones must stay the same size - only their
+    # count should change from every_n, never their scaling
+    assert plotter._glyphs[thinned].factor == plotter._glyphs[full].factor
+
+
+def test_every_n_rejects_less_than_one(plotter):
+    with pytest.raises(ValueError, match="every_n must be at least 1"):
+        plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, every_n=0)
+
+
 def test_add_glyphs_scale_false_keeps_arrows_within_the_grids_own_scale(plotter):
     # Regression test for the bug the two unit tests above pin down directly: at one point the
     # scale=False factor was computed the same way as scale=True's, which - given a
@@ -278,6 +323,15 @@ def test_set_vectors_actually_changes_the_vectors(plotter):
     # arrays; the vectors this rebuild used are what _build_glyphs wrote onto the source mesh
     vectors = plotter._glyphs[name].source.cell_data[_GLYPH_VECTORS]
     assert np.linalg.norm(vectors, axis=1).max() > 0.0
+
+
+def test_set_vectors_keeps_the_every_n_thinning(plotter):
+    name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 0, every_n=2)
+
+    plotter.set_vectors(15)
+
+    glyphs = plotter._actors[name].mesh
+    assert len(np.unique(glyphs.point_data["ACTIVE_INDEX"])) == 63  # ceil(125 / 2)
 
 
 def test_set_vectors_does_not_recompute_the_factor(plotter):

@@ -92,6 +92,7 @@ class _GlyphSpec:
     factor: float
     scale: bool
     geom: pv.PolyData | None
+    every_n: int
 
 
 class GridPlotter:
@@ -474,6 +475,7 @@ class GridPlotter:
         scale: bool = True,
         factor: float | None = None,
         geom: pv.PolyData | None = None,
+        every_n: int = 1,
         name: str | None = None,
         **kwargs,
     ) -> str:
@@ -508,6 +510,10 @@ class GridPlotter:
             picks one that draws the largest vector at about the width of one grid cell.
         geom : pv.PolyData | None, optional
             Glyph shape, by default None, which draws PyVista's arrow
+        every_n : int, optional
+            Keep only 1 cell out of every this many, by default 1 (every cell gets a glyph).
+            Thins out the arrows on a dense grid without changing their size; see the Notes
+            below.
         name : str | None, optional
             Name to register the glyphs under, by default None, which uses the three
             keywords (and the slice, if one was given)
@@ -530,6 +536,11 @@ class GridPlotter:
         each frame being renormalised to fill the same space. Pass global_glyph_factor(...)
         explicitly if this report step's own largest vector is not representative of the
         whole run.
+
+        every_n is applied after the factor is picked (or the peak magnitude is found, for an
+        explicit factor), so thinning out the arrows never changes how big the ones that
+        remain are - only how many of them there are. every_n=1 skips the thinning code
+        entirely, so a full-density plot pays no cost for the option's existence.
 
         quads only changes how a placement point is obtained, not the arrows themselves: a
         glyph only ever needs one point per cell, never that cell's actual volume, so skipping
@@ -554,7 +565,10 @@ class GridPlotter:
             peak = float(np.linalg.norm(vectors, axis=1).max())
             factor = self._auto_glyph_factor(source, peak, scale=scale)
 
-        glyphs = self._build_glyphs(source, vectors, scale=scale, factor=factor, geom=geom)
+        thinned_source, thinned_vectors = self._thin_glyph_source(source, vectors, every_n)
+        glyphs = self._build_glyphs(
+            thinned_source, thinned_vectors, scale=scale, factor=factor, geom=geom
+        )
 
         default_name = f"{x_keyword}-{y_keyword}-{z_keyword}"
         if slice_dim is not None:
@@ -578,6 +592,7 @@ class GridPlotter:
             factor=factor,
             scale=scale,
             geom=geom,
+            every_n=every_n,
         )
         self.rstep = rstep
 
@@ -788,8 +803,15 @@ class GridPlotter:
             vectors = self._glyph_vectors(
                 spec.source, spec.x_keyword, spec.y_keyword, spec.z_keyword, rstep
             )
+            thinned_source, thinned_vectors = self._thin_glyph_source(
+                spec.source, vectors, spec.every_n
+            )
             glyphs = self._build_glyphs(
-                spec.source, vectors, scale=spec.scale, factor=spec.factor, geom=spec.geom
+                thinned_source,
+                thinned_vectors,
+                scale=spec.scale,
+                factor=spec.factor,
+                geom=spec.geom,
             )
 
             entry = self._actors[target]
@@ -1378,6 +1400,48 @@ class GridPlotter:
                 for keyword in (x_keyword, y_keyword, z_keyword)
             ]
         )
+
+    @staticmethod
+    def _thin_glyph_source(
+        source: pv.DataSet, vectors: NDArray[Any], every_n: int
+    ) -> tuple[pv.DataSet, NDArray[Any]]:
+        """
+        Keep only every every_n-th cell of a glyph source, and the matching vectors
+
+        Parameters
+        ----------
+        source : pv.DataSet
+            Glyph placement source, as returned by _glyph_source
+        vectors : NDArray[Any]
+            Vectors aligned to source's cells, with shape (source.n_cells, 3)
+        every_n : int
+            Keep 1 cell out of every this many, in source's own cell order. 1 keeps every
+            cell (a no-op, returning the inputs unchanged).
+
+        Returns
+        -------
+        tuple[pv.DataSet, NDArray[Any]]
+            source and vectors, thinned to the kept cells only
+
+        Raises
+        ------
+        ValueError
+            If every_n is less than 1
+
+        Notes
+        -----
+        extract_cells() works the same way here whether source is the full hexahedral mesh,
+        one of its slices, or a bare point cloud from the quads=True cell-centres path: a
+        PolyData point cloud with no explicit connectivity still has one cell per point, so
+        indexing by cell number thins the points too.
+        """
+        if every_n < 1:
+            raise ValueError(f"every_n must be at least 1, got {every_n}!")
+        if every_n == 1:
+            return source, vectors
+
+        indices = np.arange(0, source.n_cells, every_n)
+        return source.extract_cells(indices), vectors[indices]
 
     @staticmethod
     def _auto_glyph_factor(source: pv.DataSet, peak_magnitude: float, *, scale: bool) -> float:
