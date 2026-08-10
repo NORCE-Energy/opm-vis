@@ -26,8 +26,10 @@ KEYWORD_OPTION = click.option(
 )
 
 # -i/-j/-k replace the old --slice-dim/--slice-index pair: at least one is given, and its
-# value is the index of the slice on that dimension. Each is repeatable (-k 0 -k 5 -j 2) so
+# value is the index of the slice on that dimension. Each is repeatable (-k 1 -k 6 -j 3) so
 # several slices can be plotted together; this is also why --keyword lost its -k short form.
+# Indices are 1-based (Fortran/Eclipse-style, matching e.g. COMPDAT), converted to the 0-based
+# indices the rest of opm_vis uses internally by resolve_slices().
 SLICE_OPTIONS = [
     click.option(
         "-i",
@@ -36,7 +38,7 @@ SLICE_OPTIONS = [
         type=int,
         multiple=True,
         metavar="INDEX",
-        help="Slice on the i dimension at this index. Repeatable.",
+        help="Slice on the i dimension at this 1-based index. Repeatable.",
     ),
     click.option(
         "-j",
@@ -45,7 +47,7 @@ SLICE_OPTIONS = [
         type=int,
         multiple=True,
         metavar="INDEX",
-        help="Slice on the j dimension at this index. Repeatable.",
+        help="Slice on the j dimension at this 1-based index. Repeatable.",
     ),
     click.option(
         "-k",
@@ -54,7 +56,7 @@ SLICE_OPTIONS = [
         type=int,
         multiple=True,
         metavar="INDEX",
-        help="Slice on the k dimension at this index. Repeatable.",
+        help="Slice on the k dimension at this 1-based index. Repeatable.",
     ),
 ]
 
@@ -160,23 +162,25 @@ def resolve_slices(
     Parameters
     ----------
     slice_i : Sequence[int]
-        Values of -i
+        Values of -i, 1-based
     slice_j : Sequence[int]
-        Values of -j
+        Values of -j, 1-based
     slice_k : Sequence[int]
-        Values of -k
+        Values of -k, 1-based
 
     Returns
     -------
     list[tuple[str, int]]
         One (dim, index) pair per -i/-j/-k given, at least one, grouped by dimension in i/j/k
         order (the order between different dimensions on the command line isn't tracked, only
-        repeats of the same option)
+        repeats of the same option). Indices are converted to 0-based here, since that is what
+        every reader/plotter in opm_vis works in internally.
 
     Raises
     ------
     click.UsageError
-        If none were given, or the same (dim, index) pair was given more than once
+        If none were given, the same (dim, index) pair was given more than once, or an index
+        was less than 1
     """
     slices = (
         [("i", value) for value in slice_i]
@@ -186,12 +190,20 @@ def resolve_slices(
     if not slices:
         raise click.UsageError("Pass at least one of -i, -j, or -k to select a slice.")
 
+    invalid = sorted({s for s in slices if s[1] < 1})
+    if invalid:
+        tags = ", ".join(f"{dim}{index}" for dim, index in invalid)
+        raise click.UsageError(
+            f"-i/-j/-k indices are 1-based; got {tags}. The first cell along an axis is 1, "
+            "not 0."
+        )
+
     duplicates = sorted({s for s in slices if slices.count(s) > 1})
     if duplicates:
         tags = ", ".join(f"{dim}{index}" for dim, index in duplicates)
         raise click.UsageError(f"Slice given more than once: {tags}.")
 
-    return slices
+    return [(dim, index - 1) for dim, index in slices]
 
 
 def parse_rstep(raw: str | None, gif: bool) -> int | tuple[int, int, int] | None:
@@ -302,7 +314,7 @@ def default_output_name(
     keyword : str
         OPM keyword being plotted
     slices : Sequence[tuple[str, int]]
-        Every (dim, index) slice being plotted
+        Every (dim, index) slice being plotted, 0-based as resolve_slices() returns them
     rstep : int | None, optional
         Single report step, for a still image
     rsteps : Sequence[int] | None, optional
@@ -313,7 +325,12 @@ def default_output_name(
     Returns
     -------
     str
-        e.g. "SGAS_k0_60.png" or "SGAS_k0_j5_0-120.gif", written to the current directory
+        e.g. "SGAS_k1_60.png" or "SGAS_k1_j6_0-120.gif", written to the current directory
+
+    Notes
+    -----
+    The slice tag is 1-based, matching what the user typed on the command line via -i/-j/-k,
+    even though `slices` itself is 0-based internally.
     """
     if rsteps is not None:
         step_tag = f"{rsteps[0]}-{rsteps[-1]}"
@@ -322,7 +339,7 @@ def default_output_name(
     else:
         step_tag = "all"
 
-    slice_tag = "_".join(f"{dim}{index}" for dim, index in slices)
+    slice_tag = "_".join(f"{dim}{index + 1}" for dim, index in slices)
 
     return f"{keyword}_{slice_tag}_{step_tag}.{ext}"
 

@@ -22,7 +22,7 @@ def test_single_frame_writes_output_file(case1, runner, tmp_path):
     output = tmp_path / "sgas.png"
 
     result = runner.invoke(
-        main, [case1, "--keyword", "SGAS", "-k", "0", "--rstep", "60", "-s", str(output)]
+        main, [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "-s", str(output)]
     )
 
     assert result.exit_code == 0, result.output
@@ -35,7 +35,7 @@ def test_gif_writes_output_file(case1, runner, tmp_path):
 
     result = runner.invoke(
         main,
-        [case1, "--keyword", "SGAS", "-k", "0", "--gif", "--rstep", "0:20", "-s", str(output)],
+        [case1, "--keyword", "SGAS", "-k", "1", "--gif", "--rstep", "0:20", "-s", str(output)],
     )
 
     assert result.exit_code == 0, result.output
@@ -53,7 +53,7 @@ def test_gif_range_with_step(case1, runner, tmp_path):
             "--keyword",
             "SGAS",
             "-k",
-            "0",
+            "1",
             "--gif",
             "--rstep",
             "0:60:10",
@@ -70,7 +70,7 @@ def test_gif_range_with_step(case1, runner, tmp_path):
 def test_static_keyword_does_not_need_rstep(case1, runner, tmp_path):
     output = tmp_path / "poro.png"
 
-    result = runner.invoke(main, [case1, "--keyword", "PORO", "-k", "0", "-s", str(output)])
+    result = runner.invoke(main, [case1, "--keyword", "PORO", "-k", "1", "-s", str(output)])
 
     assert result.exit_code == 0, result.output
     assert output.exists()
@@ -78,7 +78,7 @@ def test_static_keyword_does_not_need_rstep(case1, runner, tmp_path):
 
 
 def test_dynamic_keyword_without_rstep_or_gif_is_rejected(case1, runner):
-    result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "0"])
+    result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "1"])
 
     assert result.exit_code != 0
     assert "changes over time" in result.output
@@ -87,11 +87,11 @@ def test_dynamic_keyword_without_rstep_or_gif_is_rejected(case1, runner):
 def test_save_with_no_path_generates_a_name(case1, runner):
     with runner.isolated_filesystem():
         result = runner.invoke(
-            main, [case1, "--keyword", "SGAS", "-k", "0", "--rstep", "60", "--save"]
+            main, [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "--save"]
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("SGAS_k0_60.png").exists()
+        assert Path("SGAS_k1_60.png").exists()
 
 
 def test_paths_default_to_the_working_directory(data_dir, runner, tmp_path, monkeypatch):
@@ -101,10 +101,10 @@ def test_paths_default_to_the_working_directory(data_dir, runner, tmp_path, monk
         shutil.copy(source, case_dir / source.name)
 
     monkeypatch.chdir(case_dir)
-    result = runner.invoke(main, ["--keyword", "SGAS", "-k", "0", "--rstep", "60", "-s"])
+    result = runner.invoke(main, ["--keyword", "SGAS", "-k", "1", "--rstep", "60", "-s"])
 
     assert result.exit_code == 0, result.output
-    assert (case_dir / "SGAS_k0_60.png").exists()
+    assert (case_dir / "SGAS_k1_60.png").exists()
 
 
 def test_at_least_one_slice_dimension_is_required(case1, runner):
@@ -116,7 +116,7 @@ def test_at_least_one_slice_dimension_is_required(case1, runner):
 
 def test_more_than_one_slice_dimension_is_rejected(case1, runner):
     result = runner.invoke(
-        main, [case1, "--keyword", "SGAS", "-k", "0", "-i", "0", "--rstep", "60"]
+        main, [case1, "--keyword", "SGAS", "-k", "1", "-i", "1", "--rstep", "60"]
     )
 
     assert result.exit_code != 0
@@ -124,7 +124,7 @@ def test_more_than_one_slice_dimension_is_rejected(case1, runner):
 
 
 def test_rstep_range_requires_gif(case1, runner):
-    result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "0", "--rstep", "0:60"])
+    result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "0:60"])
 
     assert result.exit_code != 0
     assert "only valid with --gif" in result.output
@@ -132,7 +132,7 @@ def test_rstep_range_requires_gif(case1, runner):
 
 def test_gif_requires_a_range_not_a_single_step(case1, runner):
     result = runner.invoke(
-        main, [case1, "--keyword", "SGAS", "-k", "0", "--gif", "--rstep", "60"]
+        main, [case1, "--keyword", "SGAS", "-k", "1", "--gif", "--rstep", "60"]
     )
 
     assert result.exit_code != 0
@@ -160,7 +160,7 @@ def test_unknown_keyword_is_a_clean_error(case1, runner, tmp_path):
             "--keyword",
             "NOPE",
             "-k",
-            "0",
+            "1",
             "--rstep",
             "60",
             "-s",
