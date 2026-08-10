@@ -12,7 +12,7 @@ from opm_vis.cli.common import (
     DIFF_OPTIONS,
     KEYWORD_OPTION,
     PATHS_ARGUMENT,
-    RSTEP_OR_GIF_OPTIONS,
+    RSTEP_OR_ANIMATE_OPTIONS,
     SAVE_OPTION,
     SLICE_OPTIONS,
     add_options,
@@ -21,8 +21,8 @@ from opm_vis.cli.common import (
     is_static_keyword,
     parse_rstep,
     require_dynamic_keyword_error,
+    resolve_animate_rsteps,
     resolve_diff_rstep,
-    resolve_gif_rsteps,
     resolve_paths,
     resolve_slices,
 )
@@ -33,7 +33,7 @@ from opm_vis.plot.collections import SlicePoly2DCollection, SlicePoly3DCollectio
 @PATHS_ARGUMENT
 @KEYWORD_OPTION
 @add_options(SLICE_OPTIONS)
-@add_options(RSTEP_OR_GIF_OPTIONS)
+@add_options(RSTEP_OR_ANIMATE_OPTIONS)
 @add_options(DIFF_OPTIONS)
 @SAVE_OPTION
 @CMAP_OPTION
@@ -55,7 +55,7 @@ def main(
     slice_j: tuple[int, ...],
     slice_k: tuple[int, ...],
     rstep: str | None,
-    gif: bool,
+    animate: bool,
     fps: int,
     diff: bool,
     diff_rstep: int,
@@ -68,13 +68,13 @@ def main(
 ) -> None:
     """
     Plot --keyword on one grid slice with the Matplotlib backend, or animate it over report
-    steps with --gif.
+    steps with --animate.
 
     PATHS are filename prefixes: the first is the main run, any further ones are restart runs.
     Defaults to searching the working directory (./) if not given.
 
-    This is the alternative backend, with fewer figure/gif options and less development effort
-    than opm-vis-pv (PyVista); opm-vis-pv also supports multiple slices at once.
+    This is the alternative backend, with fewer figure/animation options and less development
+    effort than opm-vis-pv (PyVista); opm-vis-pv also supports multiple slices at once.
 
     --diff colours by the difference from --diff-rstep (default: report step 0) instead of
     --keyword's own values; --diff-kind picks plain/absolute/relative(%).
@@ -86,7 +86,7 @@ def main(
             "multiple slices."
         )
     slice_dim, slice_index = slices[0]
-    rstep_value = parse_rstep(rstep, gif)
+    rstep_value = parse_rstep(rstep, animate)
     resolved_diff_rstep = resolve_diff_rstep(diff, diff_rstep)
 
     poly_kwargs = {"cmap": cmap}
@@ -99,9 +99,9 @@ def main(
     else:
         coll = SlicePoly2DCollection(resolved_paths, slice_dim, slice_index)
 
-    if gif:
-        steps = resolve_gif_rsteps(coll.report.report_steps(), rstep_value)
-        coll.gif(
+    if animate:
+        steps = resolve_animate_rsteps(coll.report.report_steps(), rstep_value)
+        coll.animate(
             keyword,
             rstep_list=steps,
             diff_rstep=resolved_diff_rstep,

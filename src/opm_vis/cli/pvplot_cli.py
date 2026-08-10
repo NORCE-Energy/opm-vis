@@ -12,7 +12,7 @@ from opm_vis.cli.common import (
     DIFF_OPTIONS,
     KEYWORD_OPTION,
     PATHS_ARGUMENT,
-    RSTEP_OR_GIF_OPTIONS,
+    RSTEP_OR_ANIMATE_OPTIONS,
     SAVE_OPTION,
     SLICE_OPTIONS,
     add_options,
@@ -20,8 +20,8 @@ from opm_vis.cli.common import (
     handle_errors,
     parse_rstep,
     require_dynamic_keyword_error,
+    resolve_animate_rsteps,
     resolve_diff_rstep,
-    resolve_gif_rsteps,
     resolve_paths,
     resolve_slices,
 )
@@ -76,7 +76,7 @@ def _wells_slices(
 @PATHS_ARGUMENT
 @KEYWORD_OPTION
 @add_options(SLICE_OPTIONS)
-@add_options(RSTEP_OR_GIF_OPTIONS)
+@add_options(RSTEP_OR_ANIMATE_OPTIONS)
 @add_options(DIFF_OPTIONS)
 @SAVE_OPTION
 @CMAP_OPTION
@@ -155,7 +155,7 @@ def _wells_slices(
     help=(
         "Factor to multiply vectors by before glyphing. Defaults to a size that draws the "
         "largest vector at about one grid cell's width, computed across every animated report "
-        "step with --gif so arrow length stays comparable."
+        "step with --animate so arrow length stays comparable."
     ),
 )
 @click.option(
@@ -176,7 +176,7 @@ def main(
     slice_j: tuple[int, ...],
     slice_k: tuple[int, ...],
     rstep: str | None,
-    gif: bool,
+    animate: bool,
     fps: int,
     diff: bool,
     diff_rstep: int,
@@ -205,7 +205,7 @@ def main(
 ) -> None:
     """
     Plot --keyword on one or more grid slices with the PyVista backend, or animate it over
-    report steps with --gif.
+    report steps with --animate.
 
     PATHS are filename prefixes: the first is the main run, any further ones are restart runs.
     Defaults to searching the working directory (./) if not given.
@@ -224,7 +224,7 @@ def main(
         raise click.UsageError(
             "--view 2d only supports one slice; pass --view 3d for multiple slices."
         )
-    rstep_value = parse_rstep(rstep, gif)
+    rstep_value = parse_rstep(rstep, animate)
     resolved_diff_rstep = resolve_diff_rstep(diff, diff_rstep)
 
     with GridPlotter(
@@ -244,8 +244,8 @@ def main(
         if axes:
             plotter.show_axes_grid()
 
-        if gif:
-            steps = resolve_gif_rsteps(plotter.case.report.report_steps(), rstep_value)
+        if animate:
+            steps = resolve_animate_rsteps(plotter.case.report.report_steps(), rstep_value)
 
             if glyphs is not None:
                 x_kw, y_kw, z_kw = glyphs

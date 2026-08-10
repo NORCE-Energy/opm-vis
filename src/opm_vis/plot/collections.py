@@ -24,7 +24,7 @@ from opm_vis.utils.units import Label
 class _SlicePolyCollection:
     """
     Parent class for setting up a figure/axes, gathering collections of slices, and the actual
-    plotting/gif generation
+    plotting/animation generation
     """
 
     def __init__(
@@ -193,7 +193,7 @@ class _SlicePolyCollection:
         diff_rstep : int | None, optional
             Plot the difference from this report step instead of keyword's own values, by
             default None (the values themselves). Ignored when polyc_dict is given, since its
-            data was already generated (see gif()).
+            data was already generated (see animate()).
         diff_kind : str, optional
             One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
             default "plain"
@@ -306,7 +306,7 @@ class _SlicePolyCollection:
         for polyc in polyc_grid:
             self.add_collection(polyc)
 
-    def gif(
+    def animate(
         self,
         keyword: str,
         rsteps: list[int] | None = None,
@@ -317,7 +317,7 @@ class _SlicePolyCollection:
         **kwargs,
     ) -> None:
         """
-        Generate gif
+        Generate an animation over report steps
 
         Parameters
         ----------
@@ -325,7 +325,7 @@ class _SlicePolyCollection:
             OPM keyword to plot
         rsteps : list[int] | None, optional
             [start, end] inclusive range of report steps. If None and rstep_list is also None,
-            every report step is included in the gif.
+            every report step is included in the animation.
         rstep_list : Sequence[int] | None, optional
             Explicit report steps to animate, in order, by default None. Takes priority over
             rsteps: use this instead of rsteps when the steps to include are not a contiguous
@@ -342,33 +342,36 @@ class _SlicePolyCollection:
 
         Notes
         -----
-        Use show or save_gif to show gif on screen or save to file.
+        Use show or save_gif to show the animation on screen or save it to file. save_gif is
+        named for what it writes, not this method: this backend can only ever animate to a
+        GIF, unlike opm_vis.pvplot's GridPlotter.animate which can also write a movie file.
         """
-        # Which report steps and dates to include in gif
+        # Which report steps and dates to include in the animation
         if rstep_list is not None:
-            rsteps_gif = list(rstep_list)
-            self.rdates = [self.report.report_date(rstep) for rstep in rsteps_gif]
+            anim_rsteps = list(rstep_list)
+            self.rdates = [self.report.report_date(rstep) for rstep in anim_rsteps]
         elif rsteps is None:
             # All report steps
-            rsteps_gif = self.report.report_steps()
+            anim_rsteps = self.report.report_steps()
             self.rdates = self.report.report_dates()
         else:
             all_rsteps = self.report.report_steps()
             all_rdates = self.report.report_dates()
-            rsteps_gif = list(range(rsteps[0], rsteps[1] + 1))
-            self.rdates = [all_rdates[all_rsteps.index(i)] for i in rsteps_gif]
+            anim_rsteps = list(range(rsteps[0], rsteps[1] + 1))
+            self.rdates = [all_rdates[all_rsteps.index(i)] for i in anim_rsteps]
 
         # Save keyword, for save_gif's filename; see _keyword_tag
         self.keyword = self._keyword_tag(keyword, diff_rstep, diff_kind)
 
-        # Generate slices for all report dates to be able to set one colorbar for whole gif
-        polyc_dict = self._data_for_gif(
-            rsteps_gif, keyword, diff_rstep=diff_rstep, diff_kind=diff_kind, **kwargs
+        # Generate slices for all report dates to be able to set one colorbar for the whole
+        # animation
+        polyc_dict = self._data_for_animation(
+            anim_rsteps, keyword, diff_rstep=diff_rstep, diff_kind=diff_kind, **kwargs
         )
 
-        # Set colorbar for gif
+        # Set colorbar for the whole animation
         clabel = self._colorbar_label(keyword, diff_rstep, diff_kind)
-        self.fig.colorbar(polyc_dict[rsteps_gif[0]][0], ax=self.ax_, label=clabel)
+        self.fig.colorbar(polyc_dict[anim_rsteps[0]][0], ax=self.ax_, label=clabel)
 
         # Setup plot function to fit with FuncAnimation. diff_rstep/diff_kind are not passed
         # through here: polyc_dict already carries the (possibly diff'd) data, and plot()
@@ -383,9 +386,9 @@ class _SlicePolyCollection:
         )
 
         # Set up Matplotlib animation
-        self.anim = animation.FuncAnimation(self.fig, plot_func, frames=rsteps_gif)
+        self.anim = animation.FuncAnimation(self.fig, plot_func, frames=anim_rsteps)
 
-    def _data_for_gif(
+    def _data_for_animation(
         self,
         rsteps: list[int],
         keyword: str,
@@ -515,9 +518,9 @@ class _SlicePolyCollection:
         fps : int, optional
             Frames per second, by default 3
         """
-        # Check if any gif have been made
+        # Check if any animation have been made
         if self.anim is None:
-            raise RuntimeError("No gif to save! Run gif() method first.")
+            raise RuntimeError("No gif to save! Run animate() method first.")
 
         if filename is None:
             # Date span included in gif

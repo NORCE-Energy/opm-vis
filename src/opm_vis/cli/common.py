@@ -89,26 +89,26 @@ CLIM_OPTION = click.option(
     help="Colour limits. Defaults to the data range of the report step(s) shown.",
 )
 
-# --rstep is optional and its shape depends on --gif: a single report step normally, or a
-# START:END[:STEP] range for --gif (parsed by parse_rstep below, since click options can't have
-# a variable number of values). Left out entirely, a static keyword needs no report step at all,
-# and --gif covers every report step in the case.
-RSTEP_OR_GIF_OPTIONS = [
+# --rstep is optional and its shape depends on --animate: a single report step normally, or a
+# START:END[:STEP] range for --animate (parsed by parse_rstep below, since click options can't
+# have a variable number of values). Left out entirely, a static keyword needs no report step
+# at all, and --animate covers every report step in the case.
+RSTEP_OR_ANIMATE_OPTIONS = [
     click.option(
         "--rstep",
         default=None,
         metavar="STEP | START:END[:STEP]",
         help=(
             "Report step to plot. A single value normally; a START:END or START:END:STEP range "
-            "with --gif (default: every report step in the case). Not needed at all for a "
+            "with --animate (default: every report step in the case). Not needed at all for a "
             "keyword that does not change over time."
         ),
     ),
     click.option(
-        "--gif", is_flag=True, default=False, help="Animate over report steps instead."
+        "--animate", is_flag=True, default=False, help="Animate over report steps instead."
     ),
     click.option(
-        "--fps", type=int, default=3, show_default=True, help="Frames per second for --gif."
+        "--fps", type=int, default=3, show_default=True, help="Frames per second for --animate."
     ),
 ]
 
@@ -185,7 +185,7 @@ def resolve_paths(paths: tuple[str, ...]) -> list[str]:
 
 def resolve_diff_rstep(diff: bool, diff_rstep: int) -> int | None:
     """
-    Resolve --diff/--diff-rstep into the diff_rstep value set_scalars/plot/animate/gif expect
+    Resolve --diff/--diff-rstep into the diff_rstep value set_scalars/plot/animate expect
 
     Parameters
     ----------
@@ -255,37 +255,37 @@ def resolve_slices(
     return [(dim, index - 1) for dim, index in slices]
 
 
-def parse_rstep(raw: str | None, gif: bool) -> int | tuple[int, int, int] | None:
+def parse_rstep(raw: str | None, animate: bool) -> int | tuple[int, int, int] | None:
     """
-    Parse --rstep, whose shape depends on --gif
+    Parse --rstep, whose shape depends on --animate
 
     Parameters
     ----------
     raw : str | None
         Raw value of --rstep
-    gif : bool
-        Value of --gif
+    animate : bool
+        Value of --animate
 
     Returns
     -------
     int | tuple[int, int, int] | None
         None if --rstep was not given (caller resolves a default); a single report step if
-        --gif is not set; an inclusive (start, end, step) range if --gif is set
+        --animate is not set; an inclusive (start, end, step) range if --animate is set
 
     Raises
     ------
     click.UsageError
-        If the value's shape does not match whether --gif was given, or it is not made of
+        If the value's shape does not match whether --animate was given, or it is not made of
         integers
     """
     if raw is None:
         return None
 
-    if not gif:
+    if not animate:
         if ":" in raw:
             raise click.UsageError(
                 "--rstep must be a single report step; a START:END[:STEP] range is only valid "
-                "with --gif."
+                "with --animate."
             )
         try:
             return int(raw)
@@ -295,7 +295,7 @@ def parse_rstep(raw: str | None, gif: bool) -> int | tuple[int, int, int] | None
     parts = raw.split(":")
     if len(parts) not in (2, 3):
         raise click.UsageError(
-            f"--rstep with --gif must be START:END or START:END:STEP, got '{raw}'."
+            f"--rstep with --animate must be START:END or START:END:STEP, got '{raw}'."
         )
     try:
         values = [int(part) for part in parts]
@@ -310,7 +310,7 @@ def parse_rstep(raw: str | None, gif: bool) -> int | tuple[int, int, int] | None
     return start, end, step
 
 
-def resolve_gif_rsteps(
+def resolve_animate_rsteps(
     available_steps: Sequence[int], rstep_range: tuple[int, int, int] | None
 ) -> list[int]:
     """
@@ -369,7 +369,7 @@ def default_output_name(
     rstep : int | None, optional
         Single report step, for a still image
     rsteps : Sequence[int] | None, optional
-        Report steps being animated, for a gif
+        Report steps being animated, for --animate
     ext : str, optional
         File extension, by default "png"
     diff_rstep : int | None, optional
@@ -410,7 +410,7 @@ def default_output_name(
 
 def require_dynamic_keyword_error(keyword: str) -> click.UsageError:
     """
-    Build the error for a time-varying keyword shown with neither --rstep nor --gif
+    Build the error for a time-varying keyword shown with neither --rstep nor --animate
 
     Parameters
     ----------
@@ -423,7 +423,8 @@ def require_dynamic_keyword_error(keyword: str) -> click.UsageError:
         Ready to raise
     """
     return click.UsageError(
-        f"{keyword} changes over time; pass --rstep to pick a report step, or --gif to animate."
+        f"{keyword} changes over time; pass --rstep to pick a report step, or --animate to "
+        "animate."
     )
 
 

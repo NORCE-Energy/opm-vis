@@ -30,20 +30,7 @@ def test_single_frame_writes_output_file(case1, runner, tmp_path):
     assert output.stat().st_size > 0
 
 
-def test_gif_writes_output_file(case1, runner, tmp_path):
-    output = tmp_path / "sgas.gif"
-
-    result = runner.invoke(
-        main,
-        [case1, "--keyword", "SGAS", "-k", "1", "--gif", "--rstep", "0:20", "-s", str(output)],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert output.exists()
-    assert output.stat().st_size > 0
-
-
-def test_gif_range_with_step(case1, runner, tmp_path):
+def test_animate_writes_output_file(case1, runner, tmp_path):
     output = tmp_path / "sgas.gif"
 
     result = runner.invoke(
@@ -54,7 +41,31 @@ def test_gif_range_with_step(case1, runner, tmp_path):
             "SGAS",
             "-k",
             "1",
-            "--gif",
+            "--animate",
+            "--rstep",
+            "0:20",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_animate_range_with_step(case1, runner, tmp_path):
+    output = tmp_path / "sgas.gif"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "-k",
+            "1",
+            "--animate",
             "--rstep",
             "0:60:10",
             "-s",
@@ -77,7 +88,7 @@ def test_static_keyword_does_not_need_rstep(case1, runner, tmp_path):
     assert output.stat().st_size > 0
 
 
-def test_dynamic_keyword_without_rstep_or_gif_is_rejected(case1, runner):
+def test_dynamic_keyword_without_rstep_or_animate_is_rejected(case1, runner):
     result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "1"])
 
     assert result.exit_code != 0
@@ -137,7 +148,7 @@ def test_diff_default_name_reflects_diff_rstep_and_kind(case1, runner):
         assert Path("PRESSURE-diff0-absolute_k1_60.png").exists()
 
 
-def test_diff_gif_writes_output_file(case1, runner, tmp_path):
+def test_diff_animate_writes_output_file(case1, runner, tmp_path):
     output = tmp_path / "sgas.gif"
 
     result = runner.invoke(
@@ -148,7 +159,7 @@ def test_diff_gif_writes_output_file(case1, runner, tmp_path):
             "SGAS",
             "-k",
             "1",
-            "--gif",
+            "--animate",
             "--rstep",
             "0:60:20",
             "--diff",
@@ -191,16 +202,16 @@ def test_more_than_one_slice_dimension_is_rejected(case1, runner):
     assert "only supports one slice" in result.output
 
 
-def test_rstep_range_requires_gif(case1, runner):
+def test_rstep_range_requires_animate(case1, runner):
     result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "0:60"])
 
     assert result.exit_code != 0
-    assert "only valid with --gif" in result.output
+    assert "only valid with --animate" in result.output
 
 
-def test_gif_requires_a_range_not_a_single_step(case1, runner):
+def test_animate_requires_a_range_not_a_single_step(case1, runner):
     result = runner.invoke(
-        main, [case1, "--keyword", "SGAS", "-k", "1", "--gif", "--rstep", "60"]
+        main, [case1, "--keyword", "SGAS", "-k", "1", "--animate", "--rstep", "60"]
     )
 
     assert result.exit_code != 0
