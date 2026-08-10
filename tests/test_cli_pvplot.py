@@ -243,11 +243,132 @@ def test_paths_default_to_the_working_directory(data_dir, offscreen, runner, tmp
     assert (case_dir / "SGAS_k1_60.png").exists()
 
 
-def test_at_least_one_slice_dimension_is_required(case1, runner):
+def test_no_slice_with_default_2d_view_is_rejected(case1, runner):
+    # No -i/-j/-k plots the whole grid, which the 2d view (the default) cannot show
     result = runner.invoke(main, [case1, "--keyword", "SGAS", "--rstep", "60"])
 
     assert result.exit_code != 0
-    assert "at least one of -i, -j, or -k" in result.output
+    assert "2d has no whole-grid view" in result.output
+
+
+def test_no_slice_with_quads_is_rejected(case1, runner):
+    # --quads is a slice fast-path; it has no meaning for the whole grid
+    result = runner.invoke(
+        main, [case1, "--keyword", "SGAS", "--rstep", "60", "--view", "3d", "--quads"]
+    )
+
+    assert result.exit_code != 0
+    assert "--quads needs a slice" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Whole grid (no -i/-j/-k)
+# ---------------------------------------------------------------------------
+
+
+def test_no_slice_with_3d_view_plots_the_whole_grid(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "sgas.png"
+
+    result = runner.invoke(
+        main,
+        [case1, "--keyword", "SGAS", "--rstep", "60", "--view", "3d", "-s", str(output)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_no_slice_default_output_name_uses_grid_tag(case1, offscreen, runner):
+    del offscreen
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            main,
+            [case1, "--keyword", "SGAS", "--rstep", "60", "--view", "3d", "--save"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert Path("SGAS_grid_60.png").exists()
+
+
+def test_no_slice_animates_the_whole_grid(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "sgas.gif"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "--animate",
+            "--rstep",
+            "0:60:20",
+            "--view",
+            "3d",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_no_slice_draws_every_well_without_needing_all_wells(case1, offscreen, runner, tmp_path):
+    # No slices to restrict to, so every well should be drawn even without --all-wells
+    del offscreen
+    output = tmp_path / "sgas.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "--rstep",
+            "60",
+            "--view",
+            "3d",
+            "--wells",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_no_slice_with_glyphs_writes_output_file(tpsa_lagged, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "disp.png"
+
+    result = runner.invoke(
+        main,
+        [
+            tpsa_lagged,
+            "--keyword",
+            "DISPZ",
+            "--rstep",
+            "15",
+            "--view",
+            "3d",
+            "--glyphs",
+            "DISPX",
+            "DISPY",
+            "DISPZ",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
 
 
 def test_multiple_slices_with_default_2d_view_is_rejected(case1, runner):

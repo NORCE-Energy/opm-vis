@@ -61,15 +61,16 @@ def _wells_slices(
     all_wells : bool
         Value of --all-wells; takes priority over --wells since it is the broader request
     slices : list[tuple[str, int]]
-        The plot's own slices
+        The plot's own slices, empty when plotting the whole grid
 
     Returns
     -------
     list[tuple[str, int]] | None
-        None to draw every well in the grid, or the plot's own slices to restrict wells to
-        those with a completion on at least one of them
+        None to draw every well in the grid - because --all-wells was given, or because there
+        are no slices to restrict to in the first place - otherwise the plot's own slices, to
+        restrict wells to those with a completion on at least one of them
     """
-    return None if all_wells else slices
+    return None if all_wells or not slices else slices
 
 
 @click.command(**COMMAND_SETTINGS)
@@ -86,7 +87,8 @@ def _wells_slices(
     type=click.Choice(["2d", "3d"]),
     default="2d",
     show_default=True,
-    help="Camera preset. 2d only supports one slice.",
+    help="Camera preset. 2d only supports one slice, and needs one - it has no whole-grid "
+    "view.",
 )
 @click.option("--azimuth", type=float, default=30.0, show_default=True, help="--view 3d only.")
 @click.option(
@@ -120,7 +122,7 @@ def _wells_slices(
     "--quads",
     is_flag=True,
     default=False,
-    help="Cheaper flat-quad slice instead of hexahedra.",
+    help="Cheaper flat-quad slice instead of hexahedra. Needs -i/-j/-k.",
 )
 @click.option(
     "--opacity",
@@ -211,7 +213,8 @@ def main(
     Defaults to searching the working directory (./) if not given.
 
     -i/-j/-k are repeatable (e.g. -k 1 -k 6 -j 3) to plot several slices at once, all coloured
-    by the same --keyword; --view 3d is required whenever more than one is given.
+    by the same --keyword; --view 3d is required whenever more than one is given. Leaving out
+    -i/-j/-k entirely plots the whole active grid instead, which also needs --view 3d.
 
     --glyphs overlays vector arrows on every chosen slice, from three keyword components (e.g.
     a displacement vector), alongside --keyword's scalar colouring.
@@ -224,6 +227,15 @@ def main(
         raise click.UsageError(
             "--view 2d only supports one slice; pass --view 3d for multiple slices."
         )
+    if view == "2d" and not slices:
+        raise click.UsageError(
+            "--view 2d has no whole-grid view; pass -i/-j/-k to select a slice, or --view 3d "
+            "to plot the whole grid."
+        )
+    if quads and not slices:
+        raise click.UsageError(
+            "--quads needs a slice; pass -i/-j/-k, or drop --quads to plot the whole grid."
+        )
     rstep_value = parse_rstep(rstep, animate)
     resolved_diff_rstep = resolve_diff_rstep(diff, diff_rstep)
 
@@ -231,8 +243,11 @@ def main(
         resolve_paths(paths), off_screen=save is not None, window_size=window_size,
         z_scale=z_scale,
     ) as plotter:
-        for slice_dim, slice_index in slices:
-            plotter.add_slice(slice_dim, slice_index, quads=quads, opacity=opacity)
+        if slices:
+            for slice_dim, slice_index in slices:
+                plotter.add_slice(slice_dim, slice_index, quads=quads, opacity=opacity)
+        else:
+            plotter.add_grid(opacity=opacity)
         if wireframe:
             plotter.add_wireframe()
 
@@ -249,7 +264,9 @@ def main(
 
             if glyphs is not None:
                 x_kw, y_kw, z_kw = glyphs
-                for slice_dim, slice_index in slices:
+                # (None, None) glyphs the whole grid, matching add_glyphs/global_glyph_factor's
+                # own slice_dim=None default, when no -i/-j/-k was given
+                for slice_dim, slice_index in slices or [(None, None)]:
                     factor = glyph_factor
                     if factor is None:
                         # Computed across every animated step, so arrow length stays
@@ -327,7 +344,8 @@ def main(
             plotter.add_wells(actual_rstep, slices=_wells_slices(all_wells, slices))
         if glyphs is not None:
             x_kw, y_kw, z_kw = glyphs
-            for slice_dim, slice_index in slices:
+            # See the animate branch above for why slices or [(None, None)]
+            for slice_dim, slice_index in slices or [(None, None)]:
                 plotter.add_glyphs(
                     x_kw,
                     y_kw,

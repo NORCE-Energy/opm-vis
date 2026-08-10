@@ -225,24 +225,23 @@ def resolve_slices(
     Returns
     -------
     list[tuple[str, int]]
-        One (dim, index) pair per -i/-j/-k given, at least one, grouped by dimension in i/j/k
-        order (the order between different dimensions on the command line isn't tracked, only
-        repeats of the same option). Indices are converted to 0-based here, since that is what
-        every reader/plotter in opm_vis works in internally.
+        One (dim, index) pair per -i/-j/-k given, grouped by dimension in i/j/k order (the
+        order between different dimensions on the command line isn't tracked, only repeats of
+        the same option). Empty if none were given at all - callers that need at least one
+        (opm-vis-mpl) check for that themselves; opm-vis-pv instead plots the whole grid.
+        Indices are converted to 0-based here, since that is what every reader/plotter in
+        opm_vis works in internally.
 
     Raises
     ------
     click.UsageError
-        If none were given, the same (dim, index) pair was given more than once, or an index
-        was less than 1
+        If the same (dim, index) pair was given more than once, or an index was less than 1
     """
     slices = (
         [("i", value) for value in slice_i]
         + [("j", value) for value in slice_j]
         + [("k", value) for value in slice_k]
     )
-    if not slices:
-        raise click.UsageError("Pass at least one of -i, -j, or -k to select a slice.")
 
     invalid = sorted({s for s in slices if s[1] < 1})
     if invalid:
@@ -370,7 +369,8 @@ def default_output_name(
     keyword : str
         OPM keyword being plotted
     slices : Sequence[tuple[str, int]]
-        Every (dim, index) slice being plotted, 0-based as resolve_slices() returns them
+        Every (dim, index) slice being plotted, 0-based as resolve_slices() returns them, or
+        empty for the whole grid (opm-vis-pv only)
     rstep : int | None, optional
         Single report step, for a still image
     rsteps : Sequence[int] | None, optional
@@ -402,7 +402,7 @@ def default_output_name(
     else:
         step_tag = "all"
 
-    slice_tag = "_".join(f"{dim}{index + 1}" for dim, index in slices)
+    slice_tag = "_".join(f"{dim}{index + 1}" for dim, index in slices) if slices else "grid"
 
     keyword_tag = keyword
     if diff_rstep is not None:

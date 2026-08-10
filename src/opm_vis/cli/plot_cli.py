@@ -80,6 +80,11 @@ def main(
     --keyword's own values; --diff-kind picks plain/absolute/relative(%).
     """
     slices = resolve_slices(slice_i, slice_j, slice_k)
+    if not slices:
+        raise click.UsageError(
+            "Pass at least one of -i, -j, or -k to select a slice. opm-vis-mpl has no "
+            "whole-grid view; use opm-vis-pv for that."
+        )
     if len(slices) > 1:
         raise click.UsageError(
             "opm-vis-mpl only supports one slice; pass -i/-j/-k once. Use opm-vis-pv for "
