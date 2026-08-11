@@ -219,6 +219,35 @@ def _wells_slices(
     default=False,
     help="Keep the cells that fail --threshold instead. Only used with --threshold.",
 )
+@click.option(
+    "--clip",
+    type=click.Choice(["x", "-x", "y", "-y", "z", "-z"]),
+    default=None,
+    metavar="AXIS",
+    help="Cut the whole grid with a plane normal to this axis, instead of showing it whole. "
+    "Needs no -i/-j/-k.",
+)
+@click.option(
+    "--clip-origin",
+    type=(float, float, float),
+    default=None,
+    metavar="X Y Z",
+    help="Point the --clip plane passes through, by default the centre of the grid. Only "
+    "used with --clip.",
+)
+@click.option(
+    "--clip-invert/--no-clip-invert",
+    default=True,
+    show_default=True,
+    help="Keep the side --clip's normal points away from. Only used with --clip.",
+)
+@click.option(
+    "--clip-crinkle",
+    is_flag=True,
+    default=False,
+    help="Keep whole cells at the --clip boundary instead of cutting through them. Only used "
+    "with --clip.",
+)
 @click.option("--window-size", type=(int, int), default=None, metavar="WIDTH HEIGHT")
 @click.option("--no-colorbar", is_flag=True, default=False, help="Hide the scalar bar.")
 @click.option("--no-title", is_flag=True, default=False, help="Hide the report-date title.")
@@ -297,6 +326,10 @@ def main(
     quads: bool,
     threshold: str | None,
     threshold_invert: bool,
+    clip: str | None,
+    clip_origin: tuple[float, float, float] | None,
+    clip_invert: bool,
+    clip_crinkle: bool,
     opacity: float,
     window_size: tuple[int, int] | None,
     no_colorbar: bool,
@@ -330,6 +363,11 @@ def main(
     --threshold shows only the cells passing a bound on --keyword's own value (e.g. a gas
     plume), instead of the whole grid; it needs --keyword and works on the whole grid only, so
     it is not compatible with -i/-j/-k, --grid-only or --animate.
+
+    --clip cuts the whole grid open with a plane, instead of showing it whole; it works on
+    the whole grid only, so it is not compatible with -i/-j/-k. Unlike --threshold it needs no
+    --keyword, so it can be combined with --grid-only or --animate, and with --threshold
+    itself (both subsets are then shown together).
     """
     keyword = resolve_keyword(keyword, grid_only)
     if grid_only and animate:
@@ -363,6 +401,10 @@ def main(
             "--threshold works on the whole grid; drop -i/-j/-k, or drop --threshold to plot "
             "a slice."
         )
+    if clip is not None and slices:
+        raise click.UsageError(
+            "--clip works on the whole grid; drop -i/-j/-k, or drop --clip to plot a slice."
+        )
     rstep_value = parse_rstep(rstep, animate)
     # --diff has no effect in --grid-only (there is no --keyword to difference), so it is
     # forced off here rather than left to silently do nothing while still showing up in the
@@ -375,20 +417,7 @@ def main(
         resolve_paths(paths), off_screen=save is not None, window_size=window_size,
         z_scale=z_scale,
     ) as plotter:
-        if threshold_value is not None:
-            # Resolved here (rather than at the usual, later point) since add_threshold needs
-            # to know which report step to read keyword at before it can decide which cells
-            # pass the threshold at all; reused below instead of being resolved twice.
-            threshold_rstep = _resolve_actual_rstep(plotter, keyword, rstep_value)
-            plotter.add_threshold(
-                keyword,
-                threshold_rstep,
-                threshold_value,
-                invert=threshold_invert,
-                opacity=opacity,
-                show_edges=show_edges,
-            )
-        elif slices:
+        if slices:
             for slice_dim, slice_index in slices:
                 plotter.add_slice(
                     slice_dim,
@@ -399,7 +428,41 @@ def main(
                     **grid_kwargs,
                 )
         else:
-            plotter.add_grid(opacity=opacity, show_edges=show_edges, **grid_kwargs)
+            # --threshold and --clip each add their own subset of the whole grid instead of
+            # it, and can be combined (both subsets shown together); the whole grid itself is
+            # only added when neither was asked for.
+            added_subset = False
+
+            if threshold_value is not None:
+                # Resolved here (rather than at the usual, later point) since add_threshold
+                # needs to know which report step to read keyword at before it can decide
+                # which cells pass the threshold at all; reused below instead of being
+                # resolved twice.
+                threshold_rstep = _resolve_actual_rstep(plotter, keyword, rstep_value)
+                plotter.add_threshold(
+                    keyword,
+                    threshold_rstep,
+                    threshold_value,
+                    invert=threshold_invert,
+                    opacity=opacity,
+                    show_edges=show_edges,
+                )
+                added_subset = True
+
+            if clip is not None:
+                plotter.add_clip(
+                    clip,
+                    origin=clip_origin,
+                    invert=clip_invert,
+                    crinkle=clip_crinkle,
+                    opacity=opacity,
+                    show_edges=show_edges,
+                    **grid_kwargs,
+                )
+                added_subset = True
+
+            if not added_subset:
+                plotter.add_grid(opacity=opacity, show_edges=show_edges, **grid_kwargs)
         if wireframe:
             plotter.add_wireframe()
 
@@ -451,7 +514,7 @@ def main(
             output = None
             if save is not None:
                 output = Path(save) if save else default_output_name(
-                    keyword,
+                    f"{keyword}-clip" if clip is not None else keyword,
                     slices,
                     rsteps=steps,
                     ext="gif",
@@ -528,6 +591,8 @@ def main(
             keyword_tag = keyword or "GRID"
             if threshold_value is not None:
                 keyword_tag += "-threshold"
+            if clip is not None:
+                keyword_tag += "-clip"
             output = Path(save) if save else default_output_name(
                 keyword_tag,
                 slices,

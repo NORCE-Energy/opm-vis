@@ -485,6 +485,203 @@ def test_threshold_rejects_too_many_colon_parts(case1, runner):
     assert "--threshold must be LOW or LOW:HIGH" in result.output
 
 
+# ---------------------------------------------------------------------------
+# --clip / --clip-origin / --clip-invert / --clip-crinkle
+# ---------------------------------------------------------------------------
+
+
+def test_clip_writes_output_file(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "clip.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "--rstep",
+            "60",
+            "--view",
+            "3d",
+            "--clip",
+            "x",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_clip_accepts_origin_invert_and_crinkle(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "clip.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "--rstep",
+            "60",
+            "--view",
+            "3d",
+            "--clip",
+            "x",
+            "--clip-origin",
+            "500",
+            "500",
+            "8350",
+            "--no-clip-invert",
+            "--clip-crinkle",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_clip_works_with_grid_only(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "clip.png"
+
+    result = runner.invoke(
+        main, [case1, "--grid-only", "--view", "3d", "--clip", "z", "-s", str(output)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_clip_and_threshold_can_be_combined(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "clip.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "--rstep",
+            "60",
+            "--view",
+            "3d",
+            "--clip",
+            "x",
+            "--threshold",
+            "0.05",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_clip_works_with_animate(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "clip.gif"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "--animate",
+            "--rstep",
+            "0:60:20",
+            "--view",
+            "3d",
+            "--clip",
+            "x",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_clip_default_output_name_uses_clip_tag(case1, offscreen, runner):
+    del offscreen
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            main,
+            [
+                case1,
+                "--keyword",
+                "SGAS",
+                "--rstep",
+                "60",
+                "--view",
+                "3d",
+                "--clip",
+                "x",
+                "--save",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert Path("SGAS-clip_grid_60.png").exists()
+
+
+def test_clip_and_threshold_default_output_name_combines_both_tags(case1, offscreen, runner):
+    del offscreen
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            main,
+            [
+                case1,
+                "--keyword",
+                "SGAS",
+                "--rstep",
+                "60",
+                "--view",
+                "3d",
+                "--clip",
+                "x",
+                "--threshold",
+                "0.05",
+                "--save",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert Path("SGAS-threshold-clip_grid_60.png").exists()
+
+
+def test_clip_with_a_slice_is_rejected(case1, runner):
+    result = runner.invoke(
+        main, [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "--clip", "x"]
+    )
+
+    assert result.exit_code != 0
+    assert "--clip works on the whole grid" in result.output
+
+
+def test_clip_rejects_an_invalid_axis(case1, runner):
+    result = runner.invoke(
+        main,
+        [case1, "--keyword", "SGAS", "--rstep", "60", "--view", "3d", "--clip", "bogus"],
+    )
+
+    assert result.exit_code != 0
+    assert "Invalid value for '--clip'" in result.output
+
+
 def test_grid_only_and_keyword_together_is_rejected(case1, runner):
     result = runner.invoke(
         main, [case1, "--keyword", "SGAS", "-k", "1", "--grid-only"]
