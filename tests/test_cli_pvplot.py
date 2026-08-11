@@ -323,6 +323,168 @@ def test_show_edges_works_with_grid_only(case1, offscreen, runner, tmp_path):
     assert output.exists()
 
 
+# ---------------------------------------------------------------------------
+# --threshold / --threshold-invert
+# ---------------------------------------------------------------------------
+
+
+def test_threshold_writes_output_file(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "threshold.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "--rstep",
+            "60",
+            "--view",
+            "3d",
+            "--threshold",
+            "0.1",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_threshold_accepts_a_low_high_range(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "threshold.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "--rstep",
+            "60",
+            "--view",
+            "3d",
+            "--threshold",
+            "0.1:0.5",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_threshold_invert_writes_output_file(case1, offscreen, runner, tmp_path):
+    del offscreen
+    output = tmp_path / "threshold.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "--rstep",
+            "60",
+            "--view",
+            "3d",
+            "--threshold",
+            "0.1",
+            "--threshold-invert",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_threshold_default_output_name_uses_threshold_tag(case1, offscreen, runner):
+    del offscreen
+
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            main,
+            [
+                case1,
+                "--keyword",
+                "SGAS",
+                "--rstep",
+                "60",
+                "--view",
+                "3d",
+                "--threshold",
+                "0.1",
+                "--save",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert Path("SGAS-threshold_grid_60.png").exists()
+
+
+def test_threshold_with_a_slice_is_rejected(case1, runner):
+    result = runner.invoke(
+        main,
+        [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "--threshold", "0.1"],
+    )
+
+    assert result.exit_code != 0
+    assert "--threshold works on the whole grid" in result.output
+
+
+def test_threshold_with_grid_only_is_rejected(case1, runner):
+    result = runner.invoke(main, [case1, "--grid-only", "--threshold", "0.1"])
+
+    assert result.exit_code != 0
+    assert "--threshold needs --keyword" in result.output
+
+
+def test_threshold_with_animate_is_rejected(case1, runner):
+    result = runner.invoke(
+        main, [case1, "--keyword", "SGAS", "--animate", "--threshold", "0.1"]
+    )
+
+    assert result.exit_code != 0
+    assert "--threshold does not support --animate" in result.output
+
+
+def test_threshold_rejects_a_non_numeric_value(case1, runner):
+    result = runner.invoke(
+        main,
+        [case1, "--keyword", "SGAS", "--rstep", "60", "--view", "3d", "--threshold", "abc"],
+    )
+
+    assert result.exit_code != 0
+    assert "--threshold values must be numbers" in result.output
+
+
+def test_threshold_rejects_too_many_colon_parts(case1, runner):
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "--rstep",
+            "60",
+            "--view",
+            "3d",
+            "--threshold",
+            "0.1:0.2:0.3",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--threshold must be LOW or LOW:HIGH" in result.output
+
+
 def test_grid_only_and_keyword_together_is_rejected(case1, runner):
     result = runner.invoke(
         main, [case1, "--keyword", "SGAS", "-k", "1", "--grid-only"]

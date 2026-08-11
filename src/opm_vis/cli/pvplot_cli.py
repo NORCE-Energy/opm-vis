@@ -54,6 +54,75 @@ def _glyph_color_kwargs(glyph_color: str) -> dict:
     return {} if glyph_color.lower() == _GLYPH_MAGNITUDE else {"color": glyph_color}
 
 
+def _parse_threshold(raw: str | None) -> float | tuple[float, float] | None:
+    """
+    Parse --threshold into add_threshold's value argument
+
+    Parameters
+    ----------
+    raw : str | None
+        Raw value of --threshold: "LOW" or "LOW:HIGH"
+
+    Returns
+    -------
+    float | tuple[float, float] | None
+        None if --threshold was not given; a bare lower bound (unbounded above) for "LOW", or
+        a (low, high) range for "LOW:HIGH"
+
+    Raises
+    ------
+    click.UsageError
+        If the value is not one or two colon-separated numbers
+    """
+    if raw is None:
+        return None
+
+    parts = raw.split(":")
+    if len(parts) not in (1, 2):
+        raise click.UsageError(f"--threshold must be LOW or LOW:HIGH, got '{raw}'.")
+
+    try:
+        values = [float(part) for part in parts]
+    except ValueError as exc:
+        raise click.UsageError(f"--threshold values must be numbers, got '{raw}'.") from exc
+
+    return values[0] if len(values) == 1 else (values[0], values[1])
+
+
+def _resolve_actual_rstep(plotter: GridPlotter, keyword: str, rstep_value: int | None) -> int:
+    """
+    Resolve the report step to read keyword at, requiring one if it changes over time
+
+    Parameters
+    ----------
+    plotter : GridPlotter
+        Plotter whose case to check keyword's dynamism against
+    keyword : str
+        OPM keyword being plotted
+    rstep_value : int | None
+        Parsed value of --rstep
+
+    Returns
+    -------
+    int
+        rstep_value itself if given, otherwise the case's first report step - only once
+        confirmed that keyword does not change over time, since defaulting silently would
+        otherwise hide a keyword that actually needs an explicit --rstep
+
+    Raises
+    ------
+    click.UsageError
+        If rstep_value is None and keyword changes over time
+    """
+    if rstep_value is not None:
+        return rstep_value
+
+    probe_rstep = plotter.case.report.report_steps()[0]
+    if not plotter.case.is_static(keyword, probe_rstep):
+        raise require_dynamic_keyword_error(keyword)
+    return probe_rstep
+
+
 def _wells_slices(
     all_wells: bool, slices: list[tuple[str, int]]
 ) -> list[tuple[str, int]] | None:
@@ -137,6 +206,19 @@ def _wells_slices(
     show_default=True,
     help="Opacity of the slice(s), from 0 (transparent) to 1 (opaque).",
 )
+@click.option(
+    "--threshold",
+    default=None,
+    metavar="LOW[:HIGH]",
+    help="Show only cells where --keyword's value is at least LOW (or within LOW:HIGH) at "
+    "--rstep, instead of the whole grid. Needs --keyword and no -i/-j/-k.",
+)
+@click.option(
+    "--threshold-invert",
+    is_flag=True,
+    default=False,
+    help="Keep the cells that fail --threshold instead. Only used with --threshold.",
+)
 @click.option("--window-size", type=(int, int), default=None, metavar="WIDTH HEIGHT")
 @click.option("--no-colorbar", is_flag=True, default=False, help="Hide the scalar bar.")
 @click.option("--no-title", is_flag=True, default=False, help="Hide the report-date title.")
@@ -213,6 +295,8 @@ def main(
     wireframe: bool,
     show_edges: bool,
     quads: bool,
+    threshold: str | None,
+    threshold_invert: bool,
     opacity: float,
     window_size: tuple[int, int] | None,
     no_colorbar: bool,
@@ -242,10 +326,23 @@ def main(
 
     --grid-only plots the grid (or the chosen slice(s)) in a solid colour instead - --keyword
     is not needed, and not allowed, in this mode. --animate is not supported with --grid-only.
+
+    --threshold shows only the cells passing a bound on --keyword's own value (e.g. a gas
+    plume), instead of the whole grid; it needs --keyword and works on the whole grid only, so
+    it is not compatible with -i/-j/-k, --grid-only or --animate.
     """
     keyword = resolve_keyword(keyword, grid_only)
     if grid_only and animate:
         raise click.UsageError("--grid-only does not support --animate yet.")
+
+    threshold_value = _parse_threshold(threshold)
+    if threshold_value is not None:
+        if keyword is None:
+            raise click.UsageError(
+                "--threshold needs --keyword; it has no effect with --grid-only."
+            )
+        if animate:
+            raise click.UsageError("--threshold does not support --animate yet.")
 
     slices = resolve_slices(slice_i, slice_j, slice_k)
     if view == "2d" and len(slices) > 1:
@@ -261,6 +358,11 @@ def main(
         raise click.UsageError(
             "--quads needs a slice; pass -i/-j/-k, or drop --quads to plot the whole grid."
         )
+    if threshold_value is not None and slices:
+        raise click.UsageError(
+            "--threshold works on the whole grid; drop -i/-j/-k, or drop --threshold to plot "
+            "a slice."
+        )
     rstep_value = parse_rstep(rstep, animate)
     # --diff has no effect in --grid-only (there is no --keyword to difference), so it is
     # forced off here rather than left to silently do nothing while still showing up in the
@@ -273,7 +375,20 @@ def main(
         resolve_paths(paths), off_screen=save is not None, window_size=window_size,
         z_scale=z_scale,
     ) as plotter:
-        if slices:
+        if threshold_value is not None:
+            # Resolved here (rather than at the usual, later point) since add_threshold needs
+            # to know which report step to read keyword at before it can decide which cells
+            # pass the threshold at all; reused below instead of being resolved twice.
+            threshold_rstep = _resolve_actual_rstep(plotter, keyword, rstep_value)
+            plotter.add_threshold(
+                keyword,
+                threshold_rstep,
+                threshold_value,
+                invert=threshold_invert,
+                opacity=opacity,
+                show_edges=show_edges,
+            )
+        elif slices:
             for slice_dim, slice_index in slices:
                 plotter.add_slice(
                     slice_dim,
@@ -368,13 +483,10 @@ def main(
                 if rstep_value is not None
                 else plotter.case.report.report_steps()[0]
             )
-        elif rstep_value is None:
-            probe_rstep = plotter.case.report.report_steps()[0]
-            if not plotter.case.is_static(keyword, probe_rstep):
-                raise require_dynamic_keyword_error(keyword)
-            actual_rstep = probe_rstep
+        elif threshold_value is not None:
+            actual_rstep = threshold_rstep  # already resolved above, before add_threshold
         else:
-            actual_rstep = rstep_value
+            actual_rstep = _resolve_actual_rstep(plotter, keyword, rstep_value)
 
         plotter.rstep = actual_rstep
         if not grid_only:
@@ -413,8 +525,11 @@ def main(
         if save is None:
             plotter.show()
         else:
+            keyword_tag = keyword or "GRID"
+            if threshold_value is not None:
+                keyword_tag += "-threshold"
             output = Path(save) if save else default_output_name(
-                keyword or "GRID",
+                keyword_tag,
                 slices,
                 rstep=actual_rstep,
                 ext="png",
