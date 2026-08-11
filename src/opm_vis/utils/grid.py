@@ -20,6 +20,55 @@ _INDICES = {
 # Grid dimension axis (0=x/i, 1=y/j, 2=z/k) corresponding to each slice dimension
 _SLICE_AXIS = {"i": 0, "j": 1, "k": 2}
 
+# The two grid dimension axes spanning each slice's own plane (the ones NOT being sliced on)
+_SLICE_PLANE_AXES = {"i": (1, 2), "j": (0, 2), "k": (0, 1)}
+
+
+def slice_active_indices(egrid: Any, slice_dim: str, slice_ind: int) -> list[int]:
+    """
+    Active indices of every cell on one i-, j- or k-slice, without reading any corners
+
+    Parameters
+    ----------
+    egrid : Any
+        opm.io.ecl.EGrid (or a test double exposing dimension/active_index)
+    slice_dim : str
+        'i', 'j', or 'k' slice of the 3D grid
+    slice_ind : int
+        Index of the slice
+
+    Returns
+    -------
+    list[int]
+        Active cell indices on the slice, in the same (ind_1, ind_2) nested-loop order
+        _GridSlice itself uses
+
+    Notes
+    -----
+    Cheap: only active_index() lookups, no per-cell corner reads. Shared by _GridSlice's own
+    _compute_active_indices() and by GridMesh.extract_slice(), which needs a slice's active
+    cells without paying for a full _GridSlice construction - that would also read (and mostly
+    discard) the slice's corner geometry, which GridMesh wants to read for itself, in full.
+    """
+    axis_1, axis_2 = _SLICE_PLANE_AXES[slice_dim]
+    nx1 = egrid.dimension[axis_1]
+    nx2 = egrid.dimension[axis_2]
+
+    act = []
+    for ind_1 in range(nx1):
+        for ind_2 in range(nx2):
+            if slice_dim == "i":
+                act_index = egrid.active_index(slice_ind, ind_1, ind_2)
+            elif slice_dim == "j":
+                act_index = egrid.active_index(ind_1, slice_ind, ind_2)
+            else:
+                act_index = egrid.active_index(ind_1, ind_2, slice_ind)
+
+            if act_index >= 0:
+                act.append(act_index)
+
+    return act
+
 # pylint: disable=unsubscriptable-object,too-many-instance-attributes
 # EGrid is a pybind class, so until stubs (.pyi files) are made, pylint unsubscriptable-object
 # errors will pop up.
@@ -188,20 +237,7 @@ class _GridSlice(ABC):
         """
         Get active indices for a slice
         """
-        # Loop over slice grid dimension
-        for ind_1 in range(self.nx1):
-            for ind_2 in range(self.nx2):
-                # Arrange indices input to EGrid according to the slice dimension
-                if self.slice_dim == "i":
-                    act_index = self.egrid.active_index(self.slice_ind, ind_1, ind_2)
-                elif self.slice_dim == "j":
-                    act_index = self.egrid.active_index(ind_1, self.slice_ind, ind_2)
-                else:
-                    act_index = self.egrid.active_index(ind_1, ind_2, self.slice_ind)
-
-                # Check if active index at (i,j,k) is an active cell, if so add to list
-                if act_index >= 0:
-                    self.act.append(act_index)
+        self.act = slice_active_indices(self.egrid, self.slice_dim, self.slice_ind)
 
     def _cell_corners(self) -> None:
         """

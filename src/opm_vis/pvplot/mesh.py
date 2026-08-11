@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Sequence
 from glob import glob
 from typing import cast
 
@@ -10,7 +11,7 @@ import pyvista as pv
 from numpy.typing import NDArray
 from opm.io.ecl import EGrid
 
-from opm_vis.utils.grid import GridSlice3D
+from opm_vis.utils.grid import GridSlice3D, slice_active_indices
 from opm_vis.utils.mapaxes import has_mapaxes
 
 # OPM numbers the 8 corners of a cell so that bit 0 of the corner index selects i, bit 1
@@ -170,15 +171,27 @@ class GridMesh:
         Cell data comes along, so the extracted mesh keeps its own ACTIVE_INDEX array and can
         be given property values without consulting the parent mesh.
 
+        If the whole-grid mesh has already been built (e.g. add_grid() was also called, or
+        this is a second slice), its corners are already in memory and reused here via
+        extract_cells() - cheap, and avoids reading the file twice for the same cells.
+        Otherwise, only this slice's own cells are read from the file at all: the whole grid
+        is never built just to throw most of it away, unlike going through .mesh would.
+
         extract_cells() is typed generically over every PyVista dataset, so its declared
         return type is wider than what it can actually produce from a mesh that is already an
         UnstructuredGrid. The cast below reflects that narrower, verified invariant rather than
         working around a real ambiguity.
         """
-        return cast(
-            pv.UnstructuredGrid,
-            self.mesh.extract_cells(self.slice_mask(slice_dim, slice_ind)),
-        )
+        self._validate_slice(slice_dim, slice_ind)
+
+        if self._mesh is not None:
+            return cast(
+                pv.UnstructuredGrid,
+                self.mesh.extract_cells(self.slice_mask(slice_dim, slice_ind)),
+            )
+
+        active_indices = slice_active_indices(self.egrid, slice_dim, slice_ind)
+        return self._mesh_from_corners(*self._read_corners(active_indices))
 
     def quad_slice(self, slice_dim: str, slice_ind: int) -> pv.PolyData:
         """
@@ -324,10 +337,15 @@ class GridMesh:
         return axis
 
     def _read_corners(
-        self,
+        self, active_indices: Sequence[int] | None = None
     ) -> tuple[NDArray[np.float64], NDArray[np.int32], NDArray[np.int64]]:
         """
-        Read the 8 corner points and grid indices of every active cell
+        Read the 8 corner points and grid indices of a set of active cells
+
+        Parameters
+        ----------
+        active_indices : Sequence[int] | None, optional
+            Active cells to read, by default None, which reads every active cell in the grid
 
         Returns
         -------
@@ -336,7 +354,8 @@ class GridMesh:
         ijk : NDArray[np.int32]
             Grid indices with shape (ncells, 3)
         active_index : NDArray[np.int64]
-            Active index of each cell that was kept
+            The active_indices entry each surviving row came from (or, when active_indices is
+            None, equivalently its own position in the whole grid's active-cell order)
 
         Notes
         -----
@@ -347,27 +366,58 @@ class GridMesh:
         coordinates, where float32 would resolve a northing of ~6.7e6 m to only half a metre
         and break exact-match point welding.
         """
-        ncells = self.egrid.active_cells
+        indices = (
+            range(self.egrid.active_cells) if active_indices is None else active_indices
+        )
+        ncells = len(indices)
         corners = np.empty((ncells, 8, 3), dtype=np.float64)
         ijk = np.empty((ncells, 3), dtype=np.int32)
 
         # EGrid exposes no bulk corner export, so this is one call per cell. Measured at a
-        # few microseconds per cell, i.e. seconds for a million-cell model.
-        for act in range(ncells):
+        # few microseconds per cell, i.e. seconds for a million-cell model - which is exactly
+        # why a caller wanting only a slice's cells should pass active_indices rather than
+        # leave this reading (and discarding) the rest of the grid.
+        for row, act in enumerate(indices):
             (
-                corners[act, :, 0],
-                corners[act, :, 1],
-                corners[act, :, 2],
+                corners[row, :, 0],
+                corners[row, :, 1],
+                corners[row, :, 2],
             ) = self.egrid.xyz_from_active_index(act, self.apply_mapaxes)
-            ijk[act, :] = self.egrid.ijk_from_active_index(act)
+            ijk[row, :] = self.egrid.ijk_from_active_index(act)
 
         # Drop pinched-out cells, keeping the active index of everything that survives
         keep = np.isfinite(corners).all(axis=(1, 2))
-        return corners[keep], ijk[keep], np.flatnonzero(keep)
+        return corners[keep], ijk[keep], np.asarray(indices, dtype=np.int64)[keep]
 
     def _build(self) -> pv.UnstructuredGrid:
         """
-        Build the hexahedral mesh
+        Build the hexahedral mesh of every active cell in the grid
+
+        Returns
+        -------
+        pv.UnstructuredGrid
+            Mesh with the ACTIVE_INDEX, "I", "J" and "K" cell arrays attached
+        """
+        return self._mesh_from_corners(*self._read_corners())
+
+    def _mesh_from_corners(
+        self,
+        corners: NDArray[np.float64],
+        ijk: NDArray[np.int32],
+        active_index: NDArray[np.int64],
+    ) -> pv.UnstructuredGrid:
+        """
+        Assemble a (optionally welded) hexahedral mesh from per-cell corner data
+
+        Parameters
+        ----------
+        corners : NDArray[np.float64]
+            Corner coordinates in OPM corner order, with shape (ncells, 8, 3), as returned by
+            _read_corners
+        ijk : NDArray[np.int32]
+            Grid indices with shape (ncells, 3), as returned by _read_corners
+        active_index : NDArray[np.int64]
+            Active index of each cell, as returned by _read_corners
 
         Returns
         -------
@@ -376,13 +426,14 @@ class GridMesh:
 
         Notes
         -----
+        Shared by _build() (every active cell) and extract_slice()'s own fast path (one
+        slice's cells only), so welding/cell-array bookkeeping stays identical either way.
+
         Welding merges the coincident corner points that neighbouring cells share, cutting
         the point count by roughly a factor of eight. The tolerance is exactly zero on
         purpose: corner-point grids are genuinely discontinuous across faults, and only
         bit-identical coordinates should ever be merged. Cell order is unaffected.
         """
-        corners, ijk, active_index = self._read_corners()
-
         # Pick the corner permutation that gives outward-facing hexahedra for this grid
         order = _VTK_HEX_ORDER_MIRRORED if self._is_mirrored(corners) else _VTK_HEX_ORDER
         mesh = self._hexahedra(corners, order)
