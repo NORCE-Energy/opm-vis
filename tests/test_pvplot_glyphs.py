@@ -149,13 +149,14 @@ def test_quads_on_a_slice_places_the_same_number_of_glyphs(plotter):
 
 def test_quads_sits_on_the_slice_face_not_mid_cell(plotter):
     # TPSA_LAGGED's k=0 layer spans depth 1000-1020 m; the face the quads path uses must sit
-    # exactly on the shallow face, not at the layer's mid-depth
+    # exactly on the shallow face, not at the layer's mid-depth. z points up (see
+    # mesh._read_corners), so this depth comes back negated.
     name = plotter.add_glyphs(
         "DISPX", "DISPY", "DISPZ", 15, slice_dim="k", slice_ind=0, quads=True
     )
 
     source = plotter._glyphs[name].source
-    np.testing.assert_allclose(source.points[:, 2], 1000.0)
+    np.testing.assert_allclose(source.points[:, 2], -1000.0)
 
 
 def test_quads_renders_visibly_on_a_matching_quad_slice(plotter):

@@ -220,9 +220,12 @@ class GridMesh:
         """
         self._validate_slice(slice_dim, slice_ind)
 
-        # (ncells, 4, 3) corner points, with the matching list of active indices
+        # (ncells, 4, 3) corner points, with the matching list of active indices. GridSlice3D
+        # keeps OPM's own depth-positive-down z, unlike the rest of GridMesh - see the note in
+        # _read_corners - so it is negated here to match.
         slc = GridSlice3D(self.path, slice_dim, slice_ind)
-        corners = slc.cell_corners()
+        corners = slc.cell_corners().copy()
+        corners[:, :, 2] *= -1
         ncells = corners.shape[0]
 
         # VTK connectivity is a flat [npoints_of_face, point ids...] per face
@@ -296,7 +299,9 @@ class GridMesh:
         self._validate_slice(slice_dim, slice_ind)
 
         slc = GridSlice3D(self.path, slice_dim, slice_ind)
-        points = pv.PolyData(slc.cell_centers())
+        centers = slc.cell_centers().copy()
+        centers[:, 2] *= -1  # GridSlice3D keeps OPM's depth-positive-down z; see _read_corners
+        points = pv.PolyData(centers)
         points.cell_data[ACTIVE_INDEX] = np.asarray(slc.active_indices(), dtype=np.int64)
 
         # See the note in _build: ACTIVE_INDEX must not end up as the active scalars
@@ -365,6 +370,12 @@ class GridMesh:
         float64 is deliberate rather than float32: field models are commonly in UTM
         coordinates, where float32 would resolve a northing of ~6.7e6 m to only half a metre
         and break exact-match point welding.
+
+        OPM reports z as depth, increasing downwards, but VTK's own convention (and every
+        camera pyvista sets up) assumes z points up. Negating z here, once, is what lets the
+        rest of pvplot use pyvista's defaults instead of compensating for depth-down data at
+        every camera and view. Axis labels put the sign back, see labels.axis_titles and
+        GridPlotter.show_axes_grid.
         """
         indices = (
             range(self.egrid.active_cells) if active_indices is None else active_indices
@@ -384,6 +395,8 @@ class GridMesh:
                 corners[row, :, 2],
             ) = self.egrid.xyz_from_active_index(act, self.apply_mapaxes)
             ijk[row, :] = self.egrid.ijk_from_active_index(act)
+
+        corners[:, :, 2] *= -1
 
         # Drop pinched-out cells, keeping the active index of everything that survives
         keep = np.isfinite(corners).all(axis=(1, 2))
@@ -483,7 +496,8 @@ class GridMesh:
         Uses the sign of the scalar triple product of the i-, j- and k-edge vectors leaving
         corner 0, which is the signed volume of the cell taken as a parallelepiped. That sign
         is positive exactly when _VTK_HEX_ORDER yields outward-facing hexahedra, verified
-        against a standard OPM grid with z as depth increasing downwards.
+        against a standard OPM grid with corners already carrying pvplot's z, which points up
+        (see _read_corners), rather than OPM's own depth-positive-down z.
 
         A majority vote over all cells is used so that degenerate, zero-volume cells cannot
         decide the answer on their own.

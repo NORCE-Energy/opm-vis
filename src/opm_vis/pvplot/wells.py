@@ -203,6 +203,10 @@ def _completion_track(
 
         corners = np.column_stack(egrid.xyz_from_ijk(i, j, k, apply_mapaxes))
 
+        # OPM's z is depth, increasing downwards; negated here to match GridMesh's own
+        # corners, which point z up to match pyvista's convention (see mesh._read_corners)
+        corners[:, 2] *= -1
+
         # OPM's corner index has bit 2 selecting k, so 0-3 is the shallow face and 4-7 the deep
         points.append(corners[:4].mean(axis=0))
         points.append(corners[4:].mean(axis=0))

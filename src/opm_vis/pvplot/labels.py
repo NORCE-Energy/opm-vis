@@ -13,8 +13,10 @@ _MATHTEXT = {"$^3$": "³", r"$^\circ$": "°"}
 # Label returns this literal string when it does not recognise the unit convention itself
 _UNKNOWN = "UNKNOWN"
 
-# Axis names, in x, y, z order. z is depth, since the meshes keep OPM's depth-positive-down
-# coordinates rather than flipping them to elevation.
+# Axis names, in x, y, z order. z is depth: the meshes themselves are built with z pointing
+# up, matching pyvista's own convention (see mesh._read_corners), but
+# GridPlotter.show_axes_grid relabels the z-axis ticks with OPM's own depth-positive-down
+# sign, so the title stays Depth rather than Elevation.
 _AXIS_NAMES = ("E(x)", "N(y)", "Depth")
 
 

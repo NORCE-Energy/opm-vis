@@ -17,24 +17,14 @@ from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
 from opm_vis.pvplot.wells import well_paths
 from opm_vis.utils.units import Label
 
-# OPM's z axis is depth, increasing downwards, while VTK assumes z points up. Every camera
-# therefore needs its view-up vector flipped, or the model renders with its deepest layer at
-# the top of the screen.
-_DEPTH_UP = (0.0, 0.0, -1.0)
-
-# Camera setup per slice dimension for view_2d. Determined by rendering a single marked cell
-# and checking where it lands on screen: the cross-sections need both the negative viewing
-# side and the flipped view-up to put depth downwards and easting/northing to the right, while
-# the k-slice map view needs neither.
+# Camera setup per slice dimension for view_2d. GridMesh already negates z to point up (see
+# mesh._read_corners), matching pyvista's own convention, so these are plain pyvista view
+# presets with no manual view-up correction needed. Determined by rendering a single marked
+# cell and checking where it lands on screen: the cross-sections need the negative viewing
+# side to put easting/northing to the right, while the k-slice map view needs the default.
 _VIEW_2D = {
-    "i": lambda plotter: (
-        plotter.view_yz(negative=True),
-        plotter.set_viewup(_DEPTH_UP),
-    ),
-    "j": lambda plotter: (
-        plotter.view_xz(negative=True),
-        plotter.set_viewup(_DEPTH_UP),
-    ),
+    "i": lambda plotter: plotter.view_yz(negative=True),
+    "j": lambda plotter: plotter.view_xz(negative=True),
     "k": lambda plotter: plotter.view_xy(),
 }
 
@@ -901,9 +891,10 @@ class GridPlotter:
 
         Cross-sections are oriented with depth increasing downwards and easting or northing
         increasing to the right. The k-slice map view is laid out the conventional way, with
-        easting to the right and northing up. Note that because OPM's z axis is depth, no
-        camera can give a map both northing up and easting right while looking from above; the
-        conventional layout is chosen over the literal viewing side.
+        easting to the right and northing up. Note that because the depth axis still reads
+        top-to-shallow-to-deep (see show_axes_grid), no camera can give a map both northing up
+        and easting right while looking from above; the conventional layout is chosen over the
+        literal viewing side.
         """
         if slice_dim not in _VIEW_2D:
             raise TypeError(
@@ -926,23 +917,21 @@ class GridPlotter:
         azimuth : float, optional
             Degrees to rotate the camera about the depth axis, by default 30.0
         elevation : float, optional
-            Degrees to lift the camera, by default 45.0
+            Degrees to lift the camera above the horizontal, by default 45.0. Negative values
+            look up at the model from below instead.
 
         Notes
         -----
-        The view-up vector is flipped to -z. PyVista's default assumes z points up, so on
-        OPM's depth-positive-down coordinates the isometric view otherwise renders the model
-        upside down, with the deepest layer above the shallowest.
+        GridMesh's z already points up (see mesh._read_corners), matching pyvista's own
+        convention, so no view-up correction is needed to keep the shallowest layer on top.
 
-        That flip also leaves the camera *below* the model, so an elevation of zero looks up at
-        the base of the reservoir. The elevation needed to get above it depends on the vertical
-        exaggeration - roughly 15 degrees at z_scale 15, but past 25 at z_scale 1 - and the
-        default of 45 clears it either way. Measured by marking the top and bottom layers and
-        checking which one is not occluded.
+        The starting point is a plain horizontal view (elevation exactly 0) rather than
+        pyvista's isometric preset, whose own baked-in ~35 degree tilt would otherwise add to
+        whatever `elevation` asks for - most noticeably turning the default call into a
+        near-vertical, degenerate view on a reservoir far wider than it is thick.
         """
         self.plotter.disable_parallel_projection()
-        self.plotter.view_isometric()
-        self.plotter.set_viewup(_DEPTH_UP)
+        self.plotter.view_vector((0.0, -1.0, 0.0), viewup=(0.0, 0.0, 1.0))
 
         # All three axes are meaningful again, see show_axes_grid
         self._view_2d_dim = None
@@ -980,6 +969,12 @@ class GridPlotter:
         Axis titles carry the case's own length unit, so a field-units case is labelled in
         feet. opm_vis.plot hard-codes metres whatever the case uses.
 
+        The z-axis is labelled with depth increasing downwards, matching OPM's own
+        convention, even though the mesh's actual z coordinate points up (see
+        mesh._read_corners): the tick values shown are the negative of the geometry's own z,
+        via show_bounds' axes_ranges, rather than the mesh's z coordinate itself. Passing an
+        explicit `axes_ranges` (or `bounds`/`mesh`) overrides this.
+
         Call this after choosing the view. In a 2D view the axis pointing at the camera is
         left out, because drawing it would put a meaningless third axis - and its tick labels -
         across the middle of the picture; the bounding box has no way of knowing it is being
@@ -994,6 +989,15 @@ class GridPlotter:
         kwargs.setdefault("xtitle", xtitle)
         kwargs.setdefault("ytitle", ytitle)
         kwargs.setdefault("ztitle", ztitle)
+
+        if "axes_ranges" not in kwargs:
+            bounds = kwargs.get("bounds")
+            if bounds is None:
+                mesh = kwargs.get("mesh")
+                bounds = mesh.bounds if mesh is not None else self.plotter.bounds
+            kwargs["axes_ranges"] = (
+                bounds[0], bounds[1], bounds[2], bounds[3], -bounds[4], -bounds[5],
+            )
 
         if self._view_2d_dim is not None:
             hidden = _OUT_OF_PLANE_AXIS[self._view_2d_dim]

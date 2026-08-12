@@ -386,10 +386,11 @@ def test_slice_cell_centers_covers_the_same_cells_as_quad_slice(
 
 def test_slice_cell_centers_sits_on_the_slice_face_not_mid_cell(grid_mesh):
     # SPE1CASE1's k=0 layer spans depth 8325-8345 ft; the face centre for a k-slice must sit
-    # exactly on the shallow face, not at the layer's mid-depth
+    # exactly on the shallow face, not at the layer's mid-depth. z points up (see
+    # _read_corners), so this depth comes back negated.
     centers = grid_mesh.slice_cell_centers("k", 0)
 
-    np.testing.assert_allclose(centers.points[:, 2], 8325.0)
+    np.testing.assert_allclose(centers.points[:, 2], -8325.0)
 
 
 def test_slice_cell_centers_validates_its_arguments(grid_mesh):

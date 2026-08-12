@@ -64,9 +64,10 @@ def test_trajectory_spans_the_thickness_of_its_completed_cell(egrid, wells):
     paths = well_paths(egrid, wells, 60)
 
     # SPE1CASE1's layers are 20, 30 and 50 ft thick from 8325 ft, so INJ in k=0 spans
-    # 8325-8345 and PROD in k=2 spans 8375-8425
+    # 8325-8345 and PROD in k=2 spans 8375-8425. z points up (see mesh._read_corners), so
+    # these depths come back negated.
     depths = sorted(paths.open_wells.points[:, 2])
-    np.testing.assert_allclose(depths, [8325.0, 8345.0, 8375.0, 8425.0])
+    np.testing.assert_allclose(depths, [-8425.0, -8375.0, -8345.0, -8325.0])
 
 
 def test_labels_are_anchored_at_the_top_of_their_own_trajectory(egrid, wells):
@@ -74,8 +75,9 @@ def test_labels_are_anchored_at_the_top_of_their_own_trajectory(egrid, wells):
 
     anchors = dict(zip(paths.label_names, paths.label_points[:, 2]))
 
-    # Not the shallowest point in the scene: each label sits on top of its own well
-    assert anchors == {"INJ": 8325.0, "PROD": 8375.0}
+    # Not the shallowest point in the scene: each label sits on top of its own well. z points
+    # up, so the shallower (smaller) OPM depth is the less negative value.
+    assert anchors == {"INJ": -8325.0, "PROD": -8375.0}
 
 
 def test_label_points_line_up_with_label_names(egrid, wells):
@@ -152,8 +154,9 @@ def test_multi_cell_completion_is_one_polyline(egrid):
 
     assert paths.open_wells.n_cells == 1  # one well, one polyline
     assert paths.open_wells.n_points == 6  # 3 cells, top and bottom face of each
-    # Anchored at the shallowest point of the whole path, not of the first cell alone
-    assert paths.label_points[0][2] == paths.open_wells.points[:, 2].min()
+    # Anchored at the shallowest point of the whole path, not of the first cell alone. z
+    # points up, so the shallowest point is the largest z, not the smallest.
+    assert paths.label_points[0][2] == paths.open_wells.points[:, 2].max()
 
 
 def test_well_without_any_completion_is_skipped(egrid):
