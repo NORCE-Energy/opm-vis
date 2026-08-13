@@ -361,16 +361,36 @@ def test_set_scalars_calc_kind_combines_with_diff(plotter):
         slice_ind=0,
         calc_kind="mean",
         diff_rstep=0,
+        diff_kind="relative",
     )
-    diffed = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+    diffed_then_aggregated = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
 
     plotter.set_scalars("PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="mean")
     at_60 = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
     plotter.set_scalars("PRESSURE", 0, slice_dim="k", slice_ind=0, calc_kind="mean")
     at_0 = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+    # relative change between the two report steps' own means - "aggregate first, then diff",
+    # the ordering this feature does NOT use
+    aggregated_then_diffed = (at_60 - at_0) / at_0 * 100.0
 
-    # "aggregate first, then diff the aggregates" - not the mean of the per-cell differences
-    np.testing.assert_allclose(diffed, at_60 - at_0)
+    # "diff first, then aggregate": each cell's own relative change is computed before
+    # averaging, so this must differ from relative-differencing the two means afterwards -
+    # relative change is nonlinear, so the two orderings are not coincidentally equal here.
+    assert not np.allclose(diffed_then_aggregated, aggregated_then_diffed)
+
+    full = plotter.case.diff("PRESSURE", 60, ref_rstep=0, kind="relative")
+    nx, ny, nz = plotter.grid.egrid.dimension
+    mesh = plotter._actors["k0"].mesh
+    act_to_expected = {
+        plotter.grid.egrid.active_index(i, j, 0): np.mean(
+            [full[plotter.grid.egrid.active_index(i, j, k)] for k in range(nz)]
+        )
+        for i in range(nx)
+        for j in range(ny)
+        if plotter.grid.egrid.active_index(i, j, 0) >= 0
+    }
+    expected = [act_to_expected[act] for act in mesh.cell_data["ACTIVE_INDEX"]]
+    np.testing.assert_allclose(diffed_then_aggregated, expected)
 
 
 def test_global_clim_calc_kind_covers_the_aggregate_not_the_plain_values(plotter):
@@ -652,7 +672,7 @@ def test_scalar_bar_is_titled_with_the_calc_kind_and_diff_kind(plotter):
         "PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="mean", diff_rstep=0
     )
 
-    assert list(plotter.plotter.scalar_bars.keys()) == ["Δmean(PRESSURE) [psia]"]
+    assert list(plotter.plotter.scalar_bars.keys()) == ["mean(ΔPRESSURE) [psia]"]
 
 
 # ---------------------------------------------------------------------------

@@ -99,7 +99,8 @@ def scalar_bar_title(
     calc_kind : str | None, optional
         One of opm_vis.utils.calc.CALC_KINDS, by default None. When given, the keyword is shown
         as a calculator result (see opm_vis.utils.calc.calc_label) rather than its own value;
-        applied before diff_kind, so both combine as e.g. "Δmean(PRESSURE)".
+        applied after diff_kind, so the delta sits inside the parentheses, e.g.
+        "mean(ΔPRESSURE)" - matching set_scalars' own "diff first, then aggregate" order.
 
     Returns
     -------
@@ -108,8 +109,8 @@ def scalar_bar_title(
         ``PRESSURE [barsa]``, ``ΔPRESSURE [barsa]``, or ``mean(PRESSURE) [barsa]``, or without
         brackets when no unit applies
     """
-    name = keyword if calc_kind is None else calc_label(keyword, calc_kind)
-    name = name if diff_kind is None else diff_label(name, diff_kind)
+    name = keyword if diff_kind is None else diff_label(keyword, diff_kind)
+    name = name if calc_kind is None else calc_label(name, calc_kind)
     if diff_kind == "relative":
         return f"{name} [%]"
 

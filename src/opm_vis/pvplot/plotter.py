@@ -663,11 +663,12 @@ class GridPlotter:
         Every dataset gets the same colour limits, so a single scalar bar is valid for all of
         them. opm_vis.plot has to warn that its colorbar only describes the first slice.
 
-        calc_kind and diff_rstep combine: the calculator's aggregate is computed separately at
-        rstep and at diff_rstep (over the same layer range), and diff_rstep differences the two
-        aggregates - "how much did the mean/sum change between these two report steps", not the
-        mean/sum of the per-cell differences. Only the cells of the slice_dim/slice_ind slice
-        are touched by the aggregate; every other dataset on screen keeps its plain values.
+        calc_kind and diff_rstep combine as "diff first, then aggregate": the per-cell
+        difference between rstep and diff_rstep is computed first, across every layer the
+        calculator spans, and calc_kind aggregates that difference field - "the mean/sum of how
+        much each cell changed between these two report steps", not the difference between the
+        two report steps' own means/sums. Only the cells of the slice_dim/slice_ind slice are
+        touched by the aggregate; every other dataset on screen keeps its plain values.
         """
         targets = [entry for entry in self._actors.values() if entry.carries_scalars]
         if not targets:
@@ -675,21 +676,16 @@ class GridPlotter:
                 "Nothing to colour! Call add_slice or add_grid before set_scalars."
             )
 
+        if diff_rstep is None:
+            data = self.case.read(keyword, rstep)
+        else:
+            data = self.case.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
+
         if calc_kind is not None:
             n_slice = self.grid.egrid.dimension[_SLICE_AXIS[slice_dim]]
             start, end = resolve_calc_range(slice_ind, n_slice, calc_count)
             layer_grid = slice_range_layer_grid(self.grid.egrid, slice_dim, start, end)
-
-            data = apply_slice_calc(self.case.read(keyword, rstep), layer_grid, kind=calc_kind)
-            if diff_rstep is not None:
-                reference = apply_slice_calc(
-                    self.case.read(keyword, diff_rstep), layer_grid, kind=calc_kind
-                )
-                data = compute_diff(data, reference, diff_kind)
-        elif diff_rstep is None:
-            data = self.case.read(keyword, rstep)
-        else:
-            data = self.case.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
+            data = apply_slice_calc(data, layer_grid, kind=calc_kind)
 
         scalar_range = (
             clim
@@ -841,12 +837,13 @@ class GridPlotter:
 
         low, high = np.inf, -np.inf
         for rstep in steps:
-            data = apply_slice_calc(self.case.read(keyword, rstep), layer_grid, kind=calc_kind)
-            if diff_rstep is not None:
-                reference = apply_slice_calc(
-                    self.case.read(keyword, diff_rstep), layer_grid, kind=calc_kind
-                )
-                data = compute_diff(data, reference, diff_kind)
+            # diff first, then aggregate - see set_scalars' notes
+            base = (
+                self.case.read(keyword, rstep)
+                if diff_rstep is None
+                else self.case.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
+            )
+            data = apply_slice_calc(base, layer_grid, kind=calc_kind)
             low = min(low, np.nanmin(data))
             high = max(high, np.nanmax(data))
 

@@ -98,9 +98,10 @@ instead of continuing to the grid's last layer:
 
    opm-vis-pv tests/data/SPE1CASE1 -K SGAS -k 1 -r 60 -c sum --calc-count 2
 
-``--calculator`` combines with ``--diff``: the aggregate is computed separately at ``--rstep``
-and at ``--diff-rstep``, and ``--diff`` differences the two aggregates - "how much did the mean
-change between these two report steps":
+``--calculator`` combines with ``--diff`` as "diff first, then aggregate": the per-cell
+difference between ``--rstep`` and ``--diff-rstep`` is computed first, then ``--calculator``
+aggregates that difference across the layer range - "the mean change between these two report
+steps, per cell":
 
 .. code-block:: bash
 

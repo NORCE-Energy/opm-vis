@@ -305,15 +305,14 @@ class _SlicePolyCollection:
         -------
         str
             e.g. "PRESSURE [barsa]", "ΔPRESSURE [barsa]"/"ΔSGAS [%]" for a diff, or
-            "mean(PRESSURE) [barsa]"/"Δmean(PRESSURE) [barsa]" with a calculator
+            "mean(PRESSURE) [barsa]"/"mean(ΔPRESSURE) [barsa]" with a calculator - the delta
+            sits inside the parentheses, matching SlicePoly.generate()'s own "diff first, then
+            aggregate" order
         """
-        name = keyword if calc_kind is None else calc_label(keyword, calc_kind)
+        name = keyword if diff_rstep is None else diff_label(keyword, diff_kind)
+        name = name if calc_kind is None else calc_label(name, calc_kind)
 
-        if diff_rstep is None:
-            return name + " [" + self.label(keyword) + "]"
-
-        name = diff_label(name, diff_kind)
-        if diff_kind == "relative":
+        if diff_rstep is not None and diff_kind == "relative":
             return f"{name} [%]"
         return name + " [" + self.label(keyword) + "]"
 

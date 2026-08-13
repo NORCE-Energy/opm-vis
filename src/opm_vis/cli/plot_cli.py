@@ -96,8 +96,9 @@ def main(
     --calculator aggregates --keyword across grid layers along the sliced dimension, from the
     given -i/-j/-k index to the grid's last layer (or --calc-count layers), instead of colouring
     by the slice's own values; it needs --keyword (so it is not compatible with --grid-only). It
-    combines with --diff: the aggregate is computed separately at --rstep and at --diff-rstep,
-    and --diff differences the two aggregates.
+    combines with --diff as "diff first, then aggregate": the per-cell difference between
+    --rstep and --diff-rstep is computed first, then --calculator aggregates that difference
+    across the layer range.
 
     --grid-only plots the slice in a solid colour instead - --keyword is not needed, and not
     allowed, in this mode. --animate is not supported with --grid-only.

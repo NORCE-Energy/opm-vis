@@ -81,9 +81,10 @@ colouring by the slice's own values:
    plotter.view_2d("k")
    plotter.show()
 
-``calc_kind`` combines with ``diff_rstep``: the aggregate is computed separately at ``rstep``
-and at ``diff_rstep``, and ``diff_rstep`` differences the two aggregates - "how much did the
-mean/sum change between these two report steps", not the mean/sum of the per-cell differences.
+``calc_kind`` combines with ``diff_rstep`` as "diff first, then aggregate": the per-cell
+difference between ``rstep`` and ``diff_rstep`` is computed first, then ``calc_kind`` aggregates
+that difference across the layer range - "the mean/sum of how much each cell changed between
+these two report steps", not the difference between the two report steps' own means/sums.
 :meth:`~opm_vis.pvplot.GridPlotter.animate` takes the same four parameters.
 
 Vector glyphs

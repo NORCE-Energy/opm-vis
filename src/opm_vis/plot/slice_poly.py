@@ -89,17 +89,17 @@ class _SlicePoly(_GridSlice, ABC):
 
         Notes
         -----
-        calc_kind and diff_rstep combine: the calculator's aggregate is computed separately at
-        rstep and at diff_rstep, and diff_rstep differences the two aggregates - "how much did
-        the mean/sum change between these two report steps", not the mean/sum of the per-cell
-        differences.
+        calc_kind and diff_rstep combine as "diff first, then aggregate": the per-cell
+        difference between rstep and diff_rstep is computed first, across every layer the
+        calculator spans, and calc_kind aggregates that difference field - "the mean/sum of how
+        much each cell changed between these two report steps", not the difference between the
+        two report steps' own means/sums.
         """
         act_ind = self.active_indices()
         if calc_kind is not None:
-            data = self._read_calc(keyword, rstep, calc_kind, calc_count)
-            if diff_rstep is not None:
-                reference = self._read_calc(keyword, diff_rstep, calc_kind, calc_count)
-                data = compute_diff(data, reference, diff_kind)
+            data = self._read_calc(
+                keyword, rstep, calc_kind, calc_count, diff_rstep=diff_rstep, diff_kind=diff_kind
+            )
         else:
             data = self._read_keyword(keyword, rstep, act_ind)
             if diff_rstep is not None:
@@ -115,9 +115,19 @@ class _SlicePoly(_GridSlice, ABC):
         # Return polygon collection
         return polyc
 
-    def _read_calc(self, keyword: str, rstep: int, kind: str, count: int | None):
+    def _read_calc(
+        self,
+        keyword: str,
+        rstep: int,
+        kind: str,
+        count: int | None,
+        *,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
+    ):
         """
-        Aggregate keyword across a range of layers along this slice's own dimension
+        Aggregate keyword (or its difference from diff_rstep) across a range of layers along
+        this slice's own dimension
 
         Parameters
         ----------
@@ -130,6 +140,13 @@ class _SlicePoly(_GridSlice, ABC):
         count : int | None
             Limit the range to this many layers starting at slice_ind, or None to continue to
             the grid's last layer
+        diff_rstep : int | None, optional
+            Aggregate the difference from this report step instead of keyword's own values, by
+            default None (the values themselves). The difference is taken per cell, before
+            aggregating - see generate()'s notes.
+        diff_kind : str, optional
+            One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
+            default "plain"
 
         Returns
         -------
@@ -139,7 +156,7 @@ class _SlicePoly(_GridSlice, ABC):
         Notes
         -----
         Only the active cells actually spanned by the layer range are read (one combined call
-        to _read_keyword), not the whole grid.
+        to _read_keyword per report step needed), not the whole grid.
         """
         n_slice = self.egrid.dimension[_SLICE_AXIS[self.slice_dim]]
         start, end = resolve_calc_range(self.slice_ind, n_slice, count)
@@ -147,9 +164,14 @@ class _SlicePoly(_GridSlice, ABC):
 
         flat = layer_grid.reshape(layer_grid.shape[0], -1)
         valid = np.unique(flat[flat >= 0])
-        values = self._read_keyword(keyword, rstep, valid.tolist())
+
         lookup = np.full(self.egrid.active_cells, np.nan)
-        lookup[valid] = values
+        lookup[valid] = self._read_keyword(keyword, rstep, valid.tolist())
+
+        if diff_rstep is not None:
+            ref_lookup = np.full(self.egrid.active_cells, np.nan)
+            ref_lookup[valid] = self._read_keyword(keyword, diff_rstep, valid.tolist())
+            lookup = compute_diff(lookup, ref_lookup, diff_kind)
 
         aggregated_full = apply_slice_calc(lookup, layer_grid, kind)
         return aggregated_full[self.act]
