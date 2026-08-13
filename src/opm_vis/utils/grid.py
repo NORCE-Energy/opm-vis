@@ -24,6 +24,26 @@ _SLICE_AXIS = {"i": 0, "j": 1, "k": 2}
 _SLICE_PLANE_AXES = {"i": (1, 2), "j": (0, 2), "k": (0, 1)}
 
 
+def slice_dimension_size(egrid: Any, slice_dim: str) -> int:
+    """
+    Number of layers along one slice dimension
+
+    Parameters
+    ----------
+    egrid : Any
+        opm.io.ecl.EGrid (or a test double exposing dimension)
+    slice_dim : str
+        'i', 'j', or 'k' slice of the 3D grid
+
+    Returns
+    -------
+    int
+        Number of cells along slice_dim - the valid range for a slice index on it is
+        0 to slice_dimension_size(egrid, slice_dim) - 1
+    """
+    return egrid.dimension[_SLICE_AXIS[slice_dim]]
+
+
 def slice_active_indices(egrid: Any, slice_dim: str, slice_ind: int) -> list[int]:
     """
     Active indices of every cell on one i-, j- or k-slice, without reading any corners

@@ -33,6 +33,8 @@ from opm_vis.cli.common import (
     resolve_slices,
 )
 from opm_vis.plot.collections import SlicePoly2DCollection, SlicePoly3DCollection
+from opm_vis.utils.calc import resolve_calc_range
+from opm_vis.utils.grid import slice_dimension_size
 
 
 @click.command(**COMMAND_SETTINGS)
@@ -143,6 +145,11 @@ def main(
     else:
         coll = SlicePoly2DCollection(resolved_paths, slice_dim, slice_index)
 
+    calc_end = None
+    if calc_kind is not None:
+        n_slice = slice_dimension_size(coll.slice_coll[0].egrid, slice_dim)
+        _, calc_end = resolve_calc_range(slice_index, n_slice, calc_count)
+
     if animate:
         steps = resolve_animate_rsteps(coll.report.report_steps(), rstep_value)
         coll.animate(
@@ -169,6 +176,7 @@ def main(
                     diff_rstep=resolved_diff_rstep,
                     diff_kind=diff_kind,
                     calc_kind=calc_kind,
+                    calc_end=calc_end,
                 ),
                 fps=fps,
             )
@@ -220,6 +228,7 @@ def main(
                 diff_rstep=resolved_diff_rstep,
                 diff_kind=diff_kind,
                 calc_kind=calc_kind,
+                calc_end=calc_end,
             )
         )
 

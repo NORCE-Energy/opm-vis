@@ -199,7 +199,32 @@ def test_calculator_default_name_reflects_calc_kind(case1, runner):
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("PRESSURE-sum_k1_60.png").exists()
+        # SPE1CASE1 has 3 k-layers: -k 1 aggregates layers 1-3 (the grid's last layer)
+        assert Path("PRESSURE-sum_k1-3_60.png").exists()
+
+
+def test_calculator_default_name_reflects_calc_count(case1, runner):
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            main,
+            [
+                case1,
+                "--keyword",
+                "PRESSURE",
+                "-k",
+                "1",
+                "--rstep",
+                "60",
+                "-c",
+                "sum",
+                "--calc-count",
+                "2",
+                "--save",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert Path("PRESSURE-sum_k1-2_60.png").exists()
 
 
 def test_calculator_with_calc_count_writes_output_file(case1, runner, tmp_path):

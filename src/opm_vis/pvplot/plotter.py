@@ -17,13 +17,8 @@ from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
 from opm_vis.pvplot.wells import well_paths
 from opm_vis.utils.calc import apply_slice_calc, resolve_calc_range
 from opm_vis.utils.diff import compute_diff
-from opm_vis.utils.grid import slice_range_layer_grid
+from opm_vis.utils.grid import slice_dimension_size, slice_range_layer_grid
 from opm_vis.utils.units import Label
-
-# Grid dimension axis (0=x/i, 1=y/j, 2=z/k) corresponding to each slice dimension. Kept local
-# rather than imported, matching the same small table already duplicated in
-# opm_vis.utils.grid/opm_vis.pvplot.mesh.
-_SLICE_AXIS = {"i": 0, "j": 1, "k": 2}
 
 # Camera setup per slice dimension for view_2d. GridMesh already negates z to point up (see
 # mesh._read_corners), matching pyvista's own convention, so these are plain pyvista view
@@ -682,7 +677,7 @@ class GridPlotter:
             data = self.case.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
 
         if calc_kind is not None:
-            n_slice = self.grid.egrid.dimension[_SLICE_AXIS[slice_dim]]
+            n_slice = slice_dimension_size(self.grid.egrid, slice_dim)
             start, end = resolve_calc_range(slice_ind, n_slice, calc_count)
             layer_grid = slice_range_layer_grid(self.grid.egrid, slice_dim, start, end)
             data = apply_slice_calc(data, layer_grid, kind=calc_kind)
@@ -827,7 +822,7 @@ class GridPlotter:
                 keyword, rsteps, diff_rstep=diff_rstep, diff_kind=diff_kind
             )
 
-        n_slice = self.grid.egrid.dimension[_SLICE_AXIS[slice_dim]]
+        n_slice = slice_dimension_size(self.grid.egrid, slice_dim)
         start, end = resolve_calc_range(slice_ind, n_slice, calc_count)
         layer_grid = slice_range_layer_grid(self.grid.egrid, slice_dim, start, end)
 

@@ -32,6 +32,8 @@ from opm_vis.cli.common import (
     resolve_slices,
 )
 from opm_vis.pvplot import GridPlotter
+from opm_vis.utils.calc import resolve_calc_range
+from opm_vis.utils.grid import slice_dimension_size
 
 # --glyph-color's default: colour arrows by vector magnitude (add_glyphs' own "scalars" default)
 # rather than a flat colour. Not a real colour name, so it can't collide with one.
@@ -435,6 +437,11 @@ def main(
         resolve_paths(paths), off_screen=save is not None, window_size=window_size,
         z_scale=z_scale,
     ) as plotter:
+        calc_end = None
+        if calc_slice is not None:
+            n_slice = slice_dimension_size(plotter.grid.egrid, calc_slice_dim)
+            _, calc_end = resolve_calc_range(calc_slice_ind, n_slice, calc_count)
+
         if slices:
             for slice_dim, slice_index in slices:
                 plotter.add_slice(
@@ -539,6 +546,7 @@ def main(
                     diff_rstep=resolved_diff_rstep,
                     diff_kind=diff_kind,
                     calc_kind=calc_kind,
+                    calc_end=calc_end,
                 )
             plotter.animate(
                 keyword,
@@ -628,6 +636,7 @@ def main(
                 diff_rstep=resolved_diff_rstep,
                 diff_kind=diff_kind,
                 calc_kind=calc_kind,
+                calc_end=calc_end,
             )
             plotter.screenshot(output)
 

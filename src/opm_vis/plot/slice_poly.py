@@ -10,7 +10,13 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from opm_vis.utils.calc import apply_slice_calc, resolve_calc_range
 from opm_vis.utils.diff import compute_diff
-from opm_vis.utils.grid import _SLICE_AXIS, GridSlice2D, GridSlice3D, _GridSlice, slice_range_layer_grid
+from opm_vis.utils.grid import (
+    GridSlice2D,
+    GridSlice3D,
+    _GridSlice,
+    slice_dimension_size,
+    slice_range_layer_grid,
+)
 from opm_vis.utils.restart import RestartReader, Wells
 from opm_vis.utils.static import InitReader
 
@@ -158,7 +164,7 @@ class _SlicePoly(_GridSlice, ABC):
         Only the active cells actually spanned by the layer range are read (one combined call
         to _read_keyword per report step needed), not the whole grid.
         """
-        n_slice = self.egrid.dimension[_SLICE_AXIS[self.slice_dim]]
+        n_slice = slice_dimension_size(self.egrid, self.slice_dim)
         start, end = resolve_calc_range(self.slice_ind, n_slice, count)
         layer_grid = slice_range_layer_grid(self.egrid, self.slice_dim, start, end)
 

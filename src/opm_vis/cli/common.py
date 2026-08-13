@@ -510,6 +510,7 @@ def default_output_name(
     diff_rstep: int | None = None,
     diff_kind: str = "plain",
     calc_kind: str | None = None,
+    calc_end: int | None = None,
 ) -> str:
     """
     Build an output filename when --save is given with no path
@@ -536,17 +537,23 @@ def default_output_name(
     calc_kind : str | None, optional
         See opm_vis.utils.calc.CALC_KINDS, by default None (not a calculator plot). See
         resolve_calculator.
+    calc_end : int | None, optional
+        0-based index of the calculator's last aggregated layer, by default None (the end
+        returned by resolve_calc_range). Only used when calc_kind is given; appended to the
+        slice tag as e.g. "k1-3" (1-based, matching the -i/-j/-k index itself) instead of just
+        "k1", since --calculator always resolves to exactly one slice.
 
     Returns
     -------
     str
-        e.g. "SGAS_k1_60.png", "SGAS_k1_j6_0-120.gif", or "SGAS-diff0-absolute_k1_60.png"
-        with --diff, written to the current directory
+        e.g. "SGAS_k1_60.png", "SGAS_k1_j6_0-120.gif", "SGAS-diff0-absolute_k1_60.png" with
+        --diff, or "SGAS-mean_k1-3_60.png" with --calculator aggregating layers 1-3, written to
+        the current directory
 
     Notes
     -----
     The slice tag is 1-based, matching what the user typed on the command line via -i/-j/-k,
-    even though `slices` itself is 0-based internally.
+    even though `slices` (and calc_end) are 0-based internally.
     """
     if rsteps is not None:
         step_tag = f"{rsteps[0]}-{rsteps[-1]}"
@@ -555,7 +562,14 @@ def default_output_name(
     else:
         step_tag = "all"
 
-    slice_tag = "_".join(f"{dim}{index + 1}" for dim, index in slices) if slices else "grid"
+    if not slices:
+        slice_tag = "grid"
+    elif calc_kind is not None and calc_end is not None:
+        # --calculator requires exactly one of -i/-j/-k; see resolve_calculator
+        dim, index = slices[0]
+        slice_tag = f"{dim}{index + 1}-{calc_end + 1}"
+    else:
+        slice_tag = "_".join(f"{dim}{index + 1}" for dim, index in slices)
 
     keyword_tag = keyword
     if calc_kind is not None:
