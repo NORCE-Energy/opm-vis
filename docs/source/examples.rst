@@ -40,6 +40,47 @@ Everything else - colouring, wells, glyphs - works the same as on a slice:
    plotter.view_3d()
    plotter.show()
 
+Difference plots
+------------------
+
+Pass ``diff_rstep`` (and optionally ``diff_kind``) to colour by how much a keyword has changed
+since another report step, instead of its own values. ``diff_kind`` is one of ``"plain"``
+(the default, current minus reference), ``"absolute"`` (the plain difference's magnitude), or
+``"relative"`` (percent change from the reference):
+
+.. code-block:: python
+
+   from opm_vis.pvplot import GridPlotter
+
+   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter.add_slice("k", 0)
+
+   plotter.set_scalars("PRESSURE", rstep=60, diff_rstep=0, diff_kind="relative")
+   plotter.view_2d("k")
+   plotter.show()
+
+:meth:`~opm_vis.pvplot.GridPlotter.animate` takes the same ``diff_rstep``/``diff_kind``, always
+differencing every animated frame against the same fixed reference step.
+
+Vector glyphs
+--------------
+
+:meth:`~opm_vis.pvplot.GridPlotter.add_glyphs` overlays arrows from three keyword components
+(e.g. a displacement vector) on top of a slice's own scalar colouring. ``every_n`` thins out a
+dense grid by drawing only 1 arrow out of every N cells, without changing arrow size:
+
+.. code-block:: python
+
+   from opm_vis.pvplot import GridPlotter
+
+   plotter = GridPlotter(["tests/data/TPSA_LAGGED"])
+   plotter.add_slice("k", 0)
+   plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, slice_dim="k", slice_ind=0, every_n=4)
+
+   plotter.set_scalars("DISPZ", rstep=15)
+   plotter.view_2d("k")
+   plotter.show()
+
 Stepping through report steps
 ------------------------------
 

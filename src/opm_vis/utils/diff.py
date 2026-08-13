@@ -68,7 +68,7 @@ def diff_label(keyword: str, kind: str) -> str:
     Returns
     -------
     str
-        "ΔKEYWORD" for "plain"/"relative", "|ΔKEYWORD|" for "absolute"
+        "ΔKEYWORD" for "plain"/"relative", "\\|ΔKEYWORD\\|" for "absolute"
 
     Raises
     ------

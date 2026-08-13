@@ -17,7 +17,7 @@ Usage guide and API reference: https://norce-energy.github.io/opm-vis/
 Plot a keyword on a grid slice without writing any Python:
 
 ```bash
-opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 1 --rstep 60 --save sgas_k1.png
+opm-vis-pv tests/data/SPE1CASE1 -K SGAS -k 1 -r 60 --save sgas_k1.png
 ```
 
 ## API
