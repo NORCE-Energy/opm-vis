@@ -22,6 +22,24 @@ Basic slice with wells
    plotter.view_3d()
    plotter.show()
 
+Whole grid instead of a slice
+------------------------------
+
+:meth:`~opm_vis.pvplot.GridPlotter.add_grid` adds every active cell instead of one slice.
+Everything else - colouring, wells, glyphs - works the same as on a slice:
+
+.. code-block:: python
+
+   from opm_vis.pvplot import GridPlotter
+
+   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter.add_grid()
+
+   plotter.set_scalars("SGAS", rstep=60)
+   plotter.add_wells(60)
+   plotter.view_3d()
+   plotter.show()
+
 Stepping through report steps
 ------------------------------
 

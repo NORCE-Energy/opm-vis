@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from opm.io.ecl import EGrid
 
-from opm_vis.utils.grid import GridSlice2D, GridSlice3D
+from opm_vis.utils.grid import GridSlice2D, GridSlice3D, slice_active_indices
 
 # The case1/data_dir fixtures come from conftest.py. SPE1CASE1 is a fully active,
 # standard-oriented 10x10x3 Cartesian box grid (no inactive cells, no NaNs). A handful of
@@ -131,7 +131,8 @@ class _BoxEGrid:
     def ijk_from_active_index(self, act):
         return list(self._active[act])
 
-    def xyz_from_active_index(self, act):
+    def xyz_from_active_index(self, act, apply_mapaxes=False):
+        del apply_mapaxes  # no MAPAXES on this synthetic grid
         i, j, k = self._active[act]
         xs = [float(i + (c & 1)) for c in range(8)]
         ys = [float(j + ((c >> 1) & 1)) for c in range(8)]
@@ -162,6 +163,56 @@ def test_is_aligned_warns_when_no_parallelepiped_can_be_built():
     with pytest.warns(UserWarning, match="not successful"):
         aligned = obj.is_aligned()
     assert aligned is False
+
+
+# ---------------------------------------------------------------------------
+# slice_active_indices
+# ---------------------------------------------------------------------------
+
+
+def test_slice_active_indices_matches_full_plane_for_spe1(real_egrid):
+    nx, ny, _ = real_egrid.dimension
+
+    act = slice_active_indices(real_egrid, "k", 1)
+
+    expected = [real_egrid.active_index(i, j, 1) for i in range(nx) for j in range(ny)]
+    assert act == expected
+    assert len(act) == nx * ny  # SPE1CASE1 has no inactive cells
+
+
+def test_slice_active_indices_skips_inactive_cells():
+    # SPE1CASE1 has no inactive cells, so the skip-if-inactive branch needs a
+    # small synthetic (i, j) plane instead.
+    inactive = {(1, 0)}
+
+    class _PlaneEGrid:
+        dimension = (3, 2, 1)
+
+        def active_index(self, i, j, k):
+            del k
+            return -1 if (i, j) in inactive else i + j * 3
+
+    egrid = _PlaneEGrid()
+
+    act = slice_active_indices(egrid, "k", 0)
+
+    expected = [egrid.active_index(i, j, 0) for i in range(3) for j in range(2)]
+    expected = [a for a in expected if a >= 0]
+    assert act == expected
+    assert len(act) == 5  # one of the 6 (i, j) cells is inactive
+
+
+def test_slice_active_indices_reads_no_corners(real_egrid, monkeypatch):
+    # The whole point of pulling this out of _GridSlice: getting a slice's active cells must
+    # never need a single corner read, unlike GridSlice3D's own __init__.
+    def fail(*_args, **_kwargs):
+        raise AssertionError("slice_active_indices should never read any cell corners")
+
+    monkeypatch.setattr(EGrid, "xyz_from_active_index", fail)
+
+    act = slice_active_indices(real_egrid, "k", 1)
+
+    assert len(act) == 100  # 10x10 k-slice of SPE1CASE1
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +287,8 @@ def test_cell_corners_drops_rows_with_nan():
     }
 
     class _StubCornerEGrid:
-        def xyz_from_active_index(self, act):
+        def xyz_from_active_index(self, act, apply_mapaxes=False):
+            del apply_mapaxes
             return corners[act]
 
     obj = _bypass_init(

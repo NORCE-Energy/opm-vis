@@ -240,6 +240,64 @@ def test_global_clim_covers_every_report_step_by_default(plotter):
     assert everywhere[1] >= one_step[1]
 
 
+def test_set_scalars_diff_rstep_colours_by_the_difference(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("SGAS", 60, diff_rstep=0)
+
+    expected = plotter.case.diff("SGAS", 60, ref_rstep=0, kind="plain")
+    mesh = plotter._actors["k0"].mesh
+    np.testing.assert_allclose(
+        mesh.cell_data["SGAS"], expected[mesh.cell_data["ACTIVE_INDEX"]]
+    )
+
+
+def test_set_scalars_diff_kind_changes_the_values_drawn(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("SGAS", 60, diff_rstep=0, diff_kind="plain")
+    plain = plotter._actors["k0"].mesh.cell_data["SGAS"].copy()
+    plotter.set_scalars("SGAS", 60, diff_rstep=0, diff_kind="absolute")
+    absolute = plotter._actors["k0"].mesh.cell_data["SGAS"].copy()
+
+    np.testing.assert_allclose(absolute, np.abs(plain))
+
+
+def test_set_scalars_diff_takes_its_colour_limits_from_the_diff_data(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("SGAS", 60, diff_rstep=0)
+
+    low, high = plotter._actors["k0"].actor.mapper.scalar_range
+    assert (low, high) == pytest.approx(
+        plotter.case.value_range("SGAS", [60], diff_rstep=0, diff_kind="plain")
+    )
+
+
+def test_set_scalars_without_diff_rstep_is_unaffected(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("SGAS", 60)
+
+    expected = plotter.case.read("SGAS", 60)
+    mesh = plotter._actors["k0"].mesh
+    np.testing.assert_allclose(
+        mesh.cell_data["SGAS"], expected[mesh.cell_data["ACTIVE_INDEX"]]
+    )
+
+
+def test_global_clim_diff_rstep_covers_the_diff_not_the_values(plotter):
+    # PRESSURE is nonzero at report step 0, unlike SGAS, so its diff range is not coincidentally
+    # identical to its value range
+    values = plotter.global_clim("PRESSURE", [60])
+    diff = plotter.global_clim("PRESSURE", [60], diff_rstep=0)
+
+    assert diff != values
+    assert diff == pytest.approx(
+        plotter.case.value_range("PRESSURE", [60], diff_rstep=0)
+    )
+
+
 # ---------------------------------------------------------------------------
 # add_threshold / add_clip
 # ---------------------------------------------------------------------------
@@ -485,6 +543,14 @@ def test_scalar_bar_can_be_turned_off(plotter):
     plotter.set_scalars("SGAS", 60, scalar_bar=False)
 
     assert list(plotter.plotter.scalar_bars.keys()) == []
+
+
+def test_scalar_bar_is_titled_with_the_diff_kind(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("PRESSURE", 60, diff_rstep=0, diff_kind="relative")
+
+    assert list(plotter.plotter.scalar_bars.keys()) == ["ΔPRESSURE [%]"]
 
 
 # ---------------------------------------------------------------------------
@@ -760,6 +826,24 @@ def test_animate_uses_one_colour_range_for_every_frame(plotter, tmp_path):
     # Per-frame limits would make a frame's colours meaningless next to its neighbours'
     assert plotter._actors["k0"].actor.mapper.scalar_range == pytest.approx(
         plotter.global_clim("SGAS", rsteps)
+    )
+
+
+def test_animate_diff_rstep_uses_the_diff_colour_range(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+    rsteps = [0, 60, 120]
+
+    plotter.animate("SGAS", tmp_path / "a.gif", rsteps=rsteps, diff_rstep=0)
+
+    assert plotter._actors["k0"].actor.mapper.scalar_range == pytest.approx(
+        plotter.case.value_range("SGAS", rsteps, diff_rstep=0)
+    )
+    # The last frame animated should have been coloured by its diff from report step 0
+    np.testing.assert_allclose(
+        plotter._actors["k0"].mesh.cell_data["SGAS"],
+        plotter.case.diff("SGAS", rsteps[-1], ref_rstep=0)[
+            plotter._actors["k0"].mesh.cell_data["ACTIVE_INDEX"]
+        ],
     )
 
 

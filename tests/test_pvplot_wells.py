@@ -64,9 +64,10 @@ def test_trajectory_spans_the_thickness_of_its_completed_cell(egrid, wells):
     paths = well_paths(egrid, wells, 60)
 
     # SPE1CASE1's layers are 20, 30 and 50 ft thick from 8325 ft, so INJ in k=0 spans
-    # 8325-8345 and PROD in k=2 spans 8375-8425
+    # 8325-8345 and PROD in k=2 spans 8375-8425. z points up (see mesh._read_corners), so
+    # these depths come back negated.
     depths = sorted(paths.open_wells.points[:, 2])
-    np.testing.assert_allclose(depths, [8325.0, 8345.0, 8375.0, 8425.0])
+    np.testing.assert_allclose(depths, [-8425.0, -8375.0, -8345.0, -8325.0])
 
 
 def test_labels_are_anchored_at_the_top_of_their_own_trajectory(egrid, wells):
@@ -74,8 +75,9 @@ def test_labels_are_anchored_at_the_top_of_their_own_trajectory(egrid, wells):
 
     anchors = dict(zip(paths.label_names, paths.label_points[:, 2]))
 
-    # Not the shallowest point in the scene: each label sits on top of its own well
-    assert anchors == {"INJ": 8325.0, "PROD": 8375.0}
+    # Not the shallowest point in the scene: each label sits on top of its own well. z points
+    # up, so the shallower (smaller) OPM depth is the less negative value.
+    assert anchors == {"INJ": -8325.0, "PROD": -8375.0}
 
 
 def test_label_points_line_up_with_label_names(egrid, wells):
@@ -152,8 +154,9 @@ def test_multi_cell_completion_is_one_polyline(egrid):
 
     assert paths.open_wells.n_cells == 1  # one well, one polyline
     assert paths.open_wells.n_points == 6  # 3 cells, top and bottom face of each
-    # Anchored at the shallowest point of the whole path, not of the first cell alone
-    assert paths.label_points[0][2] == paths.open_wells.points[:, 2].min()
+    # Anchored at the shallowest point of the whole path, not of the first cell alone. z
+    # points up, so the shallowest point is the largest z, not the smallest.
+    assert paths.label_points[0][2] == paths.open_wells.points[:, 2].max()
 
 
 def test_well_without_any_completion_is_skipped(egrid):
@@ -170,3 +173,48 @@ def test_no_wells_at_all_gives_an_empty_result(egrid):
 
     assert paths.is_empty() is True
     assert paths.label_points.shape == (0, 3)
+
+
+# ---------------------------------------------------------------------------
+# well_paths(apply_mapaxes=...)
+# ---------------------------------------------------------------------------
+
+
+class _MapaxesAwareEGrid:
+    """Stands in for an EGrid whose grid has a MAPAXES translating by (dx, dy); reports
+    active_index like a single fully-active cell and mirrors the real xyz_from_ijk overload
+    of taking apply_mapaxes as an optional 4th argument."""
+
+    def __init__(self, dx, dy):
+        self._dx = dx
+        self._dy = dy
+
+    def active_index(self, i, j, k):
+        del i, j, k
+        return 0
+
+    def xyz_from_ijk(self, i, j, k, apply_mapaxes=False):
+        del j, k
+        offset = (self._dx, self._dy) if apply_mapaxes else (0.0, 0.0)
+        xs = [float(i) + offset[0]] * 8
+        ys = [0.0 + offset[1]] * 8
+        zs = [float(c >> 2 & 1) for c in range(8)]
+        return xs, ys, zs
+
+
+def test_apply_mapaxes_false_leaves_coordinates_untranslated():
+    egrid = _MapaxesAwareEGrid(dx=1000.0, dy=2000.0)
+    stub = _StubWells({"W": [0, 0, 0, True]})
+
+    paths = well_paths(egrid, stub, 0, apply_mapaxes=False)
+
+    np.testing.assert_allclose(paths.open_wells.points[:, :2], [[0.0, 0.0]] * 2)
+
+
+def test_apply_mapaxes_true_translates_coordinates():
+    egrid = _MapaxesAwareEGrid(dx=1000.0, dy=2000.0)
+    stub = _StubWells({"W": [0, 0, 0, True]})
+
+    paths = well_paths(egrid, stub, 0, apply_mapaxes=True)
+
+    np.testing.assert_allclose(paths.open_wells.points[:, :2], [[1000.0, 2000.0]] * 2)

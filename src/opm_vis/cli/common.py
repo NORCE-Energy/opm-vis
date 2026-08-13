@@ -22,12 +22,17 @@ COMMAND_SETTINGS = {
 PATHS_ARGUMENT = click.argument("paths", nargs=-1, required=False)
 
 KEYWORD_OPTION = click.option(
-    "--keyword", required=True, help="OPM keyword to plot, e.g. SGAS or PRESSURE."
+    "-K",
+    "--keyword",
+    default=None,
+    help="OPM keyword to plot, e.g. SGAS or PRESSURE. Required unless --grid-only is given.",
 )
 
 # -i/-j/-k replace the old --slice-dim/--slice-index pair: at least one is given, and its
-# value is the index of the slice on that dimension. Each is repeatable (-k 0 -k 5 -j 2) so
+# value is the index of the slice on that dimension. Each is repeatable (-k 1 -k 6 -j 3) so
 # several slices can be plotted together; this is also why --keyword lost its -k short form.
+# Indices are 1-based (Fortran/Eclipse-style, matching e.g. COMPDAT), converted to the 0-based
+# indices the rest of opm_vis uses internally by resolve_slices().
 SLICE_OPTIONS = [
     click.option(
         "-i",
@@ -36,7 +41,7 @@ SLICE_OPTIONS = [
         type=int,
         multiple=True,
         metavar="INDEX",
-        help="Slice on the i dimension at this index. Repeatable.",
+        help="Slice on the i dimension at this 1-based index. Repeatable.",
     ),
     click.option(
         "-j",
@@ -45,7 +50,7 @@ SLICE_OPTIONS = [
         type=int,
         multiple=True,
         metavar="INDEX",
-        help="Slice on the j dimension at this index. Repeatable.",
+        help="Slice on the j dimension at this 1-based index. Repeatable.",
     ),
     click.option(
         "-k",
@@ -54,7 +59,7 @@ SLICE_OPTIONS = [
         type=int,
         multiple=True,
         metavar="INDEX",
-        help="Slice on the k dimension at this index. Repeatable.",
+        help="Slice on the k dimension at this 1-based index. Repeatable.",
     ),
 ]
 
@@ -87,28 +92,91 @@ CLIM_OPTION = click.option(
     help="Colour limits. Defaults to the data range of the report step(s) shown.",
 )
 
-# --rstep is optional and its shape depends on --gif: a single report step normally, or a
-# START:END[:STEP] range for --gif (parsed by parse_rstep below, since click options can't have
-# a variable number of values). Left out entirely, a static keyword needs no report step at all,
-# and --gif covers every report step in the case.
-RSTEP_OR_GIF_OPTIONS = [
+# --rstep is optional and its shape depends on --animate: a single report step normally, or a
+# START:END[:STEP] range for --animate (parsed by parse_rstep below, since click options can't
+# have a variable number of values). Left out entirely, a static keyword needs no report step
+# at all, and --animate covers every report step in the case.
+RSTEP_OR_ANIMATE_OPTIONS = [
     click.option(
+        "-r",
         "--rstep",
         default=None,
         metavar="STEP | START:END[:STEP]",
         help=(
             "Report step to plot. A single value normally; a START:END or START:END:STEP range "
-            "with --gif (default: every report step in the case). Not needed at all for a "
+            "with --animate (default: every report step in the case). Not needed at all for a "
             "keyword that does not change over time."
         ),
     ),
     click.option(
-        "--gif", is_flag=True, default=False, help="Animate over report steps instead."
+        "--animate", is_flag=True, default=False, help="Animate over report steps instead."
     ),
     click.option(
-        "--fps", type=int, default=3, show_default=True, help="Frames per second for --gif."
+        "--fps", type=int, default=3, show_default=True, help="Frames per second for --animate."
     ),
 ]
+
+# --diff turns on difference mode; --diff-rstep/--diff-kind customize it and are otherwise
+# ignored. --diff-rstep is a report step number like --rstep, not a grid index, so it is not
+# part of the 1-based -i/-j/-k convention.
+DIFF_OPTIONS = [
+    click.option(
+        "-d",
+        "--diff",
+        is_flag=True,
+        default=False,
+        help="Plot the difference from --diff-rstep instead of --keyword's own values.",
+    ),
+    click.option(
+        "--diff-rstep",
+        type=int,
+        default=0,
+        show_default=True,
+        metavar="STEP",
+        help="Report step to difference against. Only used with --diff.",
+    ),
+    click.option(
+        "--diff-kind",
+        type=click.Choice(["plain", "absolute", "relative"]),
+        default="plain",
+        show_default=True,
+        help=(
+            "plain: value minus reference. absolute: the plain difference's magnitude. "
+            "relative: percent change from the reference. Only used with --diff."
+        ),
+    ),
+]
+
+# --grid-only skips scalar colouring entirely and plots the grid (or a slice of it, for
+# opm-vis-mpl always a slice) in a solid colour instead; --keyword is then neither needed nor
+# allowed. --grid-color customizes the fill colour, left as None to keep the backend's own
+# default.
+GRID_ONLY_OPTIONS = [
+    click.option(
+        "--grid-only",
+        is_flag=True,
+        default=False,
+        help="Plot the grid in a solid colour instead of colouring by --keyword. --keyword "
+        "must not be given in this mode.",
+    ),
+    click.option(
+        "--grid-color",
+        default=None,
+        metavar="COLOR",
+        help="Solid fill colour for --grid-only, e.g. a name or hex code. Defaults to the "
+        "backend's own fill colour.",
+    ),
+]
+
+# Draws each cell's outline on top of its fill colour - the two backends take this as a
+# different kwarg (show_edges vs. edgecolor), so each CLI translates this flag itself rather
+# than a shared helper forcing one shape on both.
+SHOW_EDGES_OPTION = click.option(
+    "--show-edges",
+    is_flag=True,
+    default=False,
+    help="Draw each cell's outline on top of its fill colour.",
+)
 
 
 def add_options(options: Sequence[Callable]) -> Callable:
@@ -151,6 +219,72 @@ def resolve_paths(paths: tuple[str, ...]) -> list[str]:
     return list(paths) if paths else ["./"]
 
 
+def resolve_diff_rstep(diff: bool, diff_rstep: int) -> int | None:
+    """
+    Resolve --diff/--diff-rstep into the diff_rstep value set_scalars/plot/animate expect
+
+    Parameters
+    ----------
+    diff : bool
+        Value of --diff
+    diff_rstep : int
+        Value of --diff-rstep
+
+    Returns
+    -------
+    int | None
+        diff_rstep if --diff was given, otherwise None (plot keyword's own values)
+    """
+    return diff_rstep if diff else None
+
+
+def resolve_keyword(keyword: str | None, grid_only: bool) -> str | None:
+    """
+    Validate --keyword/--grid-only are used correctly
+
+    Parameters
+    ----------
+    keyword : str | None
+        Value of --keyword
+    grid_only : bool
+        Value of --grid-only
+
+    Returns
+    -------
+    str | None
+        keyword unchanged - always a str unless grid_only, since exactly one of the two is
+        required
+
+    Raises
+    ------
+    click.UsageError
+        If --grid-only was given together with --keyword, or neither was given at all
+    """
+    if grid_only and keyword is not None:
+        raise click.UsageError("--keyword is not allowed together with --grid-only.")
+    if not grid_only and keyword is None:
+        raise click.UsageError("Pass --keyword, or --grid-only to plot without colouring it.")
+
+    return keyword
+
+
+def grid_color_kwargs(grid_color: str | None) -> dict:
+    """
+    Build the fill-colour kwarg for --grid-only, or none at all to keep the backend's default
+
+    Parameters
+    ----------
+    grid_color : str | None
+        Value of --grid-color
+
+    Returns
+    -------
+    dict
+        {} to leave the default fill colour, or {"color": grid_color}
+    """
+    return {} if grid_color is None else {"color": grid_color}
+
+
 def resolve_slices(
     slice_i: Sequence[int], slice_j: Sequence[int], slice_k: Sequence[int]
 ) -> list[tuple[str, int]]:
@@ -160,71 +294,80 @@ def resolve_slices(
     Parameters
     ----------
     slice_i : Sequence[int]
-        Values of -i
+        Values of -i, 1-based
     slice_j : Sequence[int]
-        Values of -j
+        Values of -j, 1-based
     slice_k : Sequence[int]
-        Values of -k
+        Values of -k, 1-based
 
     Returns
     -------
     list[tuple[str, int]]
-        One (dim, index) pair per -i/-j/-k given, at least one, grouped by dimension in i/j/k
-        order (the order between different dimensions on the command line isn't tracked, only
-        repeats of the same option)
+        One (dim, index) pair per -i/-j/-k given, grouped by dimension in i/j/k order (the
+        order between different dimensions on the command line isn't tracked, only repeats of
+        the same option). Empty if none were given at all - callers that need at least one
+        (opm-vis-mpl) check for that themselves; opm-vis-pv instead plots the whole grid.
+        Indices are converted to 0-based here, since that is what every reader/plotter in
+        opm_vis works in internally.
 
     Raises
     ------
     click.UsageError
-        If none were given, or the same (dim, index) pair was given more than once
+        If the same (dim, index) pair was given more than once, or an index was less than 1
     """
     slices = (
         [("i", value) for value in slice_i]
         + [("j", value) for value in slice_j]
         + [("k", value) for value in slice_k]
     )
-    if not slices:
-        raise click.UsageError("Pass at least one of -i, -j, or -k to select a slice.")
+
+    invalid = sorted({s for s in slices if s[1] < 1})
+    if invalid:
+        tags = ", ".join(f"{dim}{index}" for dim, index in invalid)
+        raise click.UsageError(
+            f"-i/-j/-k indices are 1-based; got {tags}. The first cell along an axis is 1, "
+            "not 0."
+        )
 
     duplicates = sorted({s for s in slices if slices.count(s) > 1})
     if duplicates:
         tags = ", ".join(f"{dim}{index}" for dim, index in duplicates)
         raise click.UsageError(f"Slice given more than once: {tags}.")
 
-    return slices
+    return [(dim, index - 1) for dim, index in slices]
 
 
-def parse_rstep(raw: str | None, gif: bool) -> int | tuple[int, int, int] | None:
+def parse_rstep(raw: str | None, animate: bool) -> int | tuple[int, int, int] | None:
     """
-    Parse --rstep, whose shape depends on --gif
+    Parse --rstep, whose shape depends on --animate
 
     Parameters
     ----------
     raw : str | None
         Raw value of --rstep
-    gif : bool
-        Value of --gif
+    animate : bool
+        Value of --animate
 
     Returns
     -------
     int | tuple[int, int, int] | None
         None if --rstep was not given (caller resolves a default); a single report step if
-        --gif is not set; an inclusive (start, end, step) range if --gif is set
+        --animate is not set; an inclusive (start, end, step) range if --animate is set
 
     Raises
     ------
     click.UsageError
-        If the value's shape does not match whether --gif was given, or it is not made of
+        If the value's shape does not match whether --animate was given, or it is not made of
         integers
     """
     if raw is None:
         return None
 
-    if not gif:
+    if not animate:
         if ":" in raw:
             raise click.UsageError(
                 "--rstep must be a single report step; a START:END[:STEP] range is only valid "
-                "with --gif."
+                "with --animate."
             )
         try:
             return int(raw)
@@ -234,7 +377,7 @@ def parse_rstep(raw: str | None, gif: bool) -> int | tuple[int, int, int] | None
     parts = raw.split(":")
     if len(parts) not in (2, 3):
         raise click.UsageError(
-            f"--rstep with --gif must be START:END or START:END:STEP, got '{raw}'."
+            f"--rstep with --animate must be START:END or START:END:STEP, got '{raw}'."
         )
     try:
         values = [int(part) for part in parts]
@@ -249,7 +392,7 @@ def parse_rstep(raw: str | None, gif: bool) -> int | tuple[int, int, int] | None
     return start, end, step
 
 
-def resolve_gif_rsteps(
+def resolve_animate_rsteps(
     available_steps: Sequence[int], rstep_range: tuple[int, int, int] | None
 ) -> list[int]:
     """
@@ -293,6 +436,8 @@ def default_output_name(
     rstep: int | None = None,
     rsteps: Sequence[int] | None = None,
     ext: str = "png",
+    diff_rstep: int | None = None,
+    diff_kind: str = "plain",
 ) -> str:
     """
     Build an output filename when --save is given with no path
@@ -302,18 +447,31 @@ def default_output_name(
     keyword : str
         OPM keyword being plotted
     slices : Sequence[tuple[str, int]]
-        Every (dim, index) slice being plotted
+        Every (dim, index) slice being plotted, 0-based as resolve_slices() returns them, or
+        empty for the whole grid (opm-vis-pv only)
     rstep : int | None, optional
         Single report step, for a still image
     rsteps : Sequence[int] | None, optional
-        Report steps being animated, for a gif
+        Report steps being animated, for --animate
     ext : str, optional
         File extension, by default "png"
+    diff_rstep : int | None, optional
+        Report step being differenced against, by default None (not a diff plot). See
+        resolve_diff_rstep.
+    diff_kind : str, optional
+        See opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by default
+        "plain"
 
     Returns
     -------
     str
-        e.g. "SGAS_k0_60.png" or "SGAS_k0_j5_0-120.gif", written to the current directory
+        e.g. "SGAS_k1_60.png", "SGAS_k1_j6_0-120.gif", or "SGAS-diff0-absolute_k1_60.png"
+        with --diff, written to the current directory
+
+    Notes
+    -----
+    The slice tag is 1-based, matching what the user typed on the command line via -i/-j/-k,
+    even though `slices` itself is 0-based internally.
     """
     if rsteps is not None:
         step_tag = f"{rsteps[0]}-{rsteps[-1]}"
@@ -322,14 +480,20 @@ def default_output_name(
     else:
         step_tag = "all"
 
-    slice_tag = "_".join(f"{dim}{index}" for dim, index in slices)
+    slice_tag = "_".join(f"{dim}{index + 1}" for dim, index in slices) if slices else "grid"
 
-    return f"{keyword}_{slice_tag}_{step_tag}.{ext}"
+    keyword_tag = keyword
+    if diff_rstep is not None:
+        keyword_tag += f"-diff{diff_rstep}"
+        if diff_kind != "plain":
+            keyword_tag += f"-{diff_kind}"
+
+    return f"{keyword_tag}_{slice_tag}_{step_tag}.{ext}"
 
 
 def require_dynamic_keyword_error(keyword: str) -> click.UsageError:
     """
-    Build the error for a time-varying keyword shown with neither --rstep nor --gif
+    Build the error for a time-varying keyword shown with neither --rstep nor --animate
 
     Parameters
     ----------
@@ -342,7 +506,8 @@ def require_dynamic_keyword_error(keyword: str) -> click.UsageError:
         Ready to raise
     """
     return click.UsageError(
-        f"{keyword} changes over time; pass --rstep to pick a report step, or --gif to animate."
+        f"{keyword} changes over time; pass --rstep to pick a report step, or --animate to "
+        "animate."
     )
 
 

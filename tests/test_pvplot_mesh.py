@@ -6,6 +6,7 @@ import pytest
 
 pytest.importorskip("pyvista")  # the pvplot backend is an optional extra
 
+from opm.io.ecl import EGrid  # noqa: E402
 from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh  # noqa: E402
 
 # The case1/data_dir fixtures come from conftest.py. SPE1CASE1 is a fully active,
@@ -43,7 +44,8 @@ class _BoxEGrid:
     def ijk_from_active_index(self, act):
         return list(self._active[act])
 
-    def xyz_from_active_index(self, act):
+    def xyz_from_active_index(self, act, apply_mapaxes=False):
+        del apply_mapaxes  # no MAPAXES on this synthetic grid
         if act in self._nan_cells:
             return [np.nan] * 8, [np.nan] * 8, [np.nan] * 8
         i, j, k = self._active[act]
@@ -66,7 +68,8 @@ class _FaultedPairEGrid:
     def ijk_from_active_index(self, act):
         return [act, 0, 0]
 
-    def xyz_from_active_index(self, act):
+    def xyz_from_active_index(self, act, apply_mapaxes=False):
+        del apply_mapaxes  # no MAPAXES on this synthetic grid
         offset = self._throw if act == 1 else 0.0
         xs = [float(act + (c & 1)) for c in range(8)]
         ys = [float((c >> 1) & 1) for c in range(8)]
@@ -90,6 +93,26 @@ def test_multiple_egrid_files_warns_and_loads_first(tmp_path, data_dir):
 
     with pytest.warns(UserWarning, match="Multiple .EGRID files"):
         GridMesh(str(tmp_path / "CASE"))
+
+
+def test_grid_mesh_without_mapaxes_is_unaffected(case1):
+    assert GridMesh(case1).apply_mapaxes is False
+
+
+def test_grid_mesh_detects_and_applies_mapaxes(mapaxes_case):
+    from opm.io.ecl import EGrid  # pylint: disable=import-outside-toplevel
+
+    x1, y1, x2, y2, x3, y3 = EGrid(mapaxes_case + ".EGRID").export_mapaxes()
+    assert (x3 - x2, y3 - y2) == pytest.approx((821.375, 0.0))
+    assert (x1 - x2, y1 - y2) == pytest.approx((0.0, 1473.0))
+
+    gmesh = GridMesh(mapaxes_case)
+    assert gmesh.apply_mapaxes is True
+
+    # MAPAXES.EGRID's transform is a pure translation to (x2, y2); cell (i=0, j=0) sits at the
+    # grid's local (x, y) origin, so the mesh's minimum bound should land exactly there.
+    assert gmesh.mesh.bounds.x_min == pytest.approx(x2)
+    assert gmesh.mesh.bounds.y_min == pytest.approx(y2)
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +227,71 @@ def test_negative_slice_ind_raises_value_error(grid_mesh):
         grid_mesh.slice_mask("k", -1)
 
 
+def test_extract_slice_does_not_need_the_full_mesh(case1):
+    gmesh = GridMesh(case1)
+
+    gmesh.extract_slice("k", 0)
+
+    assert gmesh._mesh is None  # the expensive hexahedral build was never triggered
+
+
+def test_extract_slice_reads_only_the_slices_own_cells(case1, monkeypatch):
+    # SPE1CASE1 is a 10x10x3 grid (300 active cells); a k-slice is only 100 of them
+    calls = []
+    original = EGrid.xyz_from_active_index
+
+    def counting(self, act, apply_mapaxes=False):
+        calls.append(act)
+        return original(self, act, apply_mapaxes)
+
+    monkeypatch.setattr(EGrid, "xyz_from_active_index", counting)
+
+    GridMesh(case1).extract_slice("k", 1)
+
+    assert len(calls) == 100
+
+
+def test_extract_slice_matches_the_hexahedral_meshs_own_slice(case1):
+    # Two separate GridMesh instances: one whose full mesh is forced to build first (the
+    # always-correct path extract_slice used to take unconditionally), one left alone (the
+    # new, lean path) - so the comparison cannot accidentally make the lean path look right
+    # just by secretly sharing the other's already-built mesh
+    lean = GridMesh(case1).extract_slice("k", 1)
+
+    built_first = GridMesh(case1)
+    _ = built_first.mesh
+    cached = built_first.extract_slice("k", 1)
+
+    assert lean.n_cells == cached.n_cells
+    assert lean.n_points == cached.n_points
+    np.testing.assert_array_equal(
+        sorted(lean.cell_data[ACTIVE_INDEX]), sorted(cached.cell_data[ACTIVE_INDEX])
+    )
+    np.testing.assert_allclose(lean.bounds, cached.bounds)
+    np.testing.assert_allclose(lean.volume, cached.volume)
+
+
+def test_extract_slice_reuses_an_already_built_mesh(case1, monkeypatch):
+    # The other direction from test_extract_slice_reads_only_the_slices_own_cells: once the
+    # full mesh is already in memory, extract_slice must not re-read any corners from the
+    # file a second time - it should fall back to the cheap extract_cells() path instead
+    gmesh = GridMesh(case1)
+    _ = gmesh.mesh
+
+    calls = []
+    original = EGrid.xyz_from_active_index
+
+    def counting(self, act, apply_mapaxes=False):
+        calls.append(act)
+        return original(self, act, apply_mapaxes)
+
+    monkeypatch.setattr(EGrid, "xyz_from_active_index", counting)
+
+    gmesh.extract_slice("k", 1)
+
+    assert len(calls) == 0
+
+
 # ---------------------------------------------------------------------------
 # quad_slice
 # ---------------------------------------------------------------------------
@@ -298,10 +386,11 @@ def test_slice_cell_centers_covers_the_same_cells_as_quad_slice(
 
 def test_slice_cell_centers_sits_on_the_slice_face_not_mid_cell(grid_mesh):
     # SPE1CASE1's k=0 layer spans depth 8325-8345 ft; the face centre for a k-slice must sit
-    # exactly on the shallow face, not at the layer's mid-depth
+    # exactly on the shallow face, not at the layer's mid-depth. z points up (see
+    # _read_corners), so this depth comes back negated.
     centers = grid_mesh.slice_cell_centers("k", 0)
 
-    np.testing.assert_allclose(centers.points[:, 2], 8325.0)
+    np.testing.assert_allclose(centers.points[:, 2], -8325.0)
 
 
 def test_slice_cell_centers_validates_its_arguments(grid_mesh):

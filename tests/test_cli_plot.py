@@ -22,7 +22,7 @@ def test_single_frame_writes_output_file(case1, runner, tmp_path):
     output = tmp_path / "sgas.png"
 
     result = runner.invoke(
-        main, [case1, "--keyword", "SGAS", "-k", "0", "--rstep", "60", "-s", str(output)]
+        main, [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "-s", str(output)]
     )
 
     assert result.exit_code == 0, result.output
@@ -30,20 +30,7 @@ def test_single_frame_writes_output_file(case1, runner, tmp_path):
     assert output.stat().st_size > 0
 
 
-def test_gif_writes_output_file(case1, runner, tmp_path):
-    output = tmp_path / "sgas.gif"
-
-    result = runner.invoke(
-        main,
-        [case1, "--keyword", "SGAS", "-k", "0", "--gif", "--rstep", "0:20", "-s", str(output)],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert output.exists()
-    assert output.stat().st_size > 0
-
-
-def test_gif_range_with_step(case1, runner, tmp_path):
+def test_animate_writes_output_file(case1, runner, tmp_path):
     output = tmp_path / "sgas.gif"
 
     result = runner.invoke(
@@ -53,8 +40,32 @@ def test_gif_range_with_step(case1, runner, tmp_path):
             "--keyword",
             "SGAS",
             "-k",
-            "0",
-            "--gif",
+            "1",
+            "--animate",
+            "--rstep",
+            "0:20",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_animate_range_with_step(case1, runner, tmp_path):
+    output = tmp_path / "sgas.gif"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "-k",
+            "1",
+            "--animate",
             "--rstep",
             "0:60:10",
             "-s",
@@ -70,15 +81,15 @@ def test_gif_range_with_step(case1, runner, tmp_path):
 def test_static_keyword_does_not_need_rstep(case1, runner, tmp_path):
     output = tmp_path / "poro.png"
 
-    result = runner.invoke(main, [case1, "--keyword", "PORO", "-k", "0", "-s", str(output)])
+    result = runner.invoke(main, [case1, "--keyword", "PORO", "-k", "1", "-s", str(output)])
 
     assert result.exit_code == 0, result.output
     assert output.exists()
     assert output.stat().st_size > 0
 
 
-def test_dynamic_keyword_without_rstep_or_gif_is_rejected(case1, runner):
-    result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "0"])
+def test_dynamic_keyword_without_rstep_or_animate_is_rejected(case1, runner):
+    result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "1"])
 
     assert result.exit_code != 0
     assert "changes over time" in result.output
@@ -87,11 +98,181 @@ def test_dynamic_keyword_without_rstep_or_gif_is_rejected(case1, runner):
 def test_save_with_no_path_generates_a_name(case1, runner):
     with runner.isolated_filesystem():
         result = runner.invoke(
-            main, [case1, "--keyword", "SGAS", "-k", "0", "--rstep", "60", "--save"]
+            main, [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "--save"]
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("SGAS_k0_60.png").exists()
+        assert Path("SGAS_k1_60.png").exists()
+
+
+# ---------------------------------------------------------------------------
+# --diff / --diff-rstep / --diff-kind
+# ---------------------------------------------------------------------------
+
+
+def test_diff_writes_output_file(case1, runner, tmp_path):
+    output = tmp_path / "sgas.png"
+
+    result = runner.invoke(
+        main,
+        [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "--diff", "-s", str(output)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_diff_default_name_reflects_diff_rstep_and_kind(case1, runner):
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            main,
+            [
+                case1,
+                "--keyword",
+                "PRESSURE",
+                "-k",
+                "1",
+                "--rstep",
+                "60",
+                "--diff",
+                "--diff-rstep",
+                "0",
+                "--diff-kind",
+                "absolute",
+                "--save",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert Path("PRESSURE-diff0-absolute_k1_60.png").exists()
+
+
+def test_diff_animate_writes_output_file(case1, runner, tmp_path):
+    output = tmp_path / "sgas.gif"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "-k",
+            "1",
+            "--animate",
+            "--rstep",
+            "0:60:20",
+            "--diff",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+# ---------------------------------------------------------------------------
+# --grid-only / --grid-color
+# ---------------------------------------------------------------------------
+
+
+def test_grid_only_writes_output_file(case1, runner, tmp_path):
+    output = tmp_path / "grid.png"
+
+    result = runner.invoke(main, [case1, "-k", "1", "--grid-only", "-s", str(output)])
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_grid_only_accepts_a_custom_color(case1, runner, tmp_path):
+    output = tmp_path / "grid.png"
+
+    result = runner.invoke(
+        main, [case1, "-k", "1", "--grid-only", "--grid-color", "tan", "-s", str(output)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_grid_only_requires_a_slice(case1, runner):
+    result = runner.invoke(main, [case1, "--grid-only"])
+
+    assert result.exit_code != 0
+    assert "at least one of -i, -j, or -k" in result.output
+
+
+def test_grid_only_default_output_name_uses_grid_tag(case1, runner):
+    with runner.isolated_filesystem():
+        result = runner.invoke(main, [case1, "-k", "1", "--grid-only", "--save"])
+
+        assert result.exit_code == 0, result.output
+        assert Path("GRID_k1_all.png").exists()
+
+
+# ---------------------------------------------------------------------------
+# --show-edges
+# ---------------------------------------------------------------------------
+
+
+def test_show_edges_writes_output_file(case1, runner, tmp_path):
+    output = tmp_path / "edges.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "-k",
+            "1",
+            "--rstep",
+            "60",
+            "--show-edges",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_show_edges_works_with_grid_only(case1, runner, tmp_path):
+    output = tmp_path / "edges.png"
+
+    result = runner.invoke(
+        main, [case1, "-k", "1", "--grid-only", "--show-edges", "-s", str(output)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_grid_only_and_keyword_together_is_rejected(case1, runner):
+    result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "1", "--grid-only"])
+
+    assert result.exit_code != 0
+    assert "--keyword is not allowed together with --grid-only" in result.output
+
+
+def test_neither_keyword_nor_grid_only_is_rejected(case1, runner):
+    result = runner.invoke(main, [case1, "-k", "1"])
+
+    assert result.exit_code != 0
+    assert "Pass --keyword, or --grid-only" in result.output
+
+
+def test_grid_only_with_animate_is_rejected(case1, runner):
+    result = runner.invoke(main, [case1, "-k", "1", "--grid-only", "--animate"])
+
+    assert result.exit_code != 0
+    assert "--grid-only does not support --animate" in result.output
 
 
 def test_paths_default_to_the_working_directory(data_dir, runner, tmp_path, monkeypatch):
@@ -101,10 +282,10 @@ def test_paths_default_to_the_working_directory(data_dir, runner, tmp_path, monk
         shutil.copy(source, case_dir / source.name)
 
     monkeypatch.chdir(case_dir)
-    result = runner.invoke(main, ["--keyword", "SGAS", "-k", "0", "--rstep", "60", "-s"])
+    result = runner.invoke(main, ["--keyword", "SGAS", "-k", "1", "--rstep", "60", "-s"])
 
     assert result.exit_code == 0, result.output
-    assert (case_dir / "SGAS_k0_60.png").exists()
+    assert (case_dir / "SGAS_k1_60.png").exists()
 
 
 def test_at_least_one_slice_dimension_is_required(case1, runner):
@@ -116,23 +297,23 @@ def test_at_least_one_slice_dimension_is_required(case1, runner):
 
 def test_more_than_one_slice_dimension_is_rejected(case1, runner):
     result = runner.invoke(
-        main, [case1, "--keyword", "SGAS", "-k", "0", "-i", "0", "--rstep", "60"]
+        main, [case1, "--keyword", "SGAS", "-k", "1", "-i", "1", "--rstep", "60"]
     )
 
     assert result.exit_code != 0
     assert "only supports one slice" in result.output
 
 
-def test_rstep_range_requires_gif(case1, runner):
-    result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "0", "--rstep", "0:60"])
+def test_rstep_range_requires_animate(case1, runner):
+    result = runner.invoke(main, [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "0:60"])
 
     assert result.exit_code != 0
-    assert "only valid with --gif" in result.output
+    assert "only valid with --animate" in result.output
 
 
-def test_gif_requires_a_range_not_a_single_step(case1, runner):
+def test_animate_requires_a_range_not_a_single_step(case1, runner):
     result = runner.invoke(
-        main, [case1, "--keyword", "SGAS", "-k", "0", "--gif", "--rstep", "60"]
+        main, [case1, "--keyword", "SGAS", "-k", "1", "--animate", "--rstep", "60"]
     )
 
     assert result.exit_code != 0
@@ -160,7 +341,7 @@ def test_unknown_keyword_is_a_clean_error(case1, runner, tmp_path):
             "--keyword",
             "NOPE",
             "-k",
-            "0",
+            "1",
             "--rstep",
             "60",
             "-s",

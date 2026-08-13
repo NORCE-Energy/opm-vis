@@ -1,6 +1,7 @@
 """ Plain-text unit labels and axis titles for VTK text rendering """
 from __future__ import annotations
 
+from opm_vis.utils.diff import diff_label
 from opm_vis.utils.units import Label
 
 # opm_vis.utils.units writes its unit labels as Matplotlib mathtext. VTK would render the
@@ -12,8 +13,10 @@ _MATHTEXT = {"$^3$": "³", r"$^\circ$": "°"}
 # Label returns this literal string when it does not recognise the unit convention itself
 _UNKNOWN = "UNKNOWN"
 
-# Axis names, in x, y, z order. z is depth, since the meshes keep OPM's depth-positive-down
-# coordinates rather than flipping them to elevation.
+# Axis names, in x, y, z order. z is depth: the meshes themselves are built with z pointing
+# up, matching pyvista's own convention (see mesh._read_corners), but
+# GridPlotter.show_axes_grid relabels the z-axis ticks with OPM's own depth-positive-down
+# sign, so the title stays Depth rather than Elevation.
 _AXIS_NAMES = ("E(x)", "N(y)", "Depth")
 
 
@@ -72,7 +75,7 @@ def unit(label: Label, keyword: str) -> str:
     return "" if plain == _UNKNOWN else plain
 
 
-def scalar_bar_title(label: Label, keyword: str) -> str:
+def scalar_bar_title(label: Label, keyword: str, *, diff_kind: str | None = None) -> str:
     """
     Title for the scalar bar of one keyword
 
@@ -82,16 +85,24 @@ def scalar_bar_title(label: Label, keyword: str) -> str:
         Unit label lookup for the case's unit convention
     keyword : str
         OPM keyword
+    diff_kind : str | None, optional
+        One of opm_vis.utils.diff.DIFF_KINDS, by default None. When given, the keyword is
+        shown as a difference (see opm_vis.utils.diff.diff_label) rather than its own value,
+        and "relative" is always labelled in percent regardless of the keyword's own unit.
 
     Returns
     -------
     str
-        Keyword followed by its unit in brackets, e.g. ``PRESSURE [barsa]``, or the bare
-        keyword when no unit is tabulated
+        Keyword (or its diff label) followed by its unit in brackets, e.g.
+        ``PRESSURE [barsa]`` or ``ΔPRESSURE [barsa]``, or without brackets when no unit
+        applies
     """
-    unit_label = unit(label, keyword)
+    name = keyword if diff_kind is None else diff_label(keyword, diff_kind)
+    if diff_kind == "relative":
+        return f"{name} [%]"
 
-    return f"{keyword} [{unit_label}]" if unit_label else keyword
+    unit_label = unit(label, keyword)
+    return f"{name} [{unit_label}]" if unit_label else name
 
 
 def axis_titles(label: Label) -> tuple[str, str, str]:

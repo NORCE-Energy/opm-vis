@@ -17,24 +17,14 @@ from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
 from opm_vis.pvplot.wells import well_paths
 from opm_vis.utils.units import Label
 
-# OPM's z axis is depth, increasing downwards, while VTK assumes z points up. Every camera
-# therefore needs its view-up vector flipped, or the model renders with its deepest layer at
-# the top of the screen.
-_DEPTH_UP = (0.0, 0.0, -1.0)
-
-# Camera setup per slice dimension for view_2d. Determined by rendering a single marked cell
-# and checking where it lands on screen: the cross-sections need both the negative viewing
-# side and the flipped view-up to put depth downwards and easting/northing to the right, while
-# the k-slice map view needs neither.
+# Camera setup per slice dimension for view_2d. GridMesh already negates z to point up (see
+# mesh._read_corners), matching pyvista's own convention, so these are plain pyvista view
+# presets with no manual view-up correction needed. Determined by rendering a single marked
+# cell and checking where it lands on screen: the cross-sections need the negative viewing
+# side to put easting/northing to the right, while the k-slice map view needs the default.
 _VIEW_2D = {
-    "i": lambda plotter: (
-        plotter.view_yz(negative=True),
-        plotter.set_viewup(_DEPTH_UP),
-    ),
-    "j": lambda plotter: (
-        plotter.view_xz(negative=True),
-        plotter.set_viewup(_DEPTH_UP),
-    ),
+    "i": lambda plotter: plotter.view_yz(negative=True),
+    "j": lambda plotter: plotter.view_xz(negative=True),
     "k": lambda plotter: plotter.view_xy(),
 }
 
@@ -92,6 +82,7 @@ class _GlyphSpec:
     factor: float
     scale: bool
     geom: pv.PolyData | None
+    every_n: int
 
 
 class GridPlotter:
@@ -423,7 +414,13 @@ class GridPlotter:
         truncation opm_vis.plot does. Calling this again for another report step replaces what
         is already there, which is what lets an animation follow wells opening and shutting.
         """
-        paths = well_paths(self.grid.egrid, self.case.wells, rstep, slices=slices)
+        paths = well_paths(
+            self.grid.egrid,
+            self.case.wells,
+            rstep,
+            slices=slices,
+            apply_mapaxes=self.grid.apply_mapaxes,
+        )
 
         # Replace whatever a previous call left behind, so report steps do not stack up
         for name in (_WELLS_OPEN, _WELLS_SHUT):
@@ -468,6 +465,7 @@ class GridPlotter:
         scale: bool = True,
         factor: float | None = None,
         geom: pv.PolyData | None = None,
+        every_n: int = 1,
         name: str | None = None,
         **kwargs,
     ) -> str:
@@ -502,6 +500,10 @@ class GridPlotter:
             picks one that draws the largest vector at about the width of one grid cell.
         geom : pv.PolyData | None, optional
             Glyph shape, by default None, which draws PyVista's arrow
+        every_n : int, optional
+            Keep only 1 cell out of every this many, by default 1 (every cell gets a glyph).
+            Thins out the arrows on a dense grid without changing their size; see the Notes
+            below.
         name : str | None, optional
             Name to register the glyphs under, by default None, which uses the three
             keywords (and the slice, if one was given)
@@ -524,6 +526,11 @@ class GridPlotter:
         each frame being renormalised to fill the same space. Pass global_glyph_factor(...)
         explicitly if this report step's own largest vector is not representative of the
         whole run.
+
+        every_n is applied after the factor is picked (or the peak magnitude is found, for an
+        explicit factor), so thinning out the arrows never changes how big the ones that
+        remain are - only how many of them there are. every_n=1 skips the thinning code
+        entirely, so a full-density plot pays no cost for the option's existence.
 
         quads only changes how a placement point is obtained, not the arrows themselves: a
         glyph only ever needs one point per cell, never that cell's actual volume, so skipping
@@ -548,7 +555,10 @@ class GridPlotter:
             peak = float(np.linalg.norm(vectors, axis=1).max())
             factor = self._auto_glyph_factor(source, peak, scale=scale)
 
-        glyphs = self._build_glyphs(source, vectors, scale=scale, factor=factor, geom=geom)
+        thinned_source, thinned_vectors = self._thin_glyph_source(source, vectors, every_n)
+        glyphs = self._build_glyphs(
+            thinned_source, thinned_vectors, scale=scale, factor=factor, geom=geom
+        )
 
         default_name = f"{x_keyword}-{y_keyword}-{z_keyword}"
         if slice_dim is not None:
@@ -572,6 +582,7 @@ class GridPlotter:
             factor=factor,
             scale=scale,
             geom=geom,
+            every_n=every_n,
         )
         self.rstep = rstep
 
@@ -586,6 +597,8 @@ class GridPlotter:
         cmap: str = "viridis",
         log_scale: bool = False,
         scalar_bar: bool = True,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
     ) -> None:
         """
         Colour everything that has been added by one keyword at one report step
@@ -605,6 +618,12 @@ class GridPlotter:
             Map colours logarithmically, by default False. Useful for permeability.
         scalar_bar : bool, optional
             Show a scalar bar labelled with the keyword and its unit, by default True
+        diff_rstep : int | None, optional
+            Colour by the difference from this report step instead of keyword's own values,
+            by default None (colour by the values themselves)
+        diff_kind : str, optional
+            One of opm_vis.utils.diff.DIFF_KINDS: "plain", "absolute" or "relative" (percent);
+            only used when diff_rstep is given, by default "plain"
 
         Notes
         -----
@@ -625,9 +644,17 @@ class GridPlotter:
                 "Nothing to colour! Call add_slice or add_grid before set_scalars."
             )
 
-        data = self.case.read(keyword, rstep)
+        if diff_rstep is None:
+            data = self.case.read(keyword, rstep)
+        else:
+            data = self.case.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
+
         scalar_range = (
-            clim if clim is not None else self.case.value_range(keyword, [rstep])
+            clim
+            if clim is not None
+            else self.case.value_range(
+                keyword, [rstep], diff_rstep=diff_rstep, diff_kind=diff_kind
+            )
         )
 
         for entry in targets:
@@ -652,7 +679,11 @@ class GridPlotter:
                 mapper.lookup_table.log_scale = log_scale
 
         if scalar_bar:
-            self._update_scalar_bar(targets[0].actor.mapper, keyword)
+            self._update_scalar_bar(
+                targets[0].actor.mapper,
+                keyword,
+                diff_kind=diff_kind if diff_rstep is not None else None,
+            )
 
         # Record what is currently shown, for the scalar bar and title
         self.keyword = keyword
@@ -663,7 +694,9 @@ class GridPlotter:
         # on screen: screenshot() on its own reuses the previous frame buffer.
         self.plotter.render()
 
-    def _update_scalar_bar(self, mapper: Any, keyword: str) -> None:
+    def _update_scalar_bar(
+        self, mapper: Any, keyword: str, *, diff_kind: str | None = None
+    ) -> None:
         """
         Show a scalar bar for the keyword, replacing any bar for a different one
 
@@ -674,8 +707,11 @@ class GridPlotter:
             lookup table, so any one of them describes the whole scene.
         keyword : str
             OPM keyword currently being shown
+        diff_kind : str | None, optional
+            Passed straight through to labels.scalar_bar_title; see set_scalars, by default
+            None
         """
-        title = scalar_bar_title(self.label, keyword)
+        title = scalar_bar_title(self.label, keyword, diff_kind=diff_kind)
 
         # Only the report step usually changes, and the bar already reads correctly then
         if title == self._scalar_bar_title:
@@ -688,7 +724,12 @@ class GridPlotter:
         self._scalar_bar_title = title
 
     def global_clim(
-        self, keyword: str, rsteps: Sequence[int] | None = None
+        self,
+        keyword: str,
+        rsteps: Sequence[int] | None = None,
+        *,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
     ) -> tuple[float, float]:
         """
         Colour limits covering a keyword's full range over several report steps
@@ -699,6 +740,12 @@ class GridPlotter:
             OPM keyword
         rsteps : Sequence[int] | None, optional
             Report steps to cover, by default None, which uses every report step in the case
+        diff_rstep : int | None, optional
+            Cover the difference from this report step instead of keyword's own values, by
+            default None (the values themselves). Match whatever set_scalars/animate is
+            called with.
+        diff_kind : str, optional
+            See set_scalars; only used when diff_rstep is given, by default "plain"
 
         Returns
         -------
@@ -708,7 +755,9 @@ class GridPlotter:
         if rsteps is None:
             rsteps = self.case.report.report_steps()
 
-        return self.case.value_range(keyword, rsteps)
+        return self.case.value_range(
+            keyword, rsteps, diff_rstep=diff_rstep, diff_kind=diff_kind
+        )
 
     def set_vectors(self, rstep: int, *, name: str | None = None) -> None:
         """
@@ -744,8 +793,15 @@ class GridPlotter:
             vectors = self._glyph_vectors(
                 spec.source, spec.x_keyword, spec.y_keyword, spec.z_keyword, rstep
             )
+            thinned_source, thinned_vectors = self._thin_glyph_source(
+                spec.source, vectors, spec.every_n
+            )
             glyphs = self._build_glyphs(
-                spec.source, vectors, scale=spec.scale, factor=spec.factor, geom=spec.geom
+                thinned_source,
+                thinned_vectors,
+                scale=spec.scale,
+                factor=spec.factor,
+                geom=spec.geom,
             )
 
             entry = self._actors[target]
@@ -835,9 +891,10 @@ class GridPlotter:
 
         Cross-sections are oriented with depth increasing downwards and easting or northing
         increasing to the right. The k-slice map view is laid out the conventional way, with
-        easting to the right and northing up. Note that because OPM's z axis is depth, no
-        camera can give a map both northing up and easting right while looking from above; the
-        conventional layout is chosen over the literal viewing side.
+        easting to the right and northing up. Note that because the depth axis still reads
+        top-to-shallow-to-deep (see show_axes_grid), no camera can give a map both northing up
+        and easting right while looking from above; the conventional layout is chosen over the
+        literal viewing side.
         """
         if slice_dim not in _VIEW_2D:
             raise TypeError(
@@ -860,23 +917,21 @@ class GridPlotter:
         azimuth : float, optional
             Degrees to rotate the camera about the depth axis, by default 30.0
         elevation : float, optional
-            Degrees to lift the camera, by default 45.0
+            Degrees to lift the camera above the horizontal, by default 45.0. Negative values
+            look up at the model from below instead.
 
         Notes
         -----
-        The view-up vector is flipped to -z. PyVista's default assumes z points up, so on
-        OPM's depth-positive-down coordinates the isometric view otherwise renders the model
-        upside down, with the deepest layer above the shallowest.
+        GridMesh's z already points up (see mesh._read_corners), matching pyvista's own
+        convention, so no view-up correction is needed to keep the shallowest layer on top.
 
-        That flip also leaves the camera *below* the model, so an elevation of zero looks up at
-        the base of the reservoir. The elevation needed to get above it depends on the vertical
-        exaggeration - roughly 15 degrees at z_scale 15, but past 25 at z_scale 1 - and the
-        default of 45 clears it either way. Measured by marking the top and bottom layers and
-        checking which one is not occluded.
+        The starting point is a plain horizontal view (elevation exactly 0) rather than
+        pyvista's isometric preset, whose own baked-in ~35 degree tilt would otherwise add to
+        whatever `elevation` asks for - most noticeably turning the default call into a
+        near-vertical, degenerate view on a reservoir far wider than it is thick.
         """
         self.plotter.disable_parallel_projection()
-        self.plotter.view_isometric()
-        self.plotter.set_viewup(_DEPTH_UP)
+        self.plotter.view_vector((0.0, -1.0, 0.0), viewup=(0.0, 0.0, 1.0))
 
         # All three axes are meaningful again, see show_axes_grid
         self._view_2d_dim = None
@@ -914,6 +969,12 @@ class GridPlotter:
         Axis titles carry the case's own length unit, so a field-units case is labelled in
         feet. opm_vis.plot hard-codes metres whatever the case uses.
 
+        The z-axis is labelled with depth increasing downwards, matching OPM's own
+        convention, even though the mesh's actual z coordinate points up (see
+        mesh._read_corners): the tick values shown are the negative of the geometry's own z,
+        via show_bounds' axes_ranges, rather than the mesh's z coordinate itself. Passing an
+        explicit `axes_ranges` (or `bounds`/`mesh`) overrides this.
+
         Call this after choosing the view. In a 2D view the axis pointing at the camera is
         left out, because drawing it would put a meaningless third axis - and its tick labels -
         across the middle of the picture; the bounding box has no way of knowing it is being
@@ -928,6 +989,15 @@ class GridPlotter:
         kwargs.setdefault("xtitle", xtitle)
         kwargs.setdefault("ytitle", ytitle)
         kwargs.setdefault("ztitle", ztitle)
+
+        if "axes_ranges" not in kwargs:
+            bounds = kwargs.get("bounds")
+            if bounds is None:
+                mesh = kwargs.get("mesh")
+                bounds = mesh.bounds if mesh is not None else self.plotter.bounds
+            kwargs["axes_ranges"] = (
+                bounds[0], bounds[1], bounds[2], bounds[3], -bounds[4], -bounds[5],
+            )
 
         if self._view_2d_dim is not None:
             hidden = _OUT_OF_PLANE_AXIS[self._view_2d_dim]
@@ -1025,6 +1095,8 @@ class GridPlotter:
         wells_slices: Sequence[tuple[str, int]] | None = None,
         vectors: bool = False,
         title: bool = True,
+        diff_rstep: int | None = None,
+        diff_kind: str = "plain",
         **kwargs,
     ) -> None:
         """
@@ -1058,6 +1130,12 @@ class GridPlotter:
             global_glyph_factor(...) there if arrow length should stay comparable throughout.
         title : bool, optional
             Title each frame with its report date, by default True
+        diff_rstep : int | None, optional
+            Animate the difference from this (fixed) report step instead of keyword's own
+            values, by default None (the values themselves). rstep still varies frame to
+            frame; diff_rstep is the one report step every frame is differenced against.
+        diff_kind : str, optional
+            See set_scalars; only used when diff_rstep is given, by default "plain"
         kwargs : optional
             Optional arguments passed to set_scalars
 
@@ -1080,13 +1158,17 @@ class GridPlotter:
         if rsteps is None:
             rsteps = self.case.report.report_steps()
         if clim is None:
-            clim = self.global_clim(keyword, rsteps)
+            clim = self.global_clim(
+                keyword, rsteps, diff_rstep=diff_rstep, diff_kind=diff_kind
+            )
 
         frame_kwargs = {
             "wells": wells,
             "wells_slices": wells_slices,
             "vectors": vectors,
             "title": title,
+            "diff_rstep": diff_rstep,
+            "diff_kind": diff_kind,
             **kwargs,
         }
 
@@ -1322,6 +1404,48 @@ class GridPlotter:
                 for keyword in (x_keyword, y_keyword, z_keyword)
             ]
         )
+
+    @staticmethod
+    def _thin_glyph_source(
+        source: pv.DataSet, vectors: NDArray[Any], every_n: int
+    ) -> tuple[pv.DataSet, NDArray[Any]]:
+        """
+        Keep only every every_n-th cell of a glyph source, and the matching vectors
+
+        Parameters
+        ----------
+        source : pv.DataSet
+            Glyph placement source, as returned by _glyph_source
+        vectors : NDArray[Any]
+            Vectors aligned to source's cells, with shape (source.n_cells, 3)
+        every_n : int
+            Keep 1 cell out of every this many, in source's own cell order. 1 keeps every
+            cell (a no-op, returning the inputs unchanged).
+
+        Returns
+        -------
+        tuple[pv.DataSet, NDArray[Any]]
+            source and vectors, thinned to the kept cells only
+
+        Raises
+        ------
+        ValueError
+            If every_n is less than 1
+
+        Notes
+        -----
+        extract_cells() works the same way here whether source is the full hexahedral mesh,
+        one of its slices, or a bare point cloud from the quads=True cell-centres path: a
+        PolyData point cloud with no explicit connectivity still has one cell per point, so
+        indexing by cell number thins the points too.
+        """
+        if every_n < 1:
+            raise ValueError(f"every_n must be at least 1, got {every_n}!")
+        if every_n == 1:
+            return source, vectors
+
+        indices = np.arange(0, source.n_cells, every_n)
+        return source.extract_cells(indices), vectors[indices]
 
     @staticmethod
     def _auto_glyph_factor(source: pv.DataSet, peak_magnitude: float, *, scale: bool) -> float:

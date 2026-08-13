@@ -85,6 +85,22 @@ def test_scalar_bar_title_omits_empty_brackets():
     assert scalar_bar_title(Label("metric"), "NOSUCHKW") == "NOSUCHKW"
 
 
+def test_scalar_bar_title_diff_kind_plain_keeps_the_unit():
+    assert scalar_bar_title(Label("field"), "PRESSURE", diff_kind="plain") == "ΔPRESSURE [psia]"
+
+
+def test_scalar_bar_title_diff_kind_absolute_wraps_in_bars():
+    assert (
+        scalar_bar_title(Label("field"), "PRESSURE", diff_kind="absolute")
+        == "|ΔPRESSURE| [psia]"
+    )
+
+
+def test_scalar_bar_title_diff_kind_relative_is_always_percent():
+    # SGAS's own unit is "-" (dimensionless), which must not leak into a relative diff
+    assert scalar_bar_title(Label("field"), "SGAS", diff_kind="relative") == "ΔSGAS [%]"
+
+
 # ---------------------------------------------------------------------------
 # axis_titles
 # ---------------------------------------------------------------------------

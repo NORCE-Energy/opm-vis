@@ -8,6 +8,8 @@ import numpy as np
 from numpy.typing import NDArray
 from opm.io.ecl import EGrid
 
+from opm_vis.utils.mapaxes import has_mapaxes
+
 # Global indices for slice quadrilateral
 _INDICES = {
     "i": [0, 2, 6, 4],
@@ -18,6 +20,55 @@ _INDICES = {
 # Grid dimension axis (0=x/i, 1=y/j, 2=z/k) corresponding to each slice dimension
 _SLICE_AXIS = {"i": 0, "j": 1, "k": 2}
 
+# The two grid dimension axes spanning each slice's own plane (the ones NOT being sliced on)
+_SLICE_PLANE_AXES = {"i": (1, 2), "j": (0, 2), "k": (0, 1)}
+
+
+def slice_active_indices(egrid: Any, slice_dim: str, slice_ind: int) -> list[int]:
+    """
+    Active indices of every cell on one i-, j- or k-slice, without reading any corners
+
+    Parameters
+    ----------
+    egrid : Any
+        opm.io.ecl.EGrid (or a test double exposing dimension/active_index)
+    slice_dim : str
+        'i', 'j', or 'k' slice of the 3D grid
+    slice_ind : int
+        Index of the slice
+
+    Returns
+    -------
+    list[int]
+        Active cell indices on the slice, in the same (ind_1, ind_2) nested-loop order
+        _GridSlice itself uses
+
+    Notes
+    -----
+    Cheap: only active_index() lookups, no per-cell corner reads. Shared by _GridSlice's own
+    _compute_active_indices() and by GridMesh.extract_slice(), which needs a slice's active
+    cells without paying for a full _GridSlice construction - that would also read (and mostly
+    discard) the slice's corner geometry, which GridMesh wants to read for itself, in full.
+    """
+    axis_1, axis_2 = _SLICE_PLANE_AXES[slice_dim]
+    nx1 = egrid.dimension[axis_1]
+    nx2 = egrid.dimension[axis_2]
+
+    act = []
+    for ind_1 in range(nx1):
+        for ind_2 in range(nx2):
+            if slice_dim == "i":
+                act_index = egrid.active_index(slice_ind, ind_1, ind_2)
+            elif slice_dim == "j":
+                act_index = egrid.active_index(ind_1, slice_ind, ind_2)
+            else:
+                act_index = egrid.active_index(ind_1, ind_2, slice_ind)
+
+            if act_index >= 0:
+                act.append(act_index)
+
+    return act
+
 # pylint: disable=unsubscriptable-object,too-many-instance-attributes
 # EGrid is a pybind class, so until stubs (.pyi files) are made, pylint unsubscriptable-object
 # errors will pop up.
@@ -25,6 +76,10 @@ class _GridSlice(ABC):
     """
     Setup grid from OPM EGRID file. Actual calculations in child classes.
     """
+
+    # Overridden in __init__ once the EGRID file has been located; kept as a class default so
+    # instances built by bypassing __init__ (test doubles with no MAPAXES) still have it.
+    apply_mapaxes = False
 
     def __init__(self, path: str, slice_dim: str, slice_ind: int) -> None:
         """
@@ -56,6 +111,7 @@ class _GridSlice(ABC):
                     f"Multiple .EGRID files in {path}. Importing {egrid_files[0]}."
                 )
             self.egrid = EGrid(egrid_files[0])
+            self.apply_mapaxes = has_mapaxes(egrid_files[0])
         else:
             raise FileNotFoundError(f"No .EGRID file found in {path}!")
 
@@ -128,7 +184,7 @@ class _GridSlice(ABC):
         while success is False and iteration < max_iteration:
             # Origin of the parallelepiped in the active grid, since inactive cells can be
             # unpredictable (moved around, squeezed, etc)
-            x_1, y_1, z_1 = self.egrid.xyz_from_active_index(origin)
+            x_1, y_1, z_1 = self.egrid.xyz_from_active_index(origin, self.apply_mapaxes)
             i, j, k = self.egrid.ijk_from_active_index(origin)
 
             # Search for an active cell by increasing i-, j-, and k-index, without searching past
@@ -144,9 +200,9 @@ class _GridSlice(ABC):
                 origin += 1
                 continue
 
-            x_2, y_2, _ = self.egrid.xyz_from_active_index(act_i)
-            x_3, y_3, _ = self.egrid.xyz_from_active_index(act_j)
-            _, _, z_2 = self.egrid.xyz_from_active_index(act_k)
+            x_2, y_2, _ = self.egrid.xyz_from_active_index(act_i, self.apply_mapaxes)
+            x_3, y_3, _ = self.egrid.xyz_from_active_index(act_j, self.apply_mapaxes)
+            _, _, z_2 = self.egrid.xyz_from_active_index(act_k, self.apply_mapaxes)
 
             # Vectors making up the parallelepiped
             v_1 = np.array([x_2[0] - x_1[0], y_2[0] - y_1[0], 0])
@@ -181,20 +237,7 @@ class _GridSlice(ABC):
         """
         Get active indices for a slice
         """
-        # Loop over slice grid dimension
-        for ind_1 in range(self.nx1):
-            for ind_2 in range(self.nx2):
-                # Arrange indices input to EGrid according to the slice dimension
-                if self.slice_dim == "i":
-                    act_index = self.egrid.active_index(self.slice_ind, ind_1, ind_2)
-                elif self.slice_dim == "j":
-                    act_index = self.egrid.active_index(ind_1, self.slice_ind, ind_2)
-                else:
-                    act_index = self.egrid.active_index(ind_1, ind_2, self.slice_ind)
-
-                # Check if active index at (i,j,k) is an active cell, if so add to list
-                if act_index >= 0:
-                    self.act.append(act_index)
+        self.act = slice_active_indices(self.egrid, self.slice_dim, self.slice_ind)
 
     def _cell_corners(self) -> None:
         """
@@ -212,7 +255,7 @@ class _GridSlice(ABC):
         for i, act in enumerate(self.act):
             # All 8 corner coordinates of the cell
             cell_corn_x, cell_corn_y, cell_corn_z = self.egrid.xyz_from_active_index(
-                act
+                act, self.apply_mapaxes
             )
 
             # Pick out local indices relevant for slice

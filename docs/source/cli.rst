@@ -16,48 +16,68 @@ Two slices in a 3D view, with wells (shown by default):
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 0 -j 5 --rstep 60 --view 3d --wells
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 1 -j 6 --rstep 60 --view 3d --wells
 
 A single k-slice at report step 60, saved to a PNG instead of opened interactively:
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 0 --rstep 60 --save sgas_k0.png
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 1 --rstep 60 --save sgas_k1.png
 
 Several slices at once in a 3D view, with wells and the grid outline for context:
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 --keyword PRESSURE -k 0 -j 5 --rstep 60 \
+   opm-vis-pv tests/data/SPE1CASE1 --keyword PRESSURE -k 1 -j 6 --rstep 60 \
        --view 3d --wells --wireframe --z-scale 15
+
+Leave out -i/-j/-k entirely to plot the whole active grid instead of a slice - this needs
+``--view 3d``, since the 2D view (the default) has no whole-grid concept to look down onto:
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS --rstep 60 --view 3d --wells --save sgas_grid.png
 
 Animate a keyword over every report step as a GIF:
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 0 --gif --fps 4 --save sgas.gif
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 1 --animate --fps 4 --save sgas.gif
 
 ``--quads`` builds the slice as flat quads instead of hexahedra, touching only the cells on
 that slice rather than materialising the whole 3D mesh. It's faster on large grids, whether for
-a single static slice or a long ``--gif`` animation, at the cost of losing the volume a slice
-would otherwise have (so thresholding/clipping aren't available on it):
+a single static slice or a long ``--animate`` animation, at the cost of losing the volume a
+slice would otherwise have (so thresholding/clipping aren't available on it):
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 0 --rstep 60 --quads --save sgas_k0.png
-   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 0 --gif --quads --save sgas.gif
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 1 --rstep 60 --quads --save sgas_k1.png
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 1 --animate --quads --save sgas.gif
 
 Overlay vector glyphs from a displacement field on top of a scalar-coloured slice:
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/TPSA_LAGGED --keyword DISPZ -k 0 --rstep 15 --glyphs DISPX DISPY DISPZ
+   opm-vis-pv tests/data/TPSA_LAGGED --keyword DISPZ -k 1 --rstep 15 --glyphs DISPX DISPY DISPZ
+
+Plot how much a keyword has changed since report step 0 (the default), as a percentage:
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 --keyword PRESSURE -k 1 --rstep 60 --diff --diff-kind relative
+
+``--diff`` also works with ``--animate``, differencing every animated frame against the same
+fixed ``--diff-rstep``:
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 --keyword SGAS -k 1 --animate --diff --save sgas_diff.gif
 
 The same keyword and slice with the alternative Matplotlib backend:
 
 .. code-block:: bash
 
-   opm-vis-mpl tests/data/SPE1CASE1 --keyword SGAS -k 0 --rstep 60 --save sgas_k0.png
+   opm-vis-mpl tests/data/SPE1CASE1 --keyword SGAS -k 1 --rstep 60 --save sgas_k1.png
 
 Option reference
 -----------------
