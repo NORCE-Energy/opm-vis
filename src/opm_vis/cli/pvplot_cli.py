@@ -364,12 +364,16 @@ def main(
     --diff colours by the difference from --diff-rstep (default: report step 0) instead of
     --keyword's own values; --diff-kind picks plain/absolute/relative(%).
 
-    --calculator aggregates --keyword across grid layers along the sliced dimension, from the
+    --calculator reduces --keyword across grid layers along the sliced dimension, from the
     given -i/-j/-k index to the grid's last layer (or --calc-count further layers after it),
     instead of colouring by the slice's own values; it needs exactly one of -i/-j/-k, and needs
-    --keyword (so it is not compatible with --grid-only). It combines with --diff as "diff
-    first, then aggregate": the per-cell difference between --rstep and --diff-rstep is
-    computed first, then --calculator aggregates that difference across the layer range.
+    --keyword (so it is not compatible with --grid-only). mean/sum aggregate every layer in
+    that range and combine with --diff as "diff first, then aggregate": the per-cell difference
+    between --rstep and --diff-rstep is computed first, then --calculator aggregates that
+    difference across the layer range. surface instead shows each lateral position's first
+    active cell in that range - its own geometry and value - skipping over any inactive/
+    pinched-out cells nearer -i/-j/-k, which is useful for e.g. a "top of reservoir" map through
+    an eroded or faulted structure.
 
     --grid-only plots the grid (or the chosen slice(s)) in a solid colour instead - --keyword
     is not needed, and not allowed, in this mode. --animate is not supported with --grid-only.
@@ -444,10 +448,15 @@ def main(
 
         if slices:
             for slice_dim, slice_index in slices:
+                # --calculator requires exactly one of -i/-j/-k (see resolve_calculator), so at
+                # most one iteration here ever matches calc_slice.
+                is_calc_slice = calc_slice is not None and (slice_dim, slice_index) == calc_slice
                 plotter.add_slice(
                     slice_dim,
                     slice_index,
                     quads=quads,
+                    surface=is_calc_slice and calc_kind == "surface",
+                    calc_count=calc_count if is_calc_slice else None,
                     opacity=opacity,
                     show_edges=show_edges,
                     **grid_kwargs,

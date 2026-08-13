@@ -106,3 +106,38 @@ def test_read_calc_diff_first_then_aggregate_matches_manual_computation(slc, cas
     at_0 = slc._read_calc("PRESSURE", 0, "mean", None)
     aggregated_then_diffed = (at_60 - at_0) / at_0 * 100.0
     assert not np.allclose(aggregated, aggregated_then_diffed)
+
+
+# ---------------------------------------------------------------------------
+# calc_kind="surface" - see opm_vis.utils.grid.slice_range_first_active_indices and
+# test_grid.py for the gap-filling behaviour itself (SPE1CASE1 has no inactive cells to
+# exercise that with); these confirm generate() takes the plain, non-aggregating branch for
+# "surface" rather than _read_calc/apply_slice_calc (which reject "surface"; see compute_calc).
+# ---------------------------------------------------------------------------
+
+
+def test_generate_with_calc_kind_surface_matches_plain_values(slc):
+    plain = slc.generate("PRESSURE", 60)
+    surface = slc.generate("PRESSURE", 60, calc_kind="surface")
+
+    np.testing.assert_allclose(surface.get_array(), plain.get_array())
+
+
+def test_generate_calc_kind_surface_combines_with_diff(slc):
+    plain_diff = slc.generate("PRESSURE", 60, diff_rstep=0, diff_kind="relative")
+    surface_diff = slc.generate(
+        "PRESSURE", 60, calc_kind="surface", diff_rstep=0, diff_kind="relative"
+    )
+
+    np.testing.assert_allclose(surface_diff.get_array(), plain_diff.get_array())
+
+
+def test_slicepoly2d_surface_true_matches_plain_when_fully_active(case1):
+    # SPE1CASE1 has no inactive cells, so surface's own geometry equals the plain slice's -
+    # a smoke test that the surface/calc_count constructor wiring works end to end, not a test
+    # of the gap-filling behaviour itself (see test_grid.py for that, with synthetic data).
+    plain = SlicePoly2D([case1], "k", 0)
+    surface = SlicePoly2D([case1], "k", 0, calc_count=None, surface=True)
+
+    assert surface.active_indices() == plain.active_indices()
+    np.testing.assert_allclose(surface.cell_corners(), plain.cell_corners())

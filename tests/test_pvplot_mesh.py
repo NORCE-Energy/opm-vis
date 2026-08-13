@@ -341,6 +341,75 @@ def test_quad_slice_does_not_need_the_full_mesh(case1):
 
 
 # ---------------------------------------------------------------------------
+# extract_range_slice / quad_slice(surface=True) (--calculator surface)
+#
+# SPE1CASE1 has no inactive cells, so surface's own range/gap-filling logic - covered by
+# opm_vis.utils.grid.slice_range_first_active_indices's own tests, with synthetic data - has
+# nothing to fill in here: these confirm the plumbing (calc_count resolution, cell/quad
+# building, ACTIVE_INDEX, validation) matches the plain path exactly when every cell is active.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("slice_dim, slice_ind", [("i", 4), ("j", 5), ("k", 1)])
+def test_extract_range_slice_matches_extract_slice_when_fully_active(
+    grid_mesh, slice_dim, slice_ind
+):
+    plain = grid_mesh.extract_slice(slice_dim, slice_ind)
+    surface = grid_mesh.extract_range_slice(slice_dim, slice_ind)
+
+    assert surface.n_cells == plain.n_cells
+    np.testing.assert_array_equal(
+        sorted(surface.cell_data[ACTIVE_INDEX]), sorted(plain.cell_data[ACTIVE_INDEX])
+    )
+
+
+def test_extract_range_slice_respects_calc_count(grid_mesh):
+    # SPE1CASE1 has 3 k-layers; slice_ind=0 with calc_count=1 must only reach k=0/1, exactly
+    # like resolve_calc_range's own (start, end) - not the grid's last layer.
+    limited = grid_mesh.extract_range_slice("k", 0, calc_count=1)
+    full = grid_mesh.extract_range_slice("k", 0, calc_count=None)
+
+    # Fully active, so both cover the same (single) k=0 layer regardless of how far the range
+    # is allowed to reach - this only confirms calc_count is accepted/plumbed through without
+    # error, not the reach itself (nothing here to differ on, with no inactive cells).
+    assert limited.n_cells == full.n_cells
+
+
+def test_extract_range_slice_validates_its_arguments(grid_mesh):
+    with pytest.raises(TypeError, match="slice dimension is not valid"):
+        grid_mesh.extract_range_slice("x", 0)
+    with pytest.raises(ValueError, match="out of bounds"):
+        grid_mesh.extract_range_slice("k", 3)
+
+
+@pytest.mark.parametrize("slice_dim, slice_ind", [("i", 4), ("j", 5), ("k", 1)])
+def test_quad_slice_surface_matches_plain_when_fully_active(grid_mesh, slice_dim, slice_ind):
+    plain = grid_mesh.quad_slice(slice_dim, slice_ind)
+    surface = grid_mesh.quad_slice(slice_dim, slice_ind, surface=True)
+
+    assert surface.n_cells == plain.n_cells
+    np.testing.assert_array_equal(
+        sorted(surface.cell_data[ACTIVE_INDEX]), sorted(plain.cell_data[ACTIVE_INDEX])
+    )
+    np.testing.assert_allclose(surface.area, plain.area)
+
+
+def test_quad_slice_surface_validates_its_arguments(grid_mesh):
+    with pytest.raises(TypeError, match="slice dimension is not valid"):
+        grid_mesh.quad_slice("x", 0, surface=True)
+    with pytest.raises(ValueError, match="out of bounds"):
+        grid_mesh.quad_slice("k", 3, surface=True)
+
+
+def test_quad_slice_surface_does_not_need_the_full_mesh(case1):
+    gmesh = GridMesh(case1)
+
+    gmesh.quad_slice("k", 0, surface=True)
+
+    assert gmesh._mesh is None  # the expensive hexahedral build was never triggered
+
+
+# ---------------------------------------------------------------------------
 # cell_centers / slice_cell_centers
 # ---------------------------------------------------------------------------
 

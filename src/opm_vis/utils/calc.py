@@ -7,10 +7,16 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-# "mean": average of the active cells across the layer range. "sum": their sum. Adding a new
-# kind only needs a new entry here and a new branch in compute_calc - click.Choice(CALC_KINDS)
-# in the CLI picks it up automatically.
-CALC_KINDS = ("mean", "sum")
+# "mean": average of the active cells across the layer range. "sum": their sum. "surface": the
+# value of the first active cell in the range, scanning from its start (the given -i/-j/-k
+# index) towards its end - i.e. the shallowest active layer touched from that starting index,
+# skipping over any inactive/pinched-out ones in between. Unlike mean/sum, "surface" is not a
+# reduction compute_calc/apply_slice_calc can perform on an already-displayed slice's values:
+# see compute_calc's notes for why, and opm_vis.utils.grid.slice_range_first_active_indices for
+# where it is actually implemented instead. Adding a new *aggregating* kind only needs a new
+# entry here and a new branch in compute_calc - click.Choice(CALC_KINDS) in the CLI picks it up
+# automatically.
+CALC_KINDS = ("mean", "sum", "surface")
 
 
 def compute_calc(stacked: NDArray[Any], kind: str) -> NDArray[Any]:
@@ -23,7 +29,9 @@ def compute_calc(stacked: NDArray[Any], kind: str) -> NDArray[Any]:
         Values with shape (n_layers, n_positions). NaN marks a layer with no active cell at
         that position.
     kind : str
-        One of CALC_KINDS: "mean" or "sum"
+        "mean" or "sum" (the CALC_KINDS entries this function actually implements; see Notes
+        for why "surface" is not one of them, despite being a valid CALC_KINDS/--calculator
+        value)
 
     Returns
     -------
@@ -33,12 +41,24 @@ def compute_calc(stacked: NDArray[Any], kind: str) -> NDArray[Any]:
     Raises
     ------
     ValueError
-        If kind is not one of CALC_KINDS
+        If kind is not "mean" or "sum" - including "surface", see Notes
 
     Notes
     -----
     np.nanmean/np.nansum skip NaNs, so a position is aggregated only over the layers where it
     actually has an active cell - never padded with zeros or otherwise counting inactive cells.
+
+    "surface" is deliberately not implemented here: it does not aggregate a column of values at
+    all, it picks *which active cell* is displayed at each lateral position (the first active
+    one from the range's start), which changes the slice's own geometry, not just the value
+    shown on it. apply_slice_calc only ever overwrites cells already active on the displayed
+    slice (see its own notes) - and for those, the range's own first layer is by definition
+    already active, so a "first active layer" reduction here would always just return the
+    slice's own plain value, silently doing nothing. slice_poly.py's generate() and
+    pvplot's set_scalars()/global_clim() all skip calling this (and apply_slice_calc) for
+    "surface" accordingly, building the surface's geometry via
+    opm_vis.utils.grid.slice_range_first_active_indices instead - see _GridSlice's calc_end/
+    surface constructor arguments.
 
     A position with no active cell in any layer - inactive on the displayed slice itself, and
     so discarded by apply_slice_calc regardless of what is computed for it here - is an
@@ -48,6 +68,13 @@ def compute_calc(stacked: NDArray[Any], kind: str) -> NDArray[Any]:
     """
     if kind not in CALC_KINDS:
         raise ValueError(f"kind must be one of {CALC_KINDS}, got {kind!r}")
+
+    if kind == "surface":
+        raise ValueError(
+            '"surface" is not aggregated by compute_calc: it selects which active cell is '
+            "displayed at each lateral position rather than reducing a column of values - see "
+            "this function's own Notes."
+        )
 
     with warnings.catch_warnings(), np.errstate(invalid="ignore"):
         warnings.filterwarnings("ignore", message="Mean of empty slice")

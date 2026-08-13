@@ -201,12 +201,12 @@ class _SlicePolyCollection:
             One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
             default "plain"
         calc_kind : str | None, optional
-            One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
+            One of opm_vis.utils.calc.CALC_KINDS: reduce keyword across a range of layers
             along each slice's own dimension instead of using its own values, by default None.
             Ignored when polyc_dict is given, since its data was already generated (see
             animate()). Combines with diff_rstep: see SlicePoly.generate()'s notes.
         calc_count : int | None, optional
-            Limit calc_kind's aggregation to this many further layers after each slice's own
+            Limit calc_kind's layer range to this many further layers after each slice's own
             index, which is always included itself, by default None (continue to the grid's
             last layer). Only used when calc_kind is given.
         kwargs: optional
@@ -367,11 +367,11 @@ class _SlicePolyCollection:
             One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
             default "plain"
         calc_kind : str | None, optional
-            One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
+            One of opm_vis.utils.calc.CALC_KINDS: reduce keyword across a range of layers
             along each slice's own dimension instead of using its own values, by default None.
             Combines with diff_rstep: see SlicePoly.generate()'s notes.
         calc_count : int | None, optional
-            Limit calc_kind's aggregation to this many further layers after each slice's own
+            Limit calc_kind's layer range to this many further layers after each slice's own
             index, which is always included itself, by default None (continue to the grid's
             last layer). Only used when calc_kind is given.
         kwargs: optional
@@ -459,10 +459,10 @@ class _SlicePolyCollection:
             One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
             default "plain"
         calc_kind : str | None, optional
-            One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
+            One of opm_vis.utils.calc.CALC_KINDS: reduce keyword across a range of layers
             along each slice's own dimension instead of using its own values, by default None
         calc_count : int | None, optional
-            Limit calc_kind's aggregation to this many further layers after each slice's own
+            Limit calc_kind's layer range to this many further layers after each slice's own
             index, which is always included itself, by default None (continue to the grid's
             last layer). Only used when calc_kind is given.
 
@@ -647,7 +647,13 @@ class SlicePoly3DCollection(_SlicePolyCollection):
     Class for plotting collection of slices in 3D view
     """
 
-    def __init__(self, paths: list[str], slice_info: list[tuple[str, int]]) -> None:
+    def __init__(
+        self,
+        paths: list[str],
+        slice_info: list[tuple[str, int]],
+        calc_count: int | None = None,
+        surface: bool = False,
+    ) -> None:
         """
         Initialize class by setting up figure/axes.
 
@@ -658,9 +664,18 @@ class SlicePoly3DCollection(_SlicePolyCollection):
             entries are folders with restart runs.
         slice_info : list[tuple[str, int]]
             Info to generate slices: [(dimension=i, j, or k, index)]
+        calc_count : int | None, optional
+            Value of --calc-count, by default None. Only used when surface is True; passed to
+            every slice in slice_info, though --calculator (and so surface) only ever applies
+            to a single one in practice - see resolve_calculator.
+        surface : bool, optional
+            --calculator surface, by default False. See SlicePoly3D/_GridSlice for what this
+            changes about a slice's own geometry/active cells.
         """
         # Generate collection of slices
-        slice_coll = [SlicePoly3D(paths, dim, ind) for dim, ind in slice_info]
+        slice_coll = [
+            SlicePoly3D(paths, dim, ind, calc_count, surface) for dim, ind in slice_info
+        ]
 
         # Setup matplotlib figure
         fig = plt.figure()
@@ -708,7 +723,14 @@ class SlicePoly2DCollection(_SlicePolyCollection):
     Class for plotting slice in 2D view thus, not a collection per se
     """
 
-    def __init__(self, paths: list[str], slice_dim: str, slice_ind: int) -> None:
+    def __init__(
+        self,
+        paths: list[str],
+        slice_dim: str,
+        slice_ind: int,
+        calc_count: int | None = None,
+        surface: bool = False,
+    ) -> None:
         """
         Initialize class by setting up figure/axes.
 
@@ -717,11 +739,19 @@ class SlicePoly2DCollection(_SlicePolyCollection):
         paths : list[str]
             List of paths to OPM files. First entry considered to be the main folder; rest of
             entries are folders with restart runs.
-        slice_info : list[tuple[str, int]]
-            Info to generate slices: [(dimension=i, j, or k, index)]
+        slice_dim : str
+            Dimension to slice : i, j, or k
+        slice_ind : int
+            Index of slice
+        calc_count : int | None, optional
+            Value of --calc-count, by default None. Only used when surface is True; see
+            SlicePoly2D/_GridSlice.
+        surface : bool, optional
+            --calculator surface, by default False. See SlicePoly2D/_GridSlice for what this
+            changes about the slice's own geometry/active cells.
         """
         # Generate 2D slice and put in a list to conform with parent class methods
-        slice_coll = [SlicePoly2D(paths, slice_dim, slice_ind)]
+        slice_coll = [SlicePoly2D(paths, slice_dim, slice_ind, calc_count, surface)]
 
         # Setup matplotlib figure
         fig = plt.figure()

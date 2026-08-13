@@ -11,7 +11,8 @@ import pyvista as pv
 from numpy.typing import NDArray
 from opm.io.ecl import EGrid
 
-from opm_vis.utils.grid import GridSlice3D, slice_active_indices
+from opm_vis.utils.calc import resolve_calc_range
+from opm_vis.utils.grid import GridSlice3D, slice_active_indices, slice_range_first_active_indices
 from opm_vis.utils.mapaxes import has_mapaxes
 
 # OPM numbers the 8 corners of a cell so that bit 0 of the corner index selects i, bit 1
@@ -193,7 +194,55 @@ class GridMesh:
         active_indices = slice_active_indices(self.egrid, slice_dim, slice_ind)
         return self._mesh_from_corners(*self._read_corners(active_indices))
 
-    def quad_slice(self, slice_dim: str, slice_ind: int) -> pv.PolyData:
+    def extract_range_slice(
+        self, slice_dim: str, slice_ind: int, calc_count: int | None = None
+    ) -> pv.UnstructuredGrid:
+        """
+        Extract a --calculator surface "slice" as its own mesh, as hexahedra
+
+        Parameters
+        ----------
+        slice_dim : str
+            'i', 'j', or 'k' slice of the 3D grid
+        slice_ind : int
+            Index of slice - the range this scans for each lateral position's first active
+            cell always starts here
+        calc_count : int | None, optional
+            Value of --calc-count, by default None (continue to the grid's last layer); see
+            opm_vis.utils.calc.resolve_calc_range
+
+        Returns
+        -------
+        pv.UnstructuredGrid
+            The cells picked out by slice_range_first_active_indices, still as hexahedra - one
+            per lateral position that has at least one active cell in the range, each keeping
+            its own real (possibly different-depth) geometry
+
+        Notes
+        -----
+        Otherwise identical to extract_slice; see its own notes. The two are kept as separate
+        methods, rather than one with an optional range, so that the plain (single-layer) path
+        never pays for resolve_calc_range/slice_range_first_active_indices at all.
+        """
+        self._validate_slice(slice_dim, slice_ind)
+        n_slice = self.egrid.dimension[_SLICE_AXIS[slice_dim]]
+        _, end_ind = resolve_calc_range(slice_ind, n_slice, calc_count)
+        active_indices = slice_range_first_active_indices(self.egrid, slice_dim, slice_ind, end_ind)
+
+        if self._mesh is not None:
+            mask = np.isin(self.mesh.cell_data[ACTIVE_INDEX], active_indices)
+            return cast(pv.UnstructuredGrid, self.mesh.extract_cells(mask))
+
+        return self._mesh_from_corners(*self._read_corners(active_indices))
+
+    def quad_slice(
+        self,
+        slice_dim: str,
+        slice_ind: int,
+        *,
+        surface: bool = False,
+        calc_count: int | None = None,
+    ) -> pv.PolyData:
         """
         Build one i-, j- or k-slice as flat quads, without building the full mesh
 
@@ -202,12 +251,23 @@ class GridMesh:
         slice_dim : str
             'i', 'j', or 'k' slice of the 3D grid
         slice_ind : int
-            Index of slice
+            Index of slice - the range surface=True scans for each lateral position's first
+            active cell always starts here
+        surface : bool, optional
+            --calculator surface, by default False. When True, each lateral position's quad
+            comes from its own first active cell scanning from slice_ind onwards (or
+            calc_count further layers) instead of slice_ind's own layer, so quads can sit at
+            different depths from one lateral position to the next - a "draped" surface rather
+            than a flat one. See GridSlice3D.
+        calc_count : int | None, optional
+            Value of --calc-count, by default None (continue to the grid's last layer). Only
+            used when surface is True; see opm_vis.utils.calc.resolve_calc_range.
 
         Returns
         -------
         pv.PolyData
-            One quad per slice cell, carrying an ACTIVE_INDEX cell array
+            One quad per slice cell (or, with surface=True, per lateral position with at least
+            one active cell in the range), carrying an ACTIVE_INDEX cell array
 
         Notes
         -----
@@ -216,14 +276,16 @@ class GridMesh:
         volume, so thresholding, clipping and volume rendering need extract_slice instead.
 
         Reuses GridSlice3D from opm_vis.utils.grid, which already picks the four corners of
-        the slice face out of the corner-point grid and drops pinched-out cells.
+        the slice face out of the corner-point grid and drops pinched-out cells - and, with
+        surface=True, drapes them over each lateral position's own first active layer instead
+        of slice_ind's.
         """
         self._validate_slice(slice_dim, slice_ind)
+        slc = GridSlice3D(self.path, slice_dim, slice_ind, calc_count=calc_count, surface=surface)
 
         # (ncells, 4, 3) corner points, with the matching list of active indices. GridSlice3D
         # keeps OPM's own depth-positive-down z, unlike the rest of GridMesh - see the note in
         # _read_corners - so it is negated here to match.
-        slc = GridSlice3D(self.path, slice_dim, slice_ind)
         corners = slc.cell_corners().copy()
         corners[:, :, 2] *= -1
         ncells = corners.shape[0]

@@ -171,6 +171,8 @@ class GridPlotter:
         slice_ind: int,
         *,
         quads: bool = False,
+        surface: bool = False,
+        calc_count: int | None = None,
         name: str | None = None,
         **kwargs,
     ) -> str:
@@ -186,6 +188,17 @@ class GridPlotter:
         quads : bool, optional
             Add the slice as flat quads instead of hexahedra, by default False. Cheaper on a
             large grid, but cannot be thresholded or clipped afterwards.
+        surface : bool, optional
+            --calculator surface, by default False. When True, each lateral position's cell
+            comes from the first active layer from slice_ind onwards (or calc_count further
+            layers) instead of slice_ind's own layer - "draping" the slice over whichever cells
+            are actually active, rather than leaving gaps where slice_ind itself is inactive.
+            set_scalars then just colours these cells by their own plain values, same as with
+            no --calculator at all - see its own notes for why mean/sum need no such change
+            here.
+        calc_count : int | None, optional
+            Value of --calc-count, by default None (continue to the grid's last layer). Only
+            used when surface is True.
         name : str | None, optional
             Name to register the slice under, by default None, which uses e.g. "k0".
         kwargs : optional
@@ -196,11 +209,14 @@ class GridPlotter:
         str
             Name the slice was registered under
         """
-        mesh = (
-            self.grid.quad_slice(slice_dim, slice_ind)
-            if quads
-            else self.grid.extract_slice(slice_dim, slice_ind)
-        )
+        if quads:
+            mesh = self.grid.quad_slice(
+                slice_dim, slice_ind, surface=surface, calc_count=calc_count
+            )
+        elif surface:
+            mesh = self.grid.extract_range_slice(slice_dim, slice_ind, calc_count)
+        else:
+            mesh = self.grid.extract_slice(slice_dim, slice_ind)
 
         return self._add(mesh, name or f"{slice_dim}{slice_ind}", **kwargs)
 
@@ -638,11 +654,11 @@ class GridPlotter:
             Index of the slice calc_kind aggregates from, by default None. Required when
             calc_kind is given.
         calc_kind : str | None, optional
-            One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
+            One of opm_vis.utils.calc.CALC_KINDS: reduce keyword across a range of layers
             along slice_dim, from slice_ind to the grid's last layer (or calc_count further
             layers), instead of colouring by the slice's own values, by default None
         calc_count : int | None, optional
-            Limit calc_kind's aggregation to this many further layers after slice_ind, which is
+            Limit calc_kind's layer range to this many further layers after slice_ind, which is
             always included itself, by default None (continue to the grid's last layer). Only
             used when calc_kind is given.
 
@@ -665,6 +681,11 @@ class GridPlotter:
         much each cell changed between these two report steps", not the difference between the
         two report steps' own means/sums. Only the cells of the slice_dim/slice_ind slice are
         touched by the aggregate; every other dataset on screen keeps its plain values.
+
+        calc_kind="surface" does not aggregate at all: the dataset added for that slice by
+        add_slice(surface=True) already carries each lateral position's first active cell's own
+        ACTIVE_INDEX, so this method's plain, non-aggregating branch below - the same one used
+        with no --calculator - already colours it correctly, diff included.
         """
         targets = [entry for entry in self._actors.values() if entry.carries_scalars]
         if not targets:
@@ -677,7 +698,7 @@ class GridPlotter:
         else:
             data = self.case.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
 
-        if calc_kind is not None:
+        if calc_kind is not None and calc_kind != "surface":
             n_slice = slice_dimension_size(self.grid.egrid, slice_dim)
             start, end = resolve_calc_range(slice_ind, n_slice, calc_count)
             layer_grid = slice_range_layer_grid(self.grid.egrid, slice_dim, start, end)
@@ -818,7 +839,10 @@ class GridPlotter:
         if rsteps is None:
             rsteps = self.case.report.report_steps()
 
-        if calc_kind is None:
+        # "surface" colours cells by their own plain (or diff'd) values, same as no
+        # --calculator at all - see set_scalars' notes - so the whole-case range already
+        # covers it; only mean/sum need their own aggregated range computed below.
+        if calc_kind is None or calc_kind == "surface":
             return self.case.value_range(
                 keyword, rsteps, diff_rstep=diff_rstep, diff_kind=diff_kind
             )
@@ -1231,7 +1255,7 @@ class GridPlotter:
         slice_ind : int | None, optional
             See set_scalars; required when calc_kind is given
         calc_kind : str | None, optional
-            See set_scalars: aggregate keyword across a range of layers along slice_dim instead
+            See set_scalars: reduce keyword across a range of layers along slice_dim instead
             of animating the slice's own values, by default None
         calc_count : int | None, optional
             See set_scalars; only used when calc_kind is given

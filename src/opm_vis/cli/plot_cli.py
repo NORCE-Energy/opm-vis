@@ -95,12 +95,15 @@ def main(
     --diff colours by the difference from --diff-rstep (default: report step 0) instead of
     --keyword's own values; --diff-kind picks plain/absolute/relative(%).
 
-    --calculator aggregates --keyword across grid layers along the sliced dimension, from the
+    --calculator reduces --keyword across grid layers along the sliced dimension, from the
     given -i/-j/-k index to the grid's last layer (or --calc-count further layers after it),
     instead of colouring by the slice's own values; it needs --keyword (so it is not compatible
-    with --grid-only). It combines with --diff as "diff first, then aggregate": the per-cell
-    difference between --rstep and --diff-rstep is computed first, then --calculator aggregates
-    that difference across the layer range.
+    with --grid-only). mean/sum aggregate every layer in that range and combine with --diff as
+    "diff first, then aggregate": the per-cell difference between --rstep and --diff-rstep is
+    computed first, then --calculator aggregates that difference across the layer range.
+    surface instead shows each lateral position's first active cell in that range - its own
+    geometry and value - skipping over any inactive/pinched-out cells nearer -i/-j/-k, which is
+    useful for e.g. a "top of reservoir" map through an eroded or faulted structure.
 
     --grid-only plots the slice in a solid colour instead - --keyword is not needed, and not
     allowed, in this mode. --animate is not supported with --grid-only.
@@ -140,10 +143,15 @@ def main(
         poly_kwargs["clim"] = clim
 
     resolved_paths = resolve_paths(paths)
+    surface = calc_kind == "surface"
     if view == "3d":
-        coll = SlicePoly3DCollection(resolved_paths, [(slice_dim, slice_index)])
+        coll = SlicePoly3DCollection(
+            resolved_paths, [(slice_dim, slice_index)], calc_count=calc_count, surface=surface
+        )
     else:
-        coll = SlicePoly2DCollection(resolved_paths, slice_dim, slice_index)
+        coll = SlicePoly2DCollection(
+            resolved_paths, slice_dim, slice_index, calc_count=calc_count, surface=surface
+        )
 
     calc_end = None
     if calc_kind is not None:

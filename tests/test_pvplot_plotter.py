@@ -418,6 +418,60 @@ def test_global_clim_calc_kind_covers_the_aggregate_not_the_plain_values(plotter
 
 
 # ---------------------------------------------------------------------------
+# calc_kind="surface" - SPE1CASE1 has no inactive cells, so surface's own gap-filling geometry
+# has nothing to fill in here (see opm_vis.utils.grid.slice_range_first_active_indices's own
+# tests, and mesh.py's extract_range_slice/quad_slice(surface=True) tests, for that with
+# synthetic data). These confirm add_slice/set_scalars/global_clim wire "surface" through
+# correctly and take the plain, non-aggregating path - not apply_slice_calc, which raises for
+# "surface".
+# ---------------------------------------------------------------------------
+
+
+def test_add_slice_surface_matches_plain_when_fully_active(plotter):
+    plotter.add_slice("k", 0, name="plain")
+    plotter.add_slice("k", 0, surface=True, name="surface")
+
+    plain = plotter._actors["plain"].mesh
+    surface = plotter._actors["surface"].mesh
+    assert surface.n_cells == plain.n_cells
+    np.testing.assert_array_equal(
+        sorted(surface.cell_data["ACTIVE_INDEX"]), sorted(plain.cell_data["ACTIVE_INDEX"])
+    )
+
+
+def test_add_slice_surface_with_quads_matches_plain_when_fully_active(plotter):
+    plotter.add_slice("k", 0, quads=True, name="plain")
+    plotter.add_slice("k", 0, quads=True, surface=True, name="surface")
+
+    plain = plotter._actors["plain"].mesh
+    surface = plotter._actors["surface"].mesh
+    assert surface.n_cells == plain.n_cells
+    np.testing.assert_array_equal(
+        sorted(surface.cell_data["ACTIVE_INDEX"]), sorted(plain.cell_data["ACTIVE_INDEX"])
+    )
+
+
+def test_set_scalars_calc_kind_surface_matches_plain_values(plotter):
+    plotter.add_slice("k", 0, surface=True)
+
+    plotter.set_scalars("PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="surface")
+    surface_values = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+
+    plain = plotter.case.read("PRESSURE", 60)
+    mesh = plotter._actors["k0"].mesh
+    np.testing.assert_allclose(surface_values, plain[mesh.cell_data["ACTIVE_INDEX"]])
+
+
+def test_global_clim_calc_kind_surface_matches_plain_values(plotter):
+    values = plotter.global_clim("PRESSURE", [60])
+    surface = plotter.global_clim(
+        "PRESSURE", [60], slice_dim="k", slice_ind=0, calc_kind="surface"
+    )
+
+    assert surface == values
+
+
+# ---------------------------------------------------------------------------
 # add_threshold / add_clip
 # ---------------------------------------------------------------------------
 
