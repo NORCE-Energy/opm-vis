@@ -108,6 +108,17 @@ steps, per cell":
 
    opm-vis-pv tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -c mean -d --diff-rstep 0
 
+``-c surface`` is a different kind of calculator: instead of aggregating every layer in the
+range into one number, it shows each lateral position's *first active* cell from the given
+index onwards, draping the slice over whichever cells are actually active rather than leaving
+gaps where the given index itself is inactive/pinched-out - useful for e.g. a "top of
+reservoir" map through an eroded or faulted structure. It takes ``--calc-count`` and combines
+with ``--diff``/``--quads``/``--animate``/``--view 3d`` the same way mean/sum do:
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -c surface --save pressure_top.png
+
 Plot the grid itself in a solid colour instead of colouring by a keyword, with cell outlines
 drawn on top - ``--keyword``/``-K`` is neither needed nor allowed with ``--grid-only``:
 
