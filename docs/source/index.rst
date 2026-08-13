@@ -22,10 +22,16 @@ Features
   scaled by magnitude and comparable across report steps.
 - **Subsets.** Threshold or clip the grid to a region of interest (PyVista backend only, since a
   flat quad has no volume to cut).
+- **Whole grid or solid fill.** Plot every active cell at once, optionally in a single solid
+  colour with cell outlines drawn on top, instead of colouring by a keyword.
+- **Difference plots.** Colour by how much a keyword has changed since another report step -
+  plain, absolute magnitude, or percent change.
 - **Animation.** Step through report steps and export a GIF or MP4, or step interactively while
   reusing the same on-screen geometry.
 - **Restart-aware.** Point at a main run plus any number of restarts and read across them as one
   time series.
+- **MAPAXES-aware.** Grids with a MAPAXES transform are read in real-world coordinates, not raw
+  grid-local ones.
 - **Command-line tools.** ``opm-vis-pv`` and ``opm-vis-mpl`` plot or animate a case without
   writing any Python.
 
