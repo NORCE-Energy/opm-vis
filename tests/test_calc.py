@@ -1,4 +1,6 @@
 """ Unit tests for opm_vis.utils.calc, shared by the pvplot and plot backends """
+import warnings
+
 import numpy as np
 import pytest
 from opm.io.ecl import EGrid
@@ -51,6 +53,31 @@ def test_nan_layers_are_skipped_not_zero_padded():
 def test_unknown_kind_raises_value_error():
     with pytest.raises(ValueError, match="mean"):
         compute_calc(np.array([[1.0]]), "bogus")
+
+
+def test_mean_of_an_all_nan_column_does_not_warn():
+    # A position inactive on the displayed slice itself is an all-NaN column here (it is
+    # discarded by apply_slice_calc regardless) - NumPy's own "Mean of empty slice" warning for
+    # that is expected, not a bug, and must not surface.
+    stacked = np.array([[np.nan, 1.0], [np.nan, 2.0]])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_calc(stacked, "mean")
+
+    assert np.isnan(result[0])
+    assert result[1] == pytest.approx(1.5)
+
+
+def test_sum_of_an_all_nan_column_does_not_warn():
+    stacked = np.array([[np.nan, 1.0], [np.nan, 2.0]])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_calc(stacked, "sum")
+
+    assert result[0] == 0.0  # np.nansum's own convention for an all-NaN slice
+    assert result[1] == pytest.approx(3.0)
 
 
 # ---------------------------------------------------------------------------

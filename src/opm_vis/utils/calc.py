@@ -1,6 +1,7 @@
 """ Calculator (mean/sum) aggregation across a range of grid layers, shared by pvplot and plot """
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import numpy as np
@@ -38,11 +39,18 @@ def compute_calc(stacked: NDArray[Any], kind: str) -> NDArray[Any]:
     -----
     np.nanmean/np.nansum skip NaNs, so a position is aggregated only over the layers where it
     actually has an active cell - never padded with zeros or otherwise counting inactive cells.
+
+    A position with no active cell in any layer - inactive on the displayed slice itself, and
+    so discarded by apply_slice_calc regardless of what is computed for it here - is an
+    all-NaN column. NumPy's own "Mean of empty slice"/invalid-value warnings for that column are
+    an expected consequence of that, not a bug to report, and are suppressed accordingly; the
+    NaN result is correct.
     """
     if kind not in CALC_KINDS:
         raise ValueError(f"kind must be one of {CALC_KINDS}, got {kind!r}")
 
-    with np.errstate(invalid="ignore"):
+    with warnings.catch_warnings(), np.errstate(invalid="ignore"):
+        warnings.filterwarnings("ignore", message="Mean of empty slice")
         if kind == "mean":
             return np.nanmean(stacked, axis=0)
         return np.nansum(stacked, axis=0)
