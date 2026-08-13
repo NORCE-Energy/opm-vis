@@ -90,20 +90,23 @@ def resolve_calc_range(slice_ind: int, n_slice: int, count: int | None) -> tuple
     Parameters
     ----------
     slice_ind : int
-        0-based index of the slice being displayed - the range always starts here
+        0-based index of the slice being displayed - the range always starts here, and
+        slice_ind's own layer is always included regardless of count
     n_slice : int
         Number of layers along the slice's own dimension (egrid.dimension[axis])
     count : int | None
-        Value of --calc-count: limit the range to this many layers, or None to continue to the
-        grid's last layer
+        Value of --calc-count: how many further layers to include *after* slice_ind, in
+        addition to slice_ind itself, or None to continue all the way to the grid's last layer.
+        count=1 adds just slice_ind+1 (2 layers in total), count=2 adds slice_ind+1 and
+        slice_ind+2 (3 layers in total), and so on.
 
     Returns
     -------
     tuple[int, int]
         (start, end), both inclusive and 0-based: start is always slice_ind; end is
-        n_slice - 1 if count is None, otherwise min(slice_ind + count - 1, n_slice - 1)
+        n_slice - 1 if count is None, otherwise min(slice_ind + count, n_slice - 1)
     """
-    end = n_slice - 1 if count is None else min(slice_ind + count - 1, n_slice - 1)
+    end = n_slice - 1 if count is None else min(slice_ind + count, n_slice - 1)
     return slice_ind, end
 
 

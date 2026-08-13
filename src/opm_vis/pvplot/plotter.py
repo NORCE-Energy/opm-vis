@@ -639,11 +639,12 @@ class GridPlotter:
             calc_kind is given.
         calc_kind : str | None, optional
             One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
-            along slice_dim, from slice_ind to the grid's last layer (or calc_count layers),
-            instead of colouring by the slice's own values, by default None
+            along slice_dim, from slice_ind to the grid's last layer (or calc_count further
+            layers), instead of colouring by the slice's own values, by default None
         calc_count : int | None, optional
-            Limit calc_kind's aggregation to this many layers starting at slice_ind, by default
-            None (continue to the grid's last layer). Only used when calc_kind is given.
+            Limit calc_kind's aggregation to this many further layers after slice_ind, which is
+            always included itself, by default None (continue to the grid's last layer). Only
+            used when calc_kind is given.
 
         Notes
         -----

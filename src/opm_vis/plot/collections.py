@@ -206,8 +206,9 @@ class _SlicePolyCollection:
             Ignored when polyc_dict is given, since its data was already generated (see
             animate()). Combines with diff_rstep: see SlicePoly.generate()'s notes.
         calc_count : int | None, optional
-            Limit calc_kind's aggregation to this many layers, by default None (continue to the
-            grid's last layer). Only used when calc_kind is given.
+            Limit calc_kind's aggregation to this many further layers after each slice's own
+            index, which is always included itself, by default None (continue to the grid's
+            last layer). Only used when calc_kind is given.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -370,8 +371,9 @@ class _SlicePolyCollection:
             along each slice's own dimension instead of using its own values, by default None.
             Combines with diff_rstep: see SlicePoly.generate()'s notes.
         calc_count : int | None, optional
-            Limit calc_kind's aggregation to this many layers, by default None (continue to the
-            grid's last layer). Only used when calc_kind is given.
+            Limit calc_kind's aggregation to this many further layers after each slice's own
+            index, which is always included itself, by default None (continue to the grid's
+            last layer). Only used when calc_kind is given.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -460,8 +462,9 @@ class _SlicePolyCollection:
             One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
             along each slice's own dimension instead of using its own values, by default None
         calc_count : int | None, optional
-            Limit calc_kind's aggregation to this many layers, by default None (continue to the
-            grid's last layer). Only used when calc_kind is given.
+            Limit calc_kind's aggregation to this many further layers after each slice's own
+            index, which is always included itself, by default None (continue to the grid's
+            last layer). Only used when calc_kind is given.
 
         Returns
         -------

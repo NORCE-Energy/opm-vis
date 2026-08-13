@@ -151,8 +151,9 @@ DIFF_OPTIONS = [
 
 # -c/--calculator aggregates --keyword across a range of grid layers along the sliced
 # dimension, from the given -i/-j/-k index to the grid's last layer, instead of using the
-# slice's own values; --calc-count limits that range to fewer layers. Combines with --diff: see
-# opm_vis.utils.calc and _SlicePoly.generate()'s notes for what that means.
+# slice's own values; --calc-count limits that range to fewer layers, after the -i/-j/-k index
+# itself, which is always included. Combines with --diff: see opm_vis.utils.calc and
+# _SlicePoly.generate()'s notes for what that means.
 CALCULATOR_OPTIONS = [
     click.option(
         "-c",
@@ -161,16 +162,18 @@ CALCULATOR_OPTIONS = [
         type=click.Choice(CALC_KINDS),
         default=None,
         help="Aggregate --keyword across grid layers along the sliced dimension, from the "
-        "given -i/-j/-k index to the grid's last layer (or --calc-count layers). Requires "
-        "exactly one of -i/-j/-k.",
+        "given -i/-j/-k index to the grid's last layer (or --calc-count further layers). "
+        "Requires exactly one of -i/-j/-k.",
     ),
     click.option(
         "--calc-count",
         type=int,
         default=None,
         metavar="N",
-        help="Limit --calculator to N layers starting at the given -i/-j/-k index, instead of "
-        "continuing to the grid's last layer. Only used with --calculator.",
+        help="Limit --calculator to N further layers after the given -i/-j/-k index, which is "
+        "always included itself, instead of continuing to the grid's last layer - e.g. "
+        "--calc-count 1 aggregates the given index plus the next one. Only used with "
+        "--calculator.",
     ),
 ]
 

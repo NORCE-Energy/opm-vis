@@ -334,6 +334,9 @@ def test_set_scalars_calc_kind_averages_the_column_below_the_slice(plotter):
 
 
 def test_set_scalars_calc_count_limits_the_layer_range(plotter):
+    # SPE1CASE1 has 3 k-layers (0, 1, 2). slice_ind=0 is always included; calc_count=1 adds
+    # just the next layer (k=1), so it must differ from both the plain slice values (k=0 alone)
+    # and the full, no-count aggregate (k=0..2).
     plotter.add_slice("k", 0)
 
     plotter.set_scalars("PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="sum")
@@ -341,14 +344,26 @@ def test_set_scalars_calc_count_limits_the_layer_range(plotter):
     plotter.set_scalars(
         "PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="sum", calc_count=1
     )
-    one_layer = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+    two_layers = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
 
-    # Summing only 1 of the grid's 3 layers must differ from summing all of them
-    assert not np.array_equal(full_range, one_layer)
-    # calc_count=1 reduces to the slice's own plain values
-    expected = plotter.case.read("PRESSURE", 60)
+    plain = plotter.case.read("PRESSURE", 60)
     mesh = plotter._actors["k0"].mesh
-    np.testing.assert_allclose(one_layer, expected[mesh.cell_data["ACTIVE_INDEX"]])
+    plain_on_slice = plain[mesh.cell_data["ACTIVE_INDEX"]]
+
+    assert not np.allclose(full_range, two_layers)
+    assert not np.allclose(two_layers, plain_on_slice)
+
+    nx, ny, _ = plotter.grid.egrid.dimension
+    act_to_next_layer = {
+        plotter.grid.egrid.active_index(i, j, 0): plain[plotter.grid.egrid.active_index(i, j, 1)]
+        for i in range(nx)
+        for j in range(ny)
+        if plotter.grid.egrid.active_index(i, j, 0) >= 0
+    }
+    expected = plain_on_slice + np.array(
+        [act_to_next_layer[act] for act in mesh.cell_data["ACTIVE_INDEX"]]
+    )
+    np.testing.assert_allclose(two_layers, expected)
 
 
 def test_set_scalars_calc_kind_combines_with_diff(plotter):

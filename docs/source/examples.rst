@@ -67,8 +67,8 @@ Calculator
 
 Pass ``calc_kind`` (one of ``opm_vis.utils.calc.CALC_KINDS``: ``"mean"`` or ``"sum"``) together
 with ``slice_dim``/``slice_ind`` to aggregate a keyword across a range of grid layers along that
-dimension - from ``slice_ind`` to the grid's last layer, or ``calc_count`` layers - instead of
-colouring by the slice's own values:
+dimension - from ``slice_ind`` to the grid's last layer, or ``calc_count`` further layers after
+it (``slice_ind`` is always included itself) - instead of colouring by the slice's own values:
 
 .. code-block:: python
 

@@ -91,8 +91,9 @@ exactly one of ``-i``/``-j``/``-k``, and needs ``--keyword``:
 
    opm-vis-pv tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -c mean --save pressure_mean.png
 
-``--calc-count`` limits the aggregation to that many layers starting at the given index,
-instead of continuing to the grid's last layer:
+``--calc-count`` limits the aggregation to that many further layers after the given index -
+which is always included itself - instead of continuing to the grid's last layer, e.g.
+``--calc-count 1`` aggregates the given index plus the next one (2 layers in total):
 
 .. code-block:: bash
 

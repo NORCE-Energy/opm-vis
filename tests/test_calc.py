@@ -104,16 +104,18 @@ def test_resolve_calc_range_defaults_to_the_grid_s_last_layer():
     assert resolve_calc_range(slice_ind=3, n_slice=10, count=None) == (3, 9)
 
 
-def test_resolve_calc_range_limits_to_count_layers():
-    assert resolve_calc_range(slice_ind=3, n_slice=10, count=4) == (3, 6)
+def test_resolve_calc_range_limits_to_count_further_layers():
+    # count=4 further layers after slice_ind=3, which is itself always included: 3, 4, 5, 6, 7
+    assert resolve_calc_range(slice_ind=3, n_slice=10, count=4) == (3, 7)
 
 
 def test_resolve_calc_range_clamps_count_past_the_grid_s_last_layer():
     assert resolve_calc_range(slice_ind=8, n_slice=10, count=100) == (8, 9)
 
 
-def test_resolve_calc_range_count_of_one_is_just_the_slice_itself():
-    assert resolve_calc_range(slice_ind=5, n_slice=10, count=1) == (5, 5)
+def test_resolve_calc_range_count_of_one_adds_just_the_next_layer():
+    # slice_ind is always included; count=1 adds exactly slice_ind+1, not slice_ind alone
+    assert resolve_calc_range(slice_ind=5, n_slice=10, count=1) == (5, 6)
 
 
 # ---------------------------------------------------------------------------
@@ -180,17 +182,24 @@ def test_calc_matches_manual_column_aggregate_for_spe1(case1, real_egrid):
             assert result[act0] == pytest.approx(np.mean(column))
 
 
-def test_calc_count_of_one_matches_the_slice_s_own_plain_values(case1, real_egrid):
+def test_calc_count_of_one_adds_the_next_layer_to_the_slice_itself(case1, real_egrid):
+    # SPE1CASE1 has 3 k-layers (0, 1, 2): slice_ind=0 with count=1 must aggregate layers 0 and
+    # 1 - both the slice itself and the next one - not layer 0 alone.
     restart = RestartReader([case1])
     rstep = 60
     full_data = restart.read("PRESSURE", rstep)
 
-    start, end = resolve_calc_range(slice_ind=1, n_slice=3, count=1)
+    start, end = resolve_calc_range(slice_ind=0, n_slice=3, count=1)
+    assert (start, end) == (0, 1)
     layer_grid = slice_range_layer_grid(real_egrid, "k", start, end)
     result = apply_slice_calc(full_data, layer_grid, "sum")
 
     nx, ny, _ = real_egrid.dimension
     for i in range(nx):
         for j in range(ny):
+            act0 = real_egrid.active_index(i, j, 0)
             act1 = real_egrid.active_index(i, j, 1)
-            assert result[act1] == pytest.approx(full_data[act1])
+            expected = full_data[act0] + full_data[act1]
+            assert result[act0] == pytest.approx(expected)
+            # count=1 must differ from the slice's own plain value alone
+            assert result[act0] != pytest.approx(full_data[act0])

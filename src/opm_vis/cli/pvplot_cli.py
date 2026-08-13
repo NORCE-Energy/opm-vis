@@ -365,11 +365,11 @@ def main(
     --keyword's own values; --diff-kind picks plain/absolute/relative(%).
 
     --calculator aggregates --keyword across grid layers along the sliced dimension, from the
-    given -i/-j/-k index to the grid's last layer (or --calc-count layers), instead of colouring
-    by the slice's own values; it needs exactly one of -i/-j/-k, and needs --keyword (so it is
-    not compatible with --grid-only). It combines with --diff as "diff first, then aggregate":
-    the per-cell difference between --rstep and --diff-rstep is computed first, then
-    --calculator aggregates that difference across the layer range.
+    given -i/-j/-k index to the grid's last layer (or --calc-count further layers after it),
+    instead of colouring by the slice's own values; it needs exactly one of -i/-j/-k, and needs
+    --keyword (so it is not compatible with --grid-only). It combines with --diff as "diff
+    first, then aggregate": the per-cell difference between --rstep and --diff-rstep is
+    computed first, then --calculator aggregates that difference across the layer range.
 
     --grid-only plots the grid (or the chosen slice(s)) in a solid colour instead - --keyword
     is not needed, and not allowed, in this mode. --animate is not supported with --grid-only.

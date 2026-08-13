@@ -278,12 +278,13 @@ def test_calculator_default_name_reflects_calc_count(case1, offscreen, runner):
                 "-c",
                 "sum",
                 "--calc-count",
-                "2",
+                "1",
                 "--save",
             ],
         )
 
         assert result.exit_code == 0, result.output
+        # -k 1 is always included; --calc-count 1 adds just the next layer (k2)
         assert Path("PRESSURE-sum_k1-2_60.png").exists()
 
 

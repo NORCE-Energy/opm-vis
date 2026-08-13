@@ -37,11 +37,27 @@ def test_read_calc_mean_matches_manual_column_average(slc, case1, real_egrid):
     np.testing.assert_allclose(aggregated, expected, rtol=1e-6)
 
 
-def test_read_calc_count_of_one_matches_the_slice_s_own_values(slc, case1):
+def test_read_calc_count_of_one_adds_the_next_layer_to_the_slice_itself(slc, case1, real_egrid):
+    # SPE1CASE1 has 3 k-layers; slc is at k=0 (0-based). count=1 must aggregate k=0 and k=1 -
+    # both the slice itself and the next layer - differing from both the slice's own plain
+    # values and from the full (no-count) aggregate across all 3 layers.
+    from opm_vis.utils.restart import RestartReader
+
+    full_data = RestartReader([case1]).read("PRESSURE", 60)
     plain = slc._read_keyword("PRESSURE", 60, slc.active_indices())
+    full_range = slc._read_calc("PRESSURE", 60, "sum", None)
     aggregated = slc._read_calc("PRESSURE", 60, "sum", 1)
 
-    np.testing.assert_allclose(aggregated, plain)
+    assert not np.allclose(aggregated, plain)
+    assert not np.allclose(aggregated, full_range)
+
+    expected = []
+    for act in slc.active_indices():
+        i, j, _ = real_egrid.ijk_from_active_index(act)
+        act1 = real_egrid.active_index(i, j, 1)
+        expected.append(full_data[act] + full_data[act1])
+
+    np.testing.assert_allclose(aggregated, expected)
 
 
 def test_generate_with_calc_kind_sets_the_aggregated_array(slc):

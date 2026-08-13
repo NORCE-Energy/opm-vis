@@ -81,10 +81,12 @@ class _SlicePoly(_GridSlice, ABC):
         calc_kind : str | None, optional
             One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
             along this slice's own dimension, from slice_ind to the grid's last layer (or
-            calc_count layers), instead of using this slice's own values, by default None
+            calc_count further layers), instead of using this slice's own values, by default
+            None
         calc_count : int | None, optional
-            Limit calc_kind's aggregation to this many layers starting at slice_ind, by default
-            None (continue to the grid's last layer). Only used when calc_kind is given.
+            Limit calc_kind's aggregation to this many further layers after slice_ind, which is
+            always included itself, by default None (continue to the grid's last layer). Only
+            used when calc_kind is given.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -144,8 +146,8 @@ class _SlicePoly(_GridSlice, ABC):
         kind : str
             One of opm_vis.utils.calc.CALC_KINDS
         count : int | None
-            Limit the range to this many layers starting at slice_ind, or None to continue to
-            the grid's last layer
+            Limit the range to this many further layers after slice_ind, which is always
+            included itself, or None to continue to the grid's last layer
         diff_rstep : int | None, optional
             Aggregate the difference from this report step instead of keyword's own values, by
             default None (the values themselves). The difference is taken per cell, before
