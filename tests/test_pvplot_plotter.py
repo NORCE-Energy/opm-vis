@@ -299,6 +299,125 @@ def test_global_clim_diff_rstep_covers_the_diff_not_the_values(plotter):
 
 
 # ---------------------------------------------------------------------------
+# -c/--calculator (calc_kind/calc_count)
+# ---------------------------------------------------------------------------
+
+
+def test_set_scalars_calc_kind_averages_the_column_below_the_slice(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="mean")
+
+    full = plotter.case.read("PRESSURE", 60)
+    mesh = plotter._actors["k0"].mesh
+    nx, ny, nz = plotter.grid.egrid.dimension
+    expected = np.array(
+        [
+            np.mean(
+                [full[plotter.grid.egrid.active_index(i, j, k)] for k in range(nz)]
+            )
+            for i in range(nx)
+            for j in range(ny)
+        ]
+    )
+    # Reorder expected (built in (i, j) order) to match the mesh's own active-index order
+    act_to_expected = {
+        plotter.grid.egrid.active_index(i, j, 0): expected[i * ny + j]
+        for i in range(nx)
+        for j in range(ny)
+        if plotter.grid.egrid.active_index(i, j, 0) >= 0
+    }
+    ordered_expected = [
+        act_to_expected[act] for act in mesh.cell_data["ACTIVE_INDEX"]
+    ]
+    np.testing.assert_allclose(mesh.cell_data["PRESSURE"], ordered_expected)
+
+
+def test_set_scalars_calc_count_limits_the_layer_range(plotter):
+    # SPE1CASE1 has 3 k-layers (0, 1, 2). slice_ind=0 is always included; calc_count=1 adds
+    # just the next layer (k=1), so it must differ from both the plain slice values (k=0 alone)
+    # and the full, no-count aggregate (k=0..2).
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="sum")
+    full_range = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+    plotter.set_scalars(
+        "PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="sum", calc_count=1
+    )
+    two_layers = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+
+    plain = plotter.case.read("PRESSURE", 60)
+    mesh = plotter._actors["k0"].mesh
+    plain_on_slice = plain[mesh.cell_data["ACTIVE_INDEX"]]
+
+    assert not np.allclose(full_range, two_layers)
+    assert not np.allclose(two_layers, plain_on_slice)
+
+    nx, ny, _ = plotter.grid.egrid.dimension
+    act_to_next_layer = {
+        plotter.grid.egrid.active_index(i, j, 0): plain[plotter.grid.egrid.active_index(i, j, 1)]
+        for i in range(nx)
+        for j in range(ny)
+        if plotter.grid.egrid.active_index(i, j, 0) >= 0
+    }
+    expected = plain_on_slice + np.array(
+        [act_to_next_layer[act] for act in mesh.cell_data["ACTIVE_INDEX"]]
+    )
+    np.testing.assert_allclose(two_layers, expected)
+
+
+def test_set_scalars_calc_kind_combines_with_diff(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars(
+        "PRESSURE",
+        60,
+        slice_dim="k",
+        slice_ind=0,
+        calc_kind="mean",
+        diff_rstep=0,
+        diff_kind="relative",
+    )
+    diffed_then_aggregated = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+
+    plotter.set_scalars("PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="mean")
+    at_60 = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+    plotter.set_scalars("PRESSURE", 0, slice_dim="k", slice_ind=0, calc_kind="mean")
+    at_0 = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+    # relative change between the two report steps' own means - "aggregate first, then diff",
+    # the ordering this feature does NOT use
+    aggregated_then_diffed = (at_60 - at_0) / at_0 * 100.0
+
+    # "diff first, then aggregate": each cell's own relative change is computed before
+    # averaging, so this must differ from relative-differencing the two means afterwards -
+    # relative change is nonlinear, so the two orderings are not coincidentally equal here.
+    assert not np.allclose(diffed_then_aggregated, aggregated_then_diffed)
+
+    full = plotter.case.diff("PRESSURE", 60, ref_rstep=0, kind="relative")
+    nx, ny, nz = plotter.grid.egrid.dimension
+    mesh = plotter._actors["k0"].mesh
+    act_to_expected = {
+        plotter.grid.egrid.active_index(i, j, 0): np.mean(
+            [full[plotter.grid.egrid.active_index(i, j, k)] for k in range(nz)]
+        )
+        for i in range(nx)
+        for j in range(ny)
+        if plotter.grid.egrid.active_index(i, j, 0) >= 0
+    }
+    expected = [act_to_expected[act] for act in mesh.cell_data["ACTIVE_INDEX"]]
+    np.testing.assert_allclose(diffed_then_aggregated, expected)
+
+
+def test_global_clim_calc_kind_covers_the_aggregate_not_the_plain_values(plotter):
+    values = plotter.global_clim("PRESSURE", [60])
+    aggregated = plotter.global_clim(
+        "PRESSURE", [60], slice_dim="k", slice_ind=0, calc_kind="mean"
+    )
+
+    assert aggregated != values
+
+
+# ---------------------------------------------------------------------------
 # add_threshold / add_clip
 # ---------------------------------------------------------------------------
 
@@ -551,6 +670,24 @@ def test_scalar_bar_is_titled_with_the_diff_kind(plotter):
     plotter.set_scalars("PRESSURE", 60, diff_rstep=0, diff_kind="relative")
 
     assert list(plotter.plotter.scalar_bars.keys()) == ["ΔPRESSURE [%]"]
+
+
+def test_scalar_bar_is_titled_with_the_calc_kind(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="mean")
+
+    assert list(plotter.plotter.scalar_bars.keys()) == ["mean(PRESSURE) [psia]"]
+
+
+def test_scalar_bar_is_titled_with_the_calc_kind_and_diff_kind(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars(
+        "PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="mean", diff_rstep=0
+    )
+
+    assert list(plotter.plotter.scalar_bars.keys()) == ["mean(ΔPRESSURE) [psia]"]
 
 
 # ---------------------------------------------------------------------------

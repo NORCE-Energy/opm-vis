@@ -15,6 +15,9 @@ from opm_vis.pvplot.data import CaseData
 from opm_vis.pvplot.labels import axis_titles, scalar_bar_title
 from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
 from opm_vis.pvplot.wells import well_paths
+from opm_vis.utils.calc import apply_slice_calc, resolve_calc_range
+from opm_vis.utils.diff import compute_diff
+from opm_vis.utils.grid import slice_dimension_size, slice_range_layer_grid
 from opm_vis.utils.units import Label
 
 # Camera setup per slice dimension for view_2d. GridMesh already negates z to point up (see
@@ -599,6 +602,10 @@ class GridPlotter:
         scalar_bar: bool = True,
         diff_rstep: int | None = None,
         diff_kind: str = "plain",
+        slice_dim: str | None = None,
+        slice_ind: int | None = None,
+        calc_kind: str | None = None,
+        calc_count: int | None = None,
     ) -> None:
         """
         Colour everything that has been added by one keyword at one report step
@@ -624,6 +631,20 @@ class GridPlotter:
         diff_kind : str, optional
             One of opm_vis.utils.diff.DIFF_KINDS: "plain", "absolute" or "relative" (percent);
             only used when diff_rstep is given, by default "plain"
+        slice_dim : str | None, optional
+            'i', 'j', or 'k' dimension calc_kind aggregates along, by default None. Required
+            when calc_kind is given; must be the dimension of a slice added via add_slice.
+        slice_ind : int | None, optional
+            Index of the slice calc_kind aggregates from, by default None. Required when
+            calc_kind is given.
+        calc_kind : str | None, optional
+            One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
+            along slice_dim, from slice_ind to the grid's last layer (or calc_count further
+            layers), instead of colouring by the slice's own values, by default None
+        calc_count : int | None, optional
+            Limit calc_kind's aggregation to this many further layers after slice_ind, which is
+            always included itself, by default None (continue to the grid's last layer). Only
+            used when calc_kind is given.
 
         Notes
         -----
@@ -637,6 +658,13 @@ class GridPlotter:
 
         Every dataset gets the same colour limits, so a single scalar bar is valid for all of
         them. opm_vis.plot has to warn that its colorbar only describes the first slice.
+
+        calc_kind and diff_rstep combine as "diff first, then aggregate": the per-cell
+        difference between rstep and diff_rstep is computed first, across every layer the
+        calculator spans, and calc_kind aggregates that difference field - "the mean/sum of how
+        much each cell changed between these two report steps", not the difference between the
+        two report steps' own means/sums. Only the cells of the slice_dim/slice_ind slice are
+        touched by the aggregate; every other dataset on screen keeps its plain values.
         """
         targets = [entry for entry in self._actors.values() if entry.carries_scalars]
         if not targets:
@@ -649,11 +677,24 @@ class GridPlotter:
         else:
             data = self.case.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
 
+        if calc_kind is not None:
+            n_slice = slice_dimension_size(self.grid.egrid, slice_dim)
+            start, end = resolve_calc_range(slice_ind, n_slice, calc_count)
+            layer_grid = slice_range_layer_grid(self.grid.egrid, slice_dim, start, end)
+            data = apply_slice_calc(data, layer_grid, kind=calc_kind)
+
         scalar_range = (
             clim
             if clim is not None
-            else self.case.value_range(
-                keyword, [rstep], diff_rstep=diff_rstep, diff_kind=diff_kind
+            else self.global_clim(
+                keyword,
+                [rstep],
+                diff_rstep=diff_rstep,
+                diff_kind=diff_kind,
+                slice_dim=slice_dim,
+                slice_ind=slice_ind,
+                calc_kind=calc_kind,
+                calc_count=calc_count,
             )
         )
 
@@ -683,6 +724,7 @@ class GridPlotter:
                 targets[0].actor.mapper,
                 keyword,
                 diff_kind=diff_kind if diff_rstep is not None else None,
+                calc_kind=calc_kind,
             )
 
         # Record what is currently shown, for the scalar bar and title
@@ -695,7 +737,12 @@ class GridPlotter:
         self.plotter.render()
 
     def _update_scalar_bar(
-        self, mapper: Any, keyword: str, *, diff_kind: str | None = None
+        self,
+        mapper: Any,
+        keyword: str,
+        *,
+        diff_kind: str | None = None,
+        calc_kind: str | None = None,
     ) -> None:
         """
         Show a scalar bar for the keyword, replacing any bar for a different one
@@ -710,8 +757,11 @@ class GridPlotter:
         diff_kind : str | None, optional
             Passed straight through to labels.scalar_bar_title; see set_scalars, by default
             None
+        calc_kind : str | None, optional
+            Passed straight through to labels.scalar_bar_title; see set_scalars, by default
+            None
         """
-        title = scalar_bar_title(self.label, keyword, diff_kind=diff_kind)
+        title = scalar_bar_title(self.label, keyword, diff_kind=diff_kind, calc_kind=calc_kind)
 
         # Only the report step usually changes, and the bar already reads correctly then
         if title == self._scalar_bar_title:
@@ -730,6 +780,10 @@ class GridPlotter:
         *,
         diff_rstep: int | None = None,
         diff_kind: str = "plain",
+        slice_dim: str | None = None,
+        slice_ind: int | None = None,
+        calc_kind: str | None = None,
+        calc_count: int | None = None,
     ) -> tuple[float, float]:
         """
         Colour limits covering a keyword's full range over several report steps
@@ -746,6 +800,15 @@ class GridPlotter:
             called with.
         diff_kind : str, optional
             See set_scalars; only used when diff_rstep is given, by default "plain"
+        slice_dim : str | None, optional
+            See set_scalars; required when calc_kind is given
+        slice_ind : int | None, optional
+            See set_scalars; required when calc_kind is given
+        calc_kind : str | None, optional
+            See set_scalars; cover the calculator's aggregate instead of keyword's own values,
+            by default None
+        calc_count : int | None, optional
+            See set_scalars; only used when calc_kind is given
 
         Returns
         -------
@@ -755,9 +818,32 @@ class GridPlotter:
         if rsteps is None:
             rsteps = self.case.report.report_steps()
 
-        return self.case.value_range(
-            keyword, rsteps, diff_rstep=diff_rstep, diff_kind=diff_kind
-        )
+        if calc_kind is None:
+            return self.case.value_range(
+                keyword, rsteps, diff_rstep=diff_rstep, diff_kind=diff_kind
+            )
+
+        n_slice = slice_dimension_size(self.grid.egrid, slice_dim)
+        start, end = resolve_calc_range(slice_ind, n_slice, calc_count)
+        layer_grid = slice_range_layer_grid(self.grid.egrid, slice_dim, start, end)
+
+        # A static keyword does not vary with time, so one report step settles it - same
+        # shortcut CaseData.value_range takes for the plain/diff paths above.
+        steps = [rsteps[0]] if self.case.is_static(keyword, rsteps[0]) else rsteps
+
+        low, high = np.inf, -np.inf
+        for rstep in steps:
+            # diff first, then aggregate - see set_scalars' notes
+            base = (
+                self.case.read(keyword, rstep)
+                if diff_rstep is None
+                else self.case.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
+            )
+            data = apply_slice_calc(base, layer_grid, kind=calc_kind)
+            low = min(low, np.nanmin(data))
+            high = max(high, np.nanmax(data))
+
+        return float(low), float(high)
 
     def set_vectors(self, rstep: int, *, name: str | None = None) -> None:
         """
@@ -1097,6 +1183,10 @@ class GridPlotter:
         title: bool = True,
         diff_rstep: int | None = None,
         diff_kind: str = "plain",
+        slice_dim: str | None = None,
+        slice_ind: int | None = None,
+        calc_kind: str | None = None,
+        calc_count: int | None = None,
         **kwargs,
     ) -> None:
         """
@@ -1136,6 +1226,15 @@ class GridPlotter:
             frame; diff_rstep is the one report step every frame is differenced against.
         diff_kind : str, optional
             See set_scalars; only used when diff_rstep is given, by default "plain"
+        slice_dim : str | None, optional
+            See set_scalars; required when calc_kind is given
+        slice_ind : int | None, optional
+            See set_scalars; required when calc_kind is given
+        calc_kind : str | None, optional
+            See set_scalars: aggregate keyword across a range of layers along slice_dim instead
+            of animating the slice's own values, by default None
+        calc_count : int | None, optional
+            See set_scalars; only used when calc_kind is given
         kwargs : optional
             Optional arguments passed to set_scalars
 
@@ -1159,7 +1258,14 @@ class GridPlotter:
             rsteps = self.case.report.report_steps()
         if clim is None:
             clim = self.global_clim(
-                keyword, rsteps, diff_rstep=diff_rstep, diff_kind=diff_kind
+                keyword,
+                rsteps,
+                diff_rstep=diff_rstep,
+                diff_kind=diff_kind,
+                slice_dim=slice_dim,
+                slice_ind=slice_ind,
+                calc_kind=calc_kind,
+                calc_count=calc_count,
             )
 
         frame_kwargs = {
@@ -1169,6 +1275,10 @@ class GridPlotter:
             "title": title,
             "diff_rstep": diff_rstep,
             "diff_kind": diff_kind,
+            "slice_dim": slice_dim,
+            "slice_ind": slice_ind,
+            "calc_kind": calc_kind,
+            "calc_count": calc_count,
             **kwargs,
         }
 

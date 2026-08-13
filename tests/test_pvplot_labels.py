@@ -101,6 +101,35 @@ def test_scalar_bar_title_diff_kind_relative_is_always_percent():
     assert scalar_bar_title(Label("field"), "SGAS", diff_kind="relative") == "ΔSGAS [%]"
 
 
+def test_scalar_bar_title_calc_kind_wraps_the_keyword():
+    assert (
+        scalar_bar_title(Label("field"), "PRESSURE", calc_kind="mean") == "mean(PRESSURE) [psia]"
+    )
+
+
+def test_scalar_bar_title_calc_kind_and_diff_kind_puts_the_delta_inside_the_parentheses():
+    # "diff first, then aggregate": the delta belongs to the keyword being aggregated, not to
+    # the calculator result as a whole - so it sits inside the parentheses.
+    assert (
+        scalar_bar_title(Label("field"), "PRESSURE", diff_kind="plain", calc_kind="mean")
+        == "mean(ΔPRESSURE) [psia]"
+    )
+
+
+def test_scalar_bar_title_calc_kind_and_diff_kind_absolute():
+    assert (
+        scalar_bar_title(Label("field"), "PRESSURE", diff_kind="absolute", calc_kind="sum")
+        == "sum(|ΔPRESSURE|) [psia]"
+    )
+
+
+def test_scalar_bar_title_calc_kind_and_diff_kind_relative_is_always_percent():
+    assert (
+        scalar_bar_title(Label("field"), "SGAS", diff_kind="relative", calc_kind="mean")
+        == "mean(ΔSGAS) [%]"
+    )
+
+
 # ---------------------------------------------------------------------------
 # axis_titles
 # ---------------------------------------------------------------------------

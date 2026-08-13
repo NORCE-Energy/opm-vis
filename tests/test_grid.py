@@ -5,7 +5,13 @@ import numpy as np
 import pytest
 from opm.io.ecl import EGrid
 
-from opm_vis.utils.grid import GridSlice2D, GridSlice3D, slice_active_indices
+from opm_vis.utils.grid import (
+    GridSlice2D,
+    GridSlice3D,
+    slice_active_indices,
+    slice_layer_grid,
+    slice_range_layer_grid,
+)
 
 # The case1/data_dir fixtures come from conftest.py. SPE1CASE1 is a fully active,
 # standard-oriented 10x10x3 Cartesian box grid (no inactive cells, no NaNs). A handful of
@@ -213,6 +219,58 @@ def test_slice_active_indices_reads_no_corners(real_egrid, monkeypatch):
     act = slice_active_indices(real_egrid, "k", 1)
 
     assert len(act) == 100  # 10x10 k-slice of SPE1CASE1
+
+
+# ---------------------------------------------------------------------------
+# slice_layer_grid / slice_range_layer_grid
+# ---------------------------------------------------------------------------
+
+
+def test_slice_layer_grid_matches_full_plane_for_spe1(real_egrid):
+    nx, ny, _ = real_egrid.dimension
+
+    layer = slice_layer_grid(real_egrid, "k", 1)
+
+    expected = [[real_egrid.active_index(i, j, 1) for j in range(ny)] for i in range(nx)]
+    assert layer.shape == (nx, ny)
+    np.testing.assert_array_equal(layer, expected)
+    assert (layer >= 0).all()  # SPE1CASE1 has no inactive cells
+
+
+def test_slice_layer_grid_keeps_minus_one_for_inactive_cells():
+    # slice_active_indices() drops inactive positions; slice_layer_grid() must keep them as -1
+    # instead, so that position (ind_1, ind_2) means the same thing on every layer.
+    inactive = {(1, 0)}
+
+    class _PlaneEGrid:
+        dimension = (3, 2, 1)
+
+        def active_index(self, i, j, k):
+            del k
+            return -1 if (i, j) in inactive else i + j * 3
+
+    egrid = _PlaneEGrid()
+
+    layer = slice_layer_grid(egrid, "k", 0)
+
+    assert layer.shape == (3, 2)
+    assert layer[1, 0] == -1
+    assert (layer >= 0).sum() == 5  # every other (i, j) position is active
+
+
+def test_slice_range_layer_grid_stacks_each_layer_in_order(real_egrid):
+    stacked = slice_range_layer_grid(real_egrid, "k", 0, 2)
+
+    assert stacked.shape == (3, 10, 10)
+    for k in range(3):
+        np.testing.assert_array_equal(stacked[k], slice_layer_grid(real_egrid, "k", k))
+
+
+def test_slice_range_layer_grid_single_layer_range(real_egrid):
+    stacked = slice_range_layer_grid(real_egrid, "k", 1, 1)
+
+    assert stacked.shape == (1, 10, 10)
+    np.testing.assert_array_equal(stacked[0], slice_layer_grid(real_egrid, "k", 1))
 
 
 # ---------------------------------------------------------------------------

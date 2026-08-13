@@ -26,6 +26,9 @@ Features
   colour with cell outlines drawn on top, instead of colouring by a keyword.
 - **Difference plots.** Colour by how much a keyword has changed since another report step -
   plain, absolute magnitude, or percent change.
+- **Calculator.** Aggregate a keyword (mean, sum) across a range of grid layers along the sliced
+  dimension, from the chosen slice to the grid's last layer or a limited number of layers -
+  combines with difference plots.
 - **Animation.** Step through report steps and export a GIF or MP4, or step interactively while
   reusing the same on-screen geometry.
 - **Restart-aware.** Point at a main run plus any number of restarts and read across them as one

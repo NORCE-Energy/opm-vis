@@ -6,6 +6,7 @@ from pathlib import Path
 import click
 
 from opm_vis.cli.common import (
+    CALCULATOR_OPTIONS,
     CLIM_OPTION,
     CMAP_OPTION,
     COMMAND_SETTINGS,
@@ -25,12 +26,15 @@ from opm_vis.cli.common import (
     parse_rstep,
     require_dynamic_keyword_error,
     resolve_animate_rsteps,
+    resolve_calculator,
     resolve_diff_rstep,
     resolve_keyword,
     resolve_paths,
     resolve_slices,
 )
 from opm_vis.plot.collections import SlicePoly2DCollection, SlicePoly3DCollection
+from opm_vis.utils.calc import resolve_calc_range
+from opm_vis.utils.grid import slice_dimension_size
 
 
 @click.command(**COMMAND_SETTINGS)
@@ -40,6 +44,7 @@ from opm_vis.plot.collections import SlicePoly2DCollection, SlicePoly3DCollectio
 @add_options(SLICE_OPTIONS)
 @add_options(RSTEP_OR_ANIMATE_OPTIONS)
 @add_options(DIFF_OPTIONS)
+@add_options(CALCULATOR_OPTIONS)
 @SAVE_OPTION
 @CMAP_OPTION
 @CLIM_OPTION
@@ -68,6 +73,8 @@ def main(
     diff: bool,
     diff_rstep: int,
     diff_kind: str,
+    calc_kind: str | None,
+    calc_count: int | None,
     save: str | None,
     cmap: str,
     clim: tuple[float, float] | None,
@@ -88,6 +95,13 @@ def main(
     --diff colours by the difference from --diff-rstep (default: report step 0) instead of
     --keyword's own values; --diff-kind picks plain/absolute/relative(%).
 
+    --calculator aggregates --keyword across grid layers along the sliced dimension, from the
+    given -i/-j/-k index to the grid's last layer (or --calc-count further layers after it),
+    instead of colouring by the slice's own values; it needs --keyword (so it is not compatible
+    with --grid-only). It combines with --diff as "diff first, then aggregate": the per-cell
+    difference between --rstep and --diff-rstep is computed first, then --calculator aggregates
+    that difference across the layer range.
+
     --grid-only plots the slice in a solid colour instead - --keyword is not needed, and not
     allowed, in this mode. --animate is not supported with --grid-only.
     """
@@ -106,11 +120,16 @@ def main(
             "opm-vis-mpl only supports one slice; pass -i/-j/-k once. Use opm-vis-pv for "
             "multiple slices."
         )
+    if calc_kind is not None and grid_only:
+        raise click.UsageError(
+            "--calculator needs --keyword; it has no effect with --grid-only."
+        )
     slice_dim, slice_index = slices[0]
     rstep_value = parse_rstep(rstep, animate)
     # --diff has no effect in --grid-only (there is no --keyword to difference); see the
     # matching note in pvplot_cli.py.
     resolved_diff_rstep = None if grid_only else resolve_diff_rstep(diff, diff_rstep)
+    resolve_calculator(calc_kind, calc_count, slices)
 
     # PolyCollection/Poly3DCollection draw no visible edge by default; an explicit edgecolor is
     # what --show-edges needs, unlike PyVista's own boolean show_edges kwarg.
@@ -126,6 +145,11 @@ def main(
     else:
         coll = SlicePoly2DCollection(resolved_paths, slice_dim, slice_index)
 
+    calc_end = None
+    if calc_kind is not None:
+        n_slice = slice_dimension_size(coll.slice_coll[0].egrid, slice_dim)
+        _, calc_end = resolve_calc_range(slice_index, n_slice, calc_count)
+
     if animate:
         steps = resolve_animate_rsteps(coll.report.report_steps(), rstep_value)
         coll.animate(
@@ -133,6 +157,8 @@ def main(
             rstep_list=steps,
             diff_rstep=resolved_diff_rstep,
             diff_kind=diff_kind,
+            calc_kind=calc_kind,
+            calc_count=calc_count,
             **poly_kwargs,
         )
 
@@ -149,6 +175,8 @@ def main(
                     ext="gif",
                     diff_rstep=resolved_diff_rstep,
                     diff_kind=diff_kind,
+                    calc_kind=calc_kind,
+                    calc_end=calc_end,
                 ),
                 fps=fps,
             )
@@ -181,6 +209,8 @@ def main(
         colorbar=not no_colorbar,
         diff_rstep=resolved_diff_rstep,
         diff_kind=diff_kind,
+        calc_kind=calc_kind,
+        calc_count=calc_count,
         **poly_kwargs,
     )
 
@@ -197,6 +227,8 @@ def main(
                 ext="png",
                 diff_rstep=resolved_diff_rstep,
                 diff_kind=diff_kind,
+                calc_kind=calc_kind,
+                calc_end=calc_end,
             )
         )
 

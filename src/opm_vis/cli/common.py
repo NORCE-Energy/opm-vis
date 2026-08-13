@@ -8,6 +8,8 @@ from typing import Any
 
 import click
 
+from opm_vis.utils.calc import CALC_KINDS
+
 # Show the help page both on -h/--help and when the command is run with nothing at all: with
 # PATHS defaulting to the working directory and --rstep optional for static keywords, a bare
 # invocation has no other useful thing to do.
@@ -147,6 +149,34 @@ DIFF_OPTIONS = [
     ),
 ]
 
+# -c/--calculator aggregates --keyword across a range of grid layers along the sliced
+# dimension, from the given -i/-j/-k index to the grid's last layer, instead of using the
+# slice's own values; --calc-count limits that range to fewer layers, after the -i/-j/-k index
+# itself, which is always included. Combines with --diff: see opm_vis.utils.calc and
+# _SlicePoly.generate()'s notes for what that means.
+CALCULATOR_OPTIONS = [
+    click.option(
+        "-c",
+        "--calculator",
+        "calc_kind",
+        type=click.Choice(CALC_KINDS),
+        default=None,
+        help="Aggregate --keyword across grid layers along the sliced dimension, from the "
+        "given -i/-j/-k index to the grid's last layer (or --calc-count further layers). "
+        "Requires exactly one of -i/-j/-k.",
+    ),
+    click.option(
+        "--calc-count",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Limit --calculator to N further layers after the given -i/-j/-k index, which is "
+        "always included itself, instead of continuing to the grid's last layer - e.g. "
+        "--calc-count 1 aggregates the given index plus the next one. Only used with "
+        "--calculator.",
+    ),
+]
+
 # --grid-only skips scalar colouring entirely and plots the grid (or a slice of it, for
 # opm-vis-mpl always a slice) in a solid colour instead; --keyword is then neither needed nor
 # allowed. --grid-color customizes the fill colour, left as None to keep the backend's own
@@ -236,6 +266,50 @@ def resolve_diff_rstep(diff: bool, diff_rstep: int) -> int | None:
         diff_rstep if --diff was given, otherwise None (plot keyword's own values)
     """
     return diff_rstep if diff else None
+
+
+def resolve_calculator(
+    calc_kind: str | None, calc_count: int | None, slices: list[tuple[str, int]]
+) -> tuple[str, int] | None:
+    """
+    Validate --calculator/--calc-count and pick the single slice it aggregates along
+
+    Parameters
+    ----------
+    calc_kind : str | None
+        Value of --calculator
+    calc_count : int | None
+        Value of --calc-count
+    slices : list[tuple[str, int]]
+        Every (dim, index) slice given, as resolve_slices() returns them
+
+    Returns
+    -------
+    tuple[str, int] | None
+        None if --calculator was not given; otherwise the single (dim, index) slice to
+        aggregate along, i.e. slices[0]
+
+    Raises
+    ------
+    click.UsageError
+        If --calc-count was given without --calculator; if --calculator was given without
+        exactly one of -i/-j/-k; or if --calc-count is not a positive integer
+    """
+    if calc_kind is None:
+        if calc_count is not None:
+            raise click.UsageError("--calc-count is only valid together with --calculator.")
+        return None
+
+    if len(slices) != 1:
+        raise click.UsageError(
+            "--calculator requires exactly one of -i/-j/-k, to pick which dimension to "
+            "aggregate along."
+        )
+
+    if calc_count is not None and calc_count < 1:
+        raise click.UsageError("--calc-count must be a positive integer.")
+
+    return slices[0]
 
 
 def resolve_keyword(keyword: str | None, grid_only: bool) -> str | None:
@@ -438,6 +512,8 @@ def default_output_name(
     ext: str = "png",
     diff_rstep: int | None = None,
     diff_kind: str = "plain",
+    calc_kind: str | None = None,
+    calc_end: int | None = None,
 ) -> str:
     """
     Build an output filename when --save is given with no path
@@ -461,17 +537,26 @@ def default_output_name(
     diff_kind : str, optional
         See opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by default
         "plain"
+    calc_kind : str | None, optional
+        See opm_vis.utils.calc.CALC_KINDS, by default None (not a calculator plot). See
+        resolve_calculator.
+    calc_end : int | None, optional
+        0-based index of the calculator's last aggregated layer, by default None (the end
+        returned by resolve_calc_range). Only used when calc_kind is given; appended to the
+        slice tag as e.g. "k1-3" (1-based, matching the -i/-j/-k index itself) instead of just
+        "k1", since --calculator always resolves to exactly one slice.
 
     Returns
     -------
     str
-        e.g. "SGAS_k1_60.png", "SGAS_k1_j6_0-120.gif", or "SGAS-diff0-absolute_k1_60.png"
-        with --diff, written to the current directory
+        e.g. "SGAS_k1_60.png", "SGAS_k1_j6_0-120.gif", "SGAS-diff0-absolute_k1_60.png" with
+        --diff, or "SGAS-mean_k1-3_60.png" with --calculator aggregating layers 1-3, written to
+        the current directory
 
     Notes
     -----
     The slice tag is 1-based, matching what the user typed on the command line via -i/-j/-k,
-    even though `slices` itself is 0-based internally.
+    even though `slices` (and calc_end) are 0-based internally.
     """
     if rsteps is not None:
         step_tag = f"{rsteps[0]}-{rsteps[-1]}"
@@ -480,9 +565,18 @@ def default_output_name(
     else:
         step_tag = "all"
 
-    slice_tag = "_".join(f"{dim}{index + 1}" for dim, index in slices) if slices else "grid"
+    if not slices:
+        slice_tag = "grid"
+    elif calc_kind is not None and calc_end is not None:
+        # --calculator requires exactly one of -i/-j/-k; see resolve_calculator
+        dim, index = slices[0]
+        slice_tag = f"{dim}{index + 1}-{calc_end + 1}"
+    else:
+        slice_tag = "_".join(f"{dim}{index + 1}" for dim, index in slices)
 
     keyword_tag = keyword
+    if calc_kind is not None:
+        keyword_tag += f"-{calc_kind}"
     if diff_rstep is not None:
         keyword_tag += f"-diff{diff_rstep}"
         if diff_kind != "plain":

@@ -15,6 +15,7 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from opm_vis.plot.slice_poly import SlicePoly2D, SlicePoly3D
+from opm_vis.utils.calc import calc_label
 from opm_vis.utils.diff import diff_label
 from opm_vis.utils.restart import Report
 from opm_vis.utils.units import Label
@@ -173,6 +174,8 @@ class _SlicePolyCollection:
         *,
         diff_rstep: int | None = None,
         diff_kind: str = "plain",
+        calc_kind: str | None = None,
+        calc_count: int | None = None,
         **kwargs,
     ) -> None:
         """
@@ -197,6 +200,15 @@ class _SlicePolyCollection:
         diff_kind : str, optional
             One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
             default "plain"
+        calc_kind : str | None, optional
+            One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
+            along each slice's own dimension instead of using its own values, by default None.
+            Ignored when polyc_dict is given, since its data was already generated (see
+            animate()). Combines with diff_rstep: see SlicePoly.generate()'s notes.
+        calc_count : int | None, optional
+            Limit calc_kind's aggregation to this many further layers after each slice's own
+            index, which is always included itself, by default None (continue to the grid's
+            last layer). Only used when calc_kind is given.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -213,7 +225,13 @@ class _SlicePolyCollection:
         else:
             polyc_rstep = [
                 slc.generate(
-                    keyword, rstep, diff_rstep=diff_rstep, diff_kind=diff_kind, **kwargs
+                    keyword,
+                    rstep,
+                    diff_rstep=diff_rstep,
+                    diff_kind=diff_kind,
+                    calc_kind=calc_kind,
+                    calc_count=calc_count,
+                    **kwargs,
                 )
                 for slc in self.slice_coll
             ]
@@ -243,7 +261,7 @@ class _SlicePolyCollection:
         self.rdates.append(rdate)
 
         # Save keyword, for save_plot's filename; see _keyword_tag
-        self.keyword = self._keyword_tag(keyword, diff_rstep, diff_kind)
+        self.keyword = self._keyword_tag(keyword, diff_rstep, diff_kind, calc_kind)
 
         # Set title
         self.set_title(rdate)
@@ -259,14 +277,18 @@ class _SlicePolyCollection:
                 )
 
             # Following above warning, we only need to use the first slice
-            clabel = self._colorbar_label(keyword, diff_rstep, diff_kind)
+            clabel = self._colorbar_label(keyword, diff_rstep, diff_kind, calc_kind)
             self.fig.colorbar(polyc_rstep[0], ax=self.ax_, label=clabel)
 
     def _colorbar_label(
-        self, keyword: str, diff_rstep: int | None, diff_kind: str
+        self,
+        keyword: str,
+        diff_rstep: int | None,
+        diff_kind: str,
+        calc_kind: str | None = None,
     ) -> str:
         """
-        Colour bar label for one keyword, or its difference
+        Colour bar label for one keyword, or its difference/calculator result
 
         Parameters
         ----------
@@ -276,17 +298,22 @@ class _SlicePolyCollection:
             Report step being differenced against, or None for keyword's own values
         diff_kind : str
             One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given
+        calc_kind : str | None, optional
+            One of opm_vis.utils.calc.CALC_KINDS, or None for keyword's own values, by default
+            None
 
         Returns
         -------
         str
-            e.g. "PRESSURE [barsa]", or "ΔPRESSURE [barsa]"/"ΔSGAS [%]" for a diff
+            e.g. "PRESSURE [barsa]", "ΔPRESSURE [barsa]"/"ΔSGAS [%]" for a diff, or
+            "mean(PRESSURE) [barsa]"/"mean(ΔPRESSURE) [barsa]" with a calculator - the delta
+            sits inside the parentheses, matching SlicePoly.generate()'s own "diff first, then
+            aggregate" order
         """
-        if diff_rstep is None:
-            return keyword + " [" + self.label(keyword) + "]"
+        name = keyword if diff_rstep is None else diff_label(keyword, diff_kind)
+        name = name if calc_kind is None else calc_label(name, calc_kind)
 
-        name = diff_label(keyword, diff_kind)
-        if diff_kind == "relative":
+        if diff_rstep is not None and diff_kind == "relative":
             return f"{name} [%]"
         return name + " [" + self.label(keyword) + "]"
 
@@ -314,6 +341,8 @@ class _SlicePolyCollection:
         rstep_list: Sequence[int] | None = None,
         diff_rstep: int | None = None,
         diff_kind: str = "plain",
+        calc_kind: str | None = None,
+        calc_count: int | None = None,
         **kwargs,
     ) -> None:
         """
@@ -337,6 +366,14 @@ class _SlicePolyCollection:
         diff_kind : str, optional
             One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
             default "plain"
+        calc_kind : str | None, optional
+            One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
+            along each slice's own dimension instead of using its own values, by default None.
+            Combines with diff_rstep: see SlicePoly.generate()'s notes.
+        calc_count : int | None, optional
+            Limit calc_kind's aggregation to this many further layers after each slice's own
+            index, which is always included itself, by default None (continue to the grid's
+            last layer). Only used when calc_kind is given.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -361,21 +398,28 @@ class _SlicePolyCollection:
             self.rdates = [all_rdates[all_rsteps.index(i)] for i in anim_rsteps]
 
         # Save keyword, for save_gif's filename; see _keyword_tag
-        self.keyword = self._keyword_tag(keyword, diff_rstep, diff_kind)
+        self.keyword = self._keyword_tag(keyword, diff_rstep, diff_kind, calc_kind)
 
         # Generate slices for all report dates to be able to set one colorbar for the whole
         # animation
         polyc_dict = self._data_for_animation(
-            anim_rsteps, keyword, diff_rstep=diff_rstep, diff_kind=diff_kind, **kwargs
+            anim_rsteps,
+            keyword,
+            diff_rstep=diff_rstep,
+            diff_kind=diff_kind,
+            calc_kind=calc_kind,
+            calc_count=calc_count,
+            **kwargs,
         )
 
         # Set colorbar for the whole animation
-        clabel = self._colorbar_label(keyword, diff_rstep, diff_kind)
+        clabel = self._colorbar_label(keyword, diff_rstep, diff_kind, calc_kind)
         self.fig.colorbar(polyc_dict[anim_rsteps[0]][0], ax=self.ax_, label=clabel)
 
-        # Setup plot function to fit with FuncAnimation. diff_rstep/diff_kind are not passed
-        # through here: polyc_dict already carries the (possibly diff'd) data, and plot()
-        # ignores its own diff_rstep/diff_kind whenever polyc_dict is given.
+        # Setup plot function to fit with FuncAnimation. diff_rstep/diff_kind/calc_kind/
+        # calc_count are not passed through here: polyc_dict already carries the (possibly
+        # diff'd/aggregated) data, and plot() ignores its own diff_rstep/diff_kind/calc_kind/
+        # calc_count whenever polyc_dict is given.
         plot_func = partial(
             self.plot,
             keyword=keyword,
@@ -395,6 +439,8 @@ class _SlicePolyCollection:
         *,
         diff_rstep: int | None = None,
         diff_kind: str = "plain",
+        calc_kind: str | None = None,
+        calc_count: int | None = None,
         **kwargs,
     ) -> dict[int, list[Poly3DCollection] | list[PolyCollection]]:
         """
@@ -412,6 +458,13 @@ class _SlicePolyCollection:
         diff_kind : str, optional
             One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
             default "plain"
+        calc_kind : str | None, optional
+            One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
+            along each slice's own dimension instead of using its own values, by default None
+        calc_count : int | None, optional
+            Limit calc_kind's aggregation to this many further layers after each slice's own
+            index, which is always included itself, by default None (continue to the grid's
+            last layer). Only used when calc_kind is given.
 
         Returns
         -------
@@ -426,7 +479,13 @@ class _SlicePolyCollection:
         for rstep in rsteps:
             polyc_dict[rstep] = [
                 slc.generate(
-                    keyword, rstep, diff_rstep=diff_rstep, diff_kind=diff_kind, **kwargs
+                    keyword,
+                    rstep,
+                    diff_rstep=diff_rstep,
+                    diff_kind=diff_kind,
+                    calc_kind=calc_kind,
+                    calc_count=calc_count,
+                    **kwargs,
                 )
                 for slc in self.slice_coll
             ]
@@ -547,9 +606,15 @@ class _SlicePolyCollection:
         return "_".join(f"{slc.slice_dim}{slc.slice_ind}" for slc in self.slice_coll)
 
     @staticmethod
-    def _keyword_tag(keyword: str, diff_rstep: int | None, diff_kind: str) -> str:
+    def _keyword_tag(
+        keyword: str,
+        diff_rstep: int | None,
+        diff_kind: str,
+        calc_kind: str | None = None,
+    ) -> str:
         """
-        Keyword string used in auto-generated filenames, reflecting diff mode if active
+        Keyword string used in auto-generated filenames, reflecting diff/calculator mode if
+        active
 
         Parameters
         ----------
@@ -559,16 +624,21 @@ class _SlicePolyCollection:
             Report step being differenced against, or None for keyword's own values
         diff_kind : str
             One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given
+        calc_kind : str | None, optional
+            One of opm_vis.utils.calc.CALC_KINDS, or None for keyword's own values, by default
+            None
 
         Returns
         -------
         str
-            keyword unchanged, or e.g. "SGAS-diff0-relative" for a diff
+            keyword unchanged, or e.g. "SGAS-mean-diff0-relative" with a calculator and a diff
         """
-        if diff_rstep is None:
-            return keyword
+        tag = keyword if calc_kind is None else f"{keyword}-{calc_kind}"
 
-        tag = f"{keyword}-diff{diff_rstep}"
+        if diff_rstep is None:
+            return tag
+
+        tag += f"-diff{diff_rstep}"
         return tag if diff_kind == "plain" else f"{tag}-{diff_kind}"
 
 

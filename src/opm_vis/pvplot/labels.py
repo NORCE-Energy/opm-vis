@@ -1,6 +1,7 @@
 """ Plain-text unit labels and axis titles for VTK text rendering """
 from __future__ import annotations
 
+from opm_vis.utils.calc import calc_label
 from opm_vis.utils.diff import diff_label
 from opm_vis.utils.units import Label
 
@@ -75,7 +76,13 @@ def unit(label: Label, keyword: str) -> str:
     return "" if plain == _UNKNOWN else plain
 
 
-def scalar_bar_title(label: Label, keyword: str, *, diff_kind: str | None = None) -> str:
+def scalar_bar_title(
+    label: Label,
+    keyword: str,
+    *,
+    diff_kind: str | None = None,
+    calc_kind: str | None = None,
+) -> str:
     """
     Title for the scalar bar of one keyword
 
@@ -89,15 +96,21 @@ def scalar_bar_title(label: Label, keyword: str, *, diff_kind: str | None = None
         One of opm_vis.utils.diff.DIFF_KINDS, by default None. When given, the keyword is
         shown as a difference (see opm_vis.utils.diff.diff_label) rather than its own value,
         and "relative" is always labelled in percent regardless of the keyword's own unit.
+    calc_kind : str | None, optional
+        One of opm_vis.utils.calc.CALC_KINDS, by default None. When given, the keyword is shown
+        as a calculator result (see opm_vis.utils.calc.calc_label) rather than its own value;
+        applied after diff_kind, so the delta sits inside the parentheses, e.g.
+        "mean(ΔPRESSURE)" - matching set_scalars' own "diff first, then aggregate" order.
 
     Returns
     -------
     str
-        Keyword (or its diff label) followed by its unit in brackets, e.g.
-        ``PRESSURE [barsa]`` or ``ΔPRESSURE [barsa]``, or without brackets when no unit
-        applies
+        Keyword (or its calculator/diff label) followed by its unit in brackets, e.g.
+        ``PRESSURE [barsa]``, ``ΔPRESSURE [barsa]``, or ``mean(PRESSURE) [barsa]``, or without
+        brackets when no unit applies
     """
     name = keyword if diff_kind is None else diff_label(keyword, diff_kind)
+    name = name if calc_kind is None else calc_label(name, calc_kind)
     if diff_kind == "relative":
         return f"{name} [%]"
 

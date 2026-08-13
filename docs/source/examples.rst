@@ -62,6 +62,31 @@ since another report step, instead of its own values. ``diff_kind`` is one of ``
 :meth:`~opm_vis.pvplot.GridPlotter.animate` takes the same ``diff_rstep``/``diff_kind``, always
 differencing every animated frame against the same fixed reference step.
 
+Calculator
+------------------
+
+Pass ``calc_kind`` (one of ``opm_vis.utils.calc.CALC_KINDS``: ``"mean"`` or ``"sum"``) together
+with ``slice_dim``/``slice_ind`` to aggregate a keyword across a range of grid layers along that
+dimension - from ``slice_ind`` to the grid's last layer, or ``calc_count`` further layers after
+it (``slice_ind`` is always included itself) - instead of colouring by the slice's own values:
+
+.. code-block:: python
+
+   from opm_vis.pvplot import GridPlotter
+
+   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter.add_slice("k", 0)
+
+   plotter.set_scalars("PRESSURE", rstep=60, slice_dim="k", slice_ind=0, calc_kind="mean")
+   plotter.view_2d("k")
+   plotter.show()
+
+``calc_kind`` combines with ``diff_rstep`` as "diff first, then aggregate": the per-cell
+difference between ``rstep`` and ``diff_rstep`` is computed first, then ``calc_kind`` aggregates
+that difference across the layer range - "the mean/sum of how much each cell changed between
+these two report steps", not the difference between the two report steps' own means/sums.
+:meth:`~opm_vis.pvplot.GridPlotter.animate` takes the same four parameters.
+
 Vector glyphs
 --------------
 
@@ -188,3 +213,6 @@ thresholding or clipping, but covers the same basic slice-and-colour workflow:
    coll = SlicePoly2DCollection(["tests/data/SPE1CASE1"], "k", 0)
    coll.plot(60, "SGAS", cmap="viridis")
    coll.save_plot("sgas.png")
+
+``plot``/``animate`` take the same ``diff_rstep``/``diff_kind`` and ``calc_kind``/``calc_count``
+as the PyVista backend, e.g. ``coll.plot(60, "PRESSURE", calc_kind="mean")``.
