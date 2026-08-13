@@ -10,6 +10,7 @@ from opm_vis.utils.grid import (
     GridSlice3D,
     slice_active_indices,
     slice_layer_grid,
+    slice_range_first_active_indices,
     slice_range_layer_grid,
 )
 
@@ -274,6 +275,78 @@ def test_slice_range_layer_grid_single_layer_range(real_egrid):
 
 
 # ---------------------------------------------------------------------------
+# slice_range_first_active_indices
+# ---------------------------------------------------------------------------
+
+
+def test_slice_range_first_active_indices_matches_slice_active_indices_when_fully_active(
+    real_egrid,
+):
+    # With no inactive cells in the range, the first active layer is always start_ind's own -
+    # same result as slice_active_indices(start_ind).
+    act = slice_range_first_active_indices(real_egrid, "k", 0, 2)
+
+    assert act == slice_active_indices(real_egrid, "k", 0)
+
+
+class _ColumnEGrid:
+    """
+    3x2x3 (i, j, k) grid with a handful of inactive cells, for surface tests.
+
+    Per (i, j) column: (0,0), (0,1), (1,1) and (2,0) are active on every layer; (1,0) is
+    inactive on layers 0 and 1 (active only on 2); (2,1) is inactive on layer 0 only (active on
+    1 and 2).
+    """
+
+    dimension = (3, 2, 3)
+
+    _inactive = {(1, 0, 0), (1, 0, 1), (2, 1, 0)}
+
+    def active_index(self, i, j, k):
+        if (i, j, k) in self._inactive:
+            return -1
+        # A stable, order-preserving index scheme is enough for these tests: only which
+        # cells are >=0 (and, for slice_range_first_active_indices, which layer is found
+        # first) is checked, never the index values' own meaning.
+        return (k * 2 + j) * 3 + i
+
+
+def test_slice_range_first_active_indices_skips_an_inactive_start_layer():
+    egrid = _ColumnEGrid()
+
+    # i outer, j inner - same nested-loop order as slice_active_indices. (1, 0) skips its
+    # inactive layers 0 and 1 to reach layer 2; (2, 1) skips its inactive layer 0 to reach 1;
+    # every other position uses its own (active) layer 0.
+    act = slice_range_first_active_indices(egrid, "k", 0, 2)
+
+    assert act == [
+        egrid.active_index(0, 0, 0),
+        egrid.active_index(0, 1, 0),
+        egrid.active_index(1, 0, 2),
+        egrid.active_index(1, 1, 0),
+        egrid.active_index(2, 0, 0),
+        egrid.active_index(2, 1, 1),
+    ]
+
+
+def test_slice_range_first_active_indices_omits_a_position_inactive_throughout():
+    egrid = _ColumnEGrid()
+
+    # Restricted to layer 1 alone: (1, 0) is inactive there (and the range no longer reaches
+    # its active layer 2), so it has nothing active in range and must be omitted entirely.
+    # Every other position is active on layer 1 itself.
+    act = slice_range_first_active_indices(egrid, "k", 1, 1)
+
+    assert act == [
+        egrid.active_index(0, 0, 1),
+        egrid.active_index(0, 1, 1),
+        egrid.active_index(1, 1, 1),
+        egrid.active_index(2, 0, 1),
+        egrid.active_index(2, 1, 1),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # _compute_active_indices
 # ---------------------------------------------------------------------------
 
@@ -432,6 +505,75 @@ def test_grid_slice_3d_full_construction(case1):
     assert slc.cell_centers().shape == (100, 3)
     # Ground truth from the real dataset's own corner-point ordering
     assert slc.aligned_grid == False  # noqa: E712 (np.bool_, not identical to bool)
+
+
+# ---------------------------------------------------------------------------
+# Full construction with surface=True (--calculator surface)
+# ---------------------------------------------------------------------------
+
+
+class _GapEGrid:
+    """
+    2x1x2 (i, j, k) box grid with one inactive cell (i=1, j=0, k=0), for surface's full
+    construction path - SPE1CASE1 itself has no inactive cells to exercise this with.
+    """
+
+    dimension = (2, 1, 2)
+    _inactive = {(1, 0, 0)}
+
+    def active_index(self, i, j, k):
+        if (i, j, k) in self._inactive:
+            return -1
+        return (k * 1 + j) * 2 + i
+
+    def ijk_from_active_index(self, act):
+        for k in range(2):
+            for j in range(1):
+                for i in range(2):
+                    if self.active_index(i, j, k) == act:
+                        return [i, j, k]
+        raise ValueError(act)
+
+    def xyz_from_active_index(self, act, apply_mapaxes=False):
+        del apply_mapaxes
+        i, j, k = self.ijk_from_active_index(act)
+        xs = [float(i + (c & 1)) for c in range(8)]
+        ys = [float(j + ((c >> 1) & 1)) for c in range(8)]
+        zs = [float(k + ((c >> 2) & 1)) for c in range(8)]
+        return xs, ys, zs
+
+
+def test_gridslice3d_surface_false_leaves_a_gap_at_an_inactive_position():
+    obj = _bypass_init(GridSlice3D, _GapEGrid(), slice_dim="k", slice_ind=0, calc_end=None)
+
+    obj._compute_active_indices()
+
+    # (1, 0) is inactive on k=0, so the plain (single-layer) path just drops it: only (0, 0)'s
+    # own cell is on the slice.
+    assert len(obj.active_indices()) == 1
+    assert obj.active_indices() == [_GapEGrid().active_index(0, 0, 0)]
+
+
+def test_gridslice3d_surface_true_fills_the_gap_from_the_next_layer():
+    egrid = _GapEGrid()
+    obj = _bypass_init(GridSlice3D, egrid, slice_dim="k", slice_ind=0, calc_end=1)
+
+    obj._compute_active_indices()
+    obj._cell_corners()
+    obj._cell_centers()
+
+    # With surface's range extended to k=1, (1, 0) is now backed by its own active cell there
+    # instead of being dropped - both lateral positions are present.
+    assert len(obj.active_indices()) == 2
+    assert egrid.active_index(0, 0, 0) in obj.active_indices()
+    assert egrid.active_index(1, 0, 1) in obj.active_indices()
+
+    # And its geometry is genuinely draped, not just relabelled: _INDICES["k"] picks each
+    # cell's own top face (z equal to its own k, the same for all 4 corners), so (1, 0)'s
+    # corners sit one unit deeper (z=1, from k=1) than (0, 0)'s (z=0, from its own k=0).
+    corners = dict(zip(obj.active_indices(), obj.cell_corners()))
+    np.testing.assert_allclose(corners[egrid.active_index(0, 0, 0)][:, 2], [0.0] * 4)
+    np.testing.assert_allclose(corners[egrid.active_index(1, 0, 1)][:, 2], [1.0] * 4)
 
 
 def test_grid_slice_2d_full_construction(case1):

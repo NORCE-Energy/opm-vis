@@ -55,6 +55,15 @@ def test_unknown_kind_raises_value_error():
         compute_calc(np.array([[1.0]]), "bogus")
 
 
+def test_surface_kind_raises_value_error():
+    # "surface" is a valid CALC_KINDS/--calculator value, but not one compute_calc/
+    # apply_slice_calc can compute themselves - see compute_calc's own Notes for why (it would
+    # silently be a no-op) and opm_vis.utils.grid.slice_range_first_active_indices for where it
+    # is actually implemented instead.
+    with pytest.raises(ValueError, match="surface"):
+        compute_calc(np.array([[1.0]]), "surface")
+
+
 def test_mean_of_an_all_nan_column_does_not_warn():
     # A position inactive on the displayed slice itself is an all-NaN column here (it is
     # discarded by apply_slice_calc regardless) - NumPy's own "Mean of empty slice" warning for

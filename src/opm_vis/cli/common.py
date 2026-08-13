@@ -149,11 +149,12 @@ DIFF_OPTIONS = [
     ),
 ]
 
-# -c/--calculator aggregates --keyword across a range of grid layers along the sliced
-# dimension, from the given -i/-j/-k index to the grid's last layer, instead of using the
-# slice's own values; --calc-count limits that range to fewer layers, after the -i/-j/-k index
-# itself, which is always included. Combines with --diff: see opm_vis.utils.calc and
-# _SlicePoly.generate()'s notes for what that means.
+# -c/--calculator reduces --keyword across a range of grid layers along the sliced dimension,
+# from the given -i/-j/-k index to the grid's last layer, instead of using the slice's own
+# values; --calc-count limits that range to fewer layers, after the -i/-j/-k index itself, which
+# is always included. "mean"/"sum" aggregate every layer in the range; "surface" instead picks
+# each position's first active layer from the range's start. Combines with --diff: see
+# opm_vis.utils.calc and _SlicePoly.generate()'s notes for what that means.
 CALCULATOR_OPTIONS = [
     click.option(
         "-c",
@@ -161,9 +162,10 @@ CALCULATOR_OPTIONS = [
         "calc_kind",
         type=click.Choice(CALC_KINDS),
         default=None,
-        help="Aggregate --keyword across grid layers along the sliced dimension, from the "
-        "given -i/-j/-k index to the grid's last layer (or --calc-count further layers). "
-        "Requires exactly one of -i/-j/-k.",
+        help="Reduce --keyword across grid layers along the sliced dimension, from the given "
+        "-i/-j/-k index to the grid's last layer (or --calc-count further layers). mean/sum "
+        "aggregate every layer in that range; surface instead takes each position's first "
+        "active layer from the range's start. Requires exactly one of -i/-j/-k.",
     ),
     click.option(
         "--calc-count",

@@ -30,7 +30,14 @@ class _SlicePoly(_GridSlice, ABC):
     Do not instantiate!
     """
 
-    def __init__(self, paths: list[str], slice_dim: str, slice_ind: int) -> None:
+    def __init__(
+        self,
+        paths: list[str],
+        slice_dim: str,
+        slice_ind: int,
+        calc_count: int | None = None,
+        surface: bool = False,
+    ) -> None:
         """
         Initialize slice by instantiating all helper classes
 
@@ -43,9 +50,15 @@ class _SlicePoly(_GridSlice, ABC):
             Dimension to slice : i, j, or k
         slice_ind : int
             Index of slice
+        calc_count : int | None, optional
+            Value of --calc-count, by default None. Only used when surface is True; see
+            _GridSlice.
+        surface : bool, optional
+            --calculator surface, by default False. See _GridSlice for what this changes about
+            the slice's own geometry/active cells.
         """
         # Instantiate help classes
-        _GridSlice.__init__(self, paths[0], slice_dim, slice_ind)
+        _GridSlice.__init__(self, paths[0], slice_dim, slice_ind, calc_count, surface)
         self.static = InitReader(paths[0])
         self.restart = RestartReader(paths)
 
@@ -79,12 +92,12 @@ class _SlicePoly(_GridSlice, ABC):
             One of opm_vis.utils.diff.DIFF_KINDS; only used when diff_rstep is given, by
             default "plain"
         calc_kind : str | None, optional
-            One of opm_vis.utils.calc.CALC_KINDS: aggregate keyword across a range of layers
+            One of opm_vis.utils.calc.CALC_KINDS: reduce keyword across a range of layers
             along this slice's own dimension, from slice_ind to the grid's last layer (or
             calc_count further layers), instead of using this slice's own values, by default
             None
         calc_count : int | None, optional
-            Limit calc_kind's aggregation to this many further layers after slice_ind, which is
+            Limit calc_kind's layer range to this many further layers after slice_ind, which is
             always included itself, by default None (continue to the grid's last layer). Only
             used when calc_kind is given.
         kwargs: optional
@@ -102,9 +115,15 @@ class _SlicePoly(_GridSlice, ABC):
         calculator spans, and calc_kind aggregates that difference field - "the mean/sum of how
         much each cell changed between these two report steps", not the difference between the
         two report steps' own means/sums.
+
+        calc_kind="surface" does not aggregate at all: active_indices() (and so act_ind) has
+        already been resolved to each lateral position's first active cell in the range, by
+        __init__ (see _GridSlice's surface argument) rather than by this method - so it takes
+        the plain, non-calculator branch below, reading (and optionally diffing) each of those
+        cells' own values directly, exactly as if no --calculator had been given.
         """
         act_ind = self.active_indices()
-        if calc_kind is not None:
+        if calc_kind is not None and calc_kind != "surface":
             data = self._read_calc(
                 keyword, rstep, calc_kind, calc_count, diff_rstep=diff_rstep, diff_kind=diff_kind
             )
@@ -221,6 +240,16 @@ class _SlicePoly(_GridSlice, ABC):
         ----------
         paths : list[str]
             Path to restart files (passed to Wells initialization)
+
+        Notes
+        -----
+        Known limitation with --calculator surface: this only ever matches a well against
+        slice_ind's own layer (self.slice_ind, not the wider range self.active_indices() may
+        actually be drawn from), so a well completed deeper in that range - the very case
+        surface exists to still show a cell for - can be missing from the plot even though its
+        lateral position is displayed. Fixing this would need matching each well completion
+        against whichever layer was actually picked for its (i, j) or (j, k) lateral position,
+        not just against slice_ind.
         """
         # Instantiate Wells class
         self.wells = Wells(paths)
@@ -293,7 +322,14 @@ class SlicePoly3D(_SlicePoly, GridSlice3D):
     Generate slice for 3D plotting. See parent classes for some method docs.
     """
 
-    def __init__(self, paths: list[str], slice_dim: str, slice_ind: int) -> None:
+    def __init__(
+        self,
+        paths: list[str],
+        slice_dim: str,
+        slice_ind: int,
+        calc_count: int | None = None,
+        surface: bool = False,
+    ) -> None:
         """
         Initialize slice by instantiating all helper classes.
 
@@ -306,14 +342,20 @@ class SlicePoly3D(_SlicePoly, GridSlice3D):
             Dimension to slice : i, j, or k
         slice_ind : int
             Index of slice
+        calc_count : int | None, optional
+            Value of --calc-count, by default None. Only used when surface is True; see
+            _GridSlice.
+        surface : bool, optional
+            --calculator surface, by default False. See _GridSlice for what this changes about
+            the slice's own geometry/active cells.
 
         Notes
         -----
         We override GridSlice class in parent SlicePoly class
         """
         # Instantiate help classes
-        super().__init__(paths, slice_dim, slice_ind)
-        GridSlice3D.__init__(self, paths[0], slice_dim, slice_ind)
+        super().__init__(paths, slice_dim, slice_ind, calc_count, surface)
+        GridSlice3D.__init__(self, paths[0], slice_dim, slice_ind, calc_count, surface)
 
         # Setup wells
         self._filter_wells(paths)
@@ -342,7 +384,14 @@ class SlicePoly2D(_SlicePoly, GridSlice2D):
     Subclass of SlicePoly for setting up a slice plot projected to 2D
     """
 
-    def __init__(self, paths: list[str], slice_dim: str, slice_ind: int) -> None:
+    def __init__(
+        self,
+        paths: list[str],
+        slice_dim: str,
+        slice_ind: int,
+        calc_count: int | None = None,
+        surface: bool = False,
+    ) -> None:
         """
         Initialize slice by instantiating all helper classes.
 
@@ -355,14 +404,20 @@ class SlicePoly2D(_SlicePoly, GridSlice2D):
             Dimension to slice : i, j, or k
         slice_ind : int
             Index of slice
+        calc_count : int | None, optional
+            Value of --calc-count, by default None. Only used when surface is True; see
+            _GridSlice.
+        surface : bool, optional
+            --calculator surface, by default False. See _GridSlice for what this changes about
+            the slice's own geometry/active cells.
 
         Notes
         -----
         We override GridSlice class in parent SlicePoly class
         """
         # Instantiate help classes
-        super().__init__(paths, slice_dim, slice_ind)
-        GridSlice2D.__init__(self, paths[0], slice_dim, slice_ind)
+        super().__init__(paths, slice_dim, slice_ind, calc_count, surface)
+        GridSlice2D.__init__(self, paths[0], slice_dim, slice_ind, calc_count, surface)
 
         # Setup wells
         self._filter_wells(paths)

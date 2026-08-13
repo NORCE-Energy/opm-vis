@@ -87,6 +87,25 @@ that difference across the layer range - "the mean/sum of how much each cell cha
 these two report steps", not the difference between the two report steps' own means/sums.
 :meth:`~opm_vis.pvplot.GridPlotter.animate` takes the same four parameters.
 
+``calc_kind="surface"`` is different from ``"mean"``/``"sum"``: instead of aggregating every
+layer in the range into one number, it shows each lateral position's *first active* cell from
+``slice_ind`` onwards, draping the slice over whichever cells are actually active rather than
+leaving gaps where ``slice_ind`` itself is inactive/pinched-out. Because that changes which
+cells the slice is *made of*, not just how they are coloured, ``surface`` also needs
+``add_slice`` itself to be given ``surface=True`` (and the same ``calc_count``, if any) - not
+only ``set_scalars``:
+
+.. code-block:: python
+
+   from opm_vis.pvplot import GridPlotter
+
+   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter.add_slice("k", 0, surface=True)
+
+   plotter.set_scalars("PRESSURE", rstep=60, slice_dim="k", slice_ind=0, calc_kind="surface")
+   plotter.view_2d("k")
+   plotter.show()
+
 Vector glyphs
 --------------
 
@@ -216,3 +235,14 @@ thresholding or clipping, but covers the same basic slice-and-colour workflow:
 
 ``plot``/``animate`` take the same ``diff_rstep``/``diff_kind`` and ``calc_kind``/``calc_count``
 as the PyVista backend, e.g. ``coll.plot(60, "PRESSURE", calc_kind="mean")``.
+
+``calc_kind="surface"`` needs the same care here as with PyVista's ``add_slice``: since it
+changes which cells the slice is built from rather than just how they are coloured, it (and
+``calc_count``, if any) must be given to ``SlicePoly2DCollection``/``SlicePoly3DCollection``
+themselves, not to ``plot``/``animate``:
+
+.. code-block:: python
+
+   coll = SlicePoly2DCollection(["tests/data/SPE1CASE1"], "k", 0, surface=True)
+   coll.plot(60, "PRESSURE", calc_kind="surface")
+   coll.save_plot("pressure_top.png")

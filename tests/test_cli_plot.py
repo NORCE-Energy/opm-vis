@@ -309,6 +309,91 @@ def test_calculator_animate_writes_output_file(case1, runner, tmp_path):
     assert output.stat().st_size > 0
 
 
+def test_calculator_surface_writes_output_file(case1, runner, tmp_path):
+    # SPE1CASE1 has no inactive cells, so this is a smoke test that -c surface is wired
+    # through the CLI/SlicePoly construction without error - not a test of its gap-filling
+    # behaviour itself (see test_grid.py, with synthetic inactive-cell data, for that).
+    output = tmp_path / "sgas.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "-c", "surface", "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_calculator_surface_default_name_reflects_calc_kind(case1, runner):
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            main,
+            [case1, "--keyword", "PRESSURE", "-k", "1", "--rstep", "60", "-c", "surface", "--save"],
+        )
+
+        assert result.exit_code == 0, result.output
+        # SPE1CASE1 has 3 k-layers: -k 1 scans layers 1-3 (the grid's last layer) for surface
+        assert Path("PRESSURE-surface_k1-3_60.png").exists()
+
+
+def test_calculator_surface_combines_with_diff(case1, runner, tmp_path):
+    output = tmp_path / "pressure.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "PRESSURE",
+            "-k",
+            "1",
+            "--rstep",
+            "60",
+            "-c",
+            "surface",
+            "--diff",
+            "--diff-rstep",
+            "0",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_calculator_surface_animate_writes_output_file(case1, runner, tmp_path):
+    output = tmp_path / "sgas.gif"
+
+    result = runner.invoke(
+        main,
+        [
+            case1,
+            "--keyword",
+            "SGAS",
+            "-k",
+            "1",
+            "--animate",
+            "--rstep",
+            "0:60:20",
+            "-c",
+            "surface",
+            "-s",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
 def test_calc_count_without_calculator_is_rejected(case1, runner):
     result = runner.invoke(
         main,
@@ -348,7 +433,7 @@ def test_calculator_is_rejected_with_grid_only(case1, runner):
     assert "has no effect with --grid-only" in result.output
 
 
-def test_calculator_kind_is_rejected_when_not_one_of_the_two(case1, runner):
+def test_calculator_kind_is_rejected_when_unknown(case1, runner):
     result = runner.invoke(
         main, [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "-c", "bogus"]
     )

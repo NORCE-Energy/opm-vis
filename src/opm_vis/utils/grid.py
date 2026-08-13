@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 from opm.io.ecl import EGrid
 
+from opm_vis.utils.calc import resolve_calc_range
 from opm_vis.utils.mapaxes import has_mapaxes
 
 # Global indices for slice quadrilateral
@@ -44,6 +45,67 @@ def slice_dimension_size(egrid: Any, slice_dim: str) -> int:
     return egrid.dimension[_SLICE_AXIS[slice_dim]]
 
 
+def slice_range_first_active_indices(
+    egrid: Any, slice_dim: str, start_ind: int, end_ind: int
+) -> list[int]:
+    """
+    Active index of the first active layer, per lateral position, over a range of layers
+
+    Parameters
+    ----------
+    egrid : Any
+        opm.io.ecl.EGrid (or a test double exposing dimension/active_index)
+    slice_dim : str
+        'i', 'j', or 'k' slice of the 3D grid
+    start_ind : int
+        First layer index, inclusive - scanning starts here
+    end_ind : int
+        Last layer index, inclusive
+
+    Returns
+    -------
+    list[int]
+        One active index per lateral position that has at least one active layer in
+        [start_ind, end_ind] - the first one found, scanning from start_ind towards end_ind -
+        in the same (ind_1, ind_2) nested-loop order as slice_active_indices. A position with
+        no active layer anywhere in the range is omitted entirely, same convention as
+        slice_active_indices.
+
+    Notes
+    -----
+    Cheap: only active_index() lookups, no per-cell corner reads. This is what lets
+    --calculator surface show "the first active cell from -i/-j/-k onwards" even at lateral
+    positions where -i/-j/-k's own layer is inactive: unlike slice_layer_grid, which is pinned
+    to one layer, the active index returned for a position here can come from anywhere in the
+    range - it is not necessarily on start_ind's own layer. Callers that build a slice's
+    geometry from this get a "draped" surface: each cell keeps its own real position, which can
+    vary in depth from one lateral position to the next.
+
+    slice_active_indices(egrid, slice_dim, slice_ind) is exactly the single-layer case of this
+    (start_ind == end_ind == slice_ind) - see its own, thinner wrapper below.
+    """
+    axis_1, axis_2 = _SLICE_PLANE_AXES[slice_dim]
+    nx1 = egrid.dimension[axis_1]
+    nx2 = egrid.dimension[axis_2]
+
+    act = []
+    for ind_1 in range(nx1):
+        for ind_2 in range(nx2):
+            for layer in range(start_ind, end_ind + 1):
+                if slice_dim == "i":
+                    act_index = egrid.active_index(layer, ind_1, ind_2)
+                elif slice_dim == "j":
+                    act_index = egrid.active_index(ind_1, layer, ind_2)
+                else:
+                    act_index = egrid.active_index(ind_1, ind_2, layer)
+
+                if act_index >= 0:
+                    act.append(act_index)
+                    break
+
+    return act
+
+
 def slice_active_indices(egrid: Any, slice_dim: str, slice_ind: int) -> list[int]:
     """
     Active indices of every cell on one i-, j- or k-slice, without reading any corners
@@ -65,29 +127,14 @@ def slice_active_indices(egrid: Any, slice_dim: str, slice_ind: int) -> list[int
 
     Notes
     -----
-    Cheap: only active_index() lookups, no per-cell corner reads. Shared by _GridSlice's own
-    _compute_active_indices() and by GridMesh.extract_slice(), which needs a slice's active
-    cells without paying for a full _GridSlice construction - that would also read (and mostly
-    discard) the slice's corner geometry, which GridMesh wants to read for itself, in full.
+    A single-layer call to slice_range_first_active_indices (start_ind == end_ind == slice_ind);
+    kept as its own, more prominent name since most callers only ever want one fixed layer.
+    Shared by _GridSlice's own _compute_active_indices() and by GridMesh.extract_slice(), which
+    needs a slice's active cells without paying for a full _GridSlice construction - that would
+    also read (and mostly discard) the slice's corner geometry, which GridMesh wants to read
+    for itself, in full.
     """
-    axis_1, axis_2 = _SLICE_PLANE_AXES[slice_dim]
-    nx1 = egrid.dimension[axis_1]
-    nx2 = egrid.dimension[axis_2]
-
-    act = []
-    for ind_1 in range(nx1):
-        for ind_2 in range(nx2):
-            if slice_dim == "i":
-                act_index = egrid.active_index(slice_ind, ind_1, ind_2)
-            elif slice_dim == "j":
-                act_index = egrid.active_index(ind_1, slice_ind, ind_2)
-            else:
-                act_index = egrid.active_index(ind_1, ind_2, slice_ind)
-
-            if act_index >= 0:
-                act.append(act_index)
-
-    return act
+    return slice_range_first_active_indices(egrid, slice_dim, slice_ind, slice_ind)
 
 
 def slice_layer_grid(egrid: Any, slice_dim: str, slice_ind: int) -> NDArray[np.int64]:
@@ -171,7 +218,18 @@ class _GridSlice(ABC):
     # instances built by bypassing __init__ (test doubles with no MAPAXES) still have it.
     apply_mapaxes = False
 
-    def __init__(self, path: str, slice_dim: str, slice_ind: int) -> None:
+    # Overridden in __init__ when surface=True; kept as a class default (plain, single-layer
+    # behaviour) so instances built by bypassing __init__ (test doubles) still have it.
+    calc_end: int | None = None
+
+    def __init__(
+        self,
+        path: str,
+        slice_dim: str,
+        slice_ind: int,
+        calc_count: int | None = None,
+        surface: bool = False,
+    ) -> None:
         """
         Initialize EGrid class from input path
 
@@ -183,6 +241,17 @@ class _GridSlice(ABC):
             'i', 'j, or 'k' slice of 3D grid
         slice_ind : int
             Index of slice
+        calc_count : int | None, optional
+            Value of --calc-count, by default None. Only used when surface is True; see
+            opm_vis.utils.calc.resolve_calc_range.
+        surface : bool, optional
+            --calculator surface, by default False. When True, this slice's active cells (and
+            so its geometry) come from the first active layer at each lateral position, scanned
+            from slice_ind onwards (see slice_range_first_active_indices), instead of
+            slice_ind's own layer - "draping" the slice over whichever cells are actually
+            active, rather than showing gaps where slice_ind itself is inactive. mean/sum need
+            no such change here: they only relabel slice_ind's own (already active) cells, via
+            apply_slice_calc instead.
         """
         # Internalize input
         self.slice_dim = slice_dim
@@ -226,6 +295,11 @@ class _GridSlice(ABC):
                 f"slice_ind={slice_ind} is out of bounds for slice_dim='{slice_dim}'; "
                 f"grid has {n_slice} cells along this axis (valid range: 0-{n_slice - 1})"
             )
+
+        # surface's layer range end, resolved here (rather than left to the caller) since
+        # n_slice is already at hand; None means _compute_active_indices keeps its plain,
+        # single-layer behaviour.
+        self.calc_end = resolve_calc_range(slice_ind, n_slice, calc_count)[1] if surface else None
 
         # Check (i, j, k) coord. system is aligned with (x, y, z) coord. system
         self.aligned_grid = self.is_aligned()
@@ -326,8 +400,18 @@ class _GridSlice(ABC):
     def _compute_active_indices(self) -> None:
         """
         Get active indices for a slice
+
+        Notes
+        -----
+        With surface=True (calc_end is not None), these come from
+        slice_range_first_active_indices instead of slice_active_indices - see __init__.
         """
-        self.act = slice_active_indices(self.egrid, self.slice_dim, self.slice_ind)
+        if self.calc_end is None:
+            self.act = slice_active_indices(self.egrid, self.slice_dim, self.slice_ind)
+        else:
+            self.act = slice_range_first_active_indices(
+                self.egrid, self.slice_dim, self.slice_ind, self.calc_end
+            )
 
     def _cell_corners(self) -> None:
         """
@@ -421,8 +505,15 @@ class GridSlice3D(_GridSlice):
     Grid calculations for slice with 3D coordinates.
     """
 
-    def __init__(self, path: str, slice_dim: str, slice_ind: int) -> None:
-        super().__init__(path, slice_dim, slice_ind)
+    def __init__(
+        self,
+        path: str,
+        slice_dim: str,
+        slice_ind: int,
+        calc_count: int | None = None,
+        surface: bool = False,
+    ) -> None:
+        super().__init__(path, slice_dim, slice_ind, calc_count, surface)
         # Active indices for slice
         self._compute_active_indices()
 
