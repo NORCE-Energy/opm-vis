@@ -69,6 +69,76 @@ def slice_active_indices(egrid: Any, slice_dim: str, slice_ind: int) -> list[int
 
     return act
 
+
+def slice_layer_grid(egrid: Any, slice_dim: str, slice_ind: int) -> NDArray[np.int64]:
+    """
+    Active index (or -1) of every lateral position of one i-, j- or k-layer
+
+    Parameters
+    ----------
+    egrid : Any
+        opm.io.ecl.EGrid (or a test double exposing dimension/active_index)
+    slice_dim : str
+        'i', 'j', or 'k' slice of the 3D grid
+    slice_ind : int
+        Index of the layer
+
+    Returns
+    -------
+    NDArray[np.int64]
+        Shape (nx1, nx2), active index at every (ind_1, ind_2) lateral position, or -1 where
+        that position is inactive on this layer
+
+    Notes
+    -----
+    Unlike slice_active_indices(), inactive positions are kept (as -1) rather than dropped, so
+    position (ind_1, ind_2) means the same thing on every layer - which is what lets
+    slice_range_layer_grid() combine several layers of the same slice dimension element-wise.
+    """
+    axis_1, axis_2 = _SLICE_PLANE_AXES[slice_dim]
+    nx1 = egrid.dimension[axis_1]
+    nx2 = egrid.dimension[axis_2]
+
+    layer = np.empty((nx1, nx2), dtype=np.int64)
+    for ind_1 in range(nx1):
+        for ind_2 in range(nx2):
+            if slice_dim == "i":
+                layer[ind_1, ind_2] = egrid.active_index(slice_ind, ind_1, ind_2)
+            elif slice_dim == "j":
+                layer[ind_1, ind_2] = egrid.active_index(ind_1, slice_ind, ind_2)
+            else:
+                layer[ind_1, ind_2] = egrid.active_index(ind_1, ind_2, slice_ind)
+
+    return layer
+
+
+def slice_range_layer_grid(
+    egrid: Any, slice_dim: str, start_ind: int, end_ind: int
+) -> NDArray[np.int64]:
+    """
+    Stack of slice_layer_grid() over an inclusive range of layers
+
+    Parameters
+    ----------
+    egrid : Any
+        opm.io.ecl.EGrid (or a test double exposing dimension/active_index)
+    slice_dim : str
+        'i', 'j', or 'k' slice of the 3D grid
+    start_ind : int
+        First layer index, inclusive - the slice being displayed
+    end_ind : int
+        Last layer index, inclusive
+
+    Returns
+    -------
+    NDArray[np.int64]
+        Shape (end_ind - start_ind + 1, nx1, nx2); see slice_layer_grid()
+    """
+    return np.stack(
+        [slice_layer_grid(egrid, slice_dim, ind) for ind in range(start_ind, end_ind + 1)]
+    )
+
+
 # pylint: disable=unsubscriptable-object,too-many-instance-attributes
 # EGrid is a pybind class, so until stubs (.pyi files) are made, pylint unsubscriptable-object
 # errors will pop up.

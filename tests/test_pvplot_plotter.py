@@ -299,6 +299,90 @@ def test_global_clim_diff_rstep_covers_the_diff_not_the_values(plotter):
 
 
 # ---------------------------------------------------------------------------
+# -c/--calculator (calc_kind/calc_count)
+# ---------------------------------------------------------------------------
+
+
+def test_set_scalars_calc_kind_averages_the_column_below_the_slice(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="mean")
+
+    full = plotter.case.read("PRESSURE", 60)
+    mesh = plotter._actors["k0"].mesh
+    nx, ny, nz = plotter.grid.egrid.dimension
+    expected = np.array(
+        [
+            np.mean(
+                [full[plotter.grid.egrid.active_index(i, j, k)] for k in range(nz)]
+            )
+            for i in range(nx)
+            for j in range(ny)
+        ]
+    )
+    # Reorder expected (built in (i, j) order) to match the mesh's own active-index order
+    act_to_expected = {
+        plotter.grid.egrid.active_index(i, j, 0): expected[i * ny + j]
+        for i in range(nx)
+        for j in range(ny)
+        if plotter.grid.egrid.active_index(i, j, 0) >= 0
+    }
+    ordered_expected = [
+        act_to_expected[act] for act in mesh.cell_data["ACTIVE_INDEX"]
+    ]
+    np.testing.assert_allclose(mesh.cell_data["PRESSURE"], ordered_expected)
+
+
+def test_set_scalars_calc_count_limits_the_layer_range(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="sum")
+    full_range = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+    plotter.set_scalars(
+        "PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="sum", calc_count=1
+    )
+    one_layer = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+
+    # Summing only 1 of the grid's 3 layers must differ from summing all of them
+    assert not np.array_equal(full_range, one_layer)
+    # calc_count=1 reduces to the slice's own plain values
+    expected = plotter.case.read("PRESSURE", 60)
+    mesh = plotter._actors["k0"].mesh
+    np.testing.assert_allclose(one_layer, expected[mesh.cell_data["ACTIVE_INDEX"]])
+
+
+def test_set_scalars_calc_kind_combines_with_diff(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars(
+        "PRESSURE",
+        60,
+        slice_dim="k",
+        slice_ind=0,
+        calc_kind="mean",
+        diff_rstep=0,
+    )
+    diffed = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+
+    plotter.set_scalars("PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="mean")
+    at_60 = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+    plotter.set_scalars("PRESSURE", 0, slice_dim="k", slice_ind=0, calc_kind="mean")
+    at_0 = plotter._actors["k0"].mesh.cell_data["PRESSURE"].copy()
+
+    # "aggregate first, then diff the aggregates" - not the mean of the per-cell differences
+    np.testing.assert_allclose(diffed, at_60 - at_0)
+
+
+def test_global_clim_calc_kind_covers_the_aggregate_not_the_plain_values(plotter):
+    values = plotter.global_clim("PRESSURE", [60])
+    aggregated = plotter.global_clim(
+        "PRESSURE", [60], slice_dim="k", slice_ind=0, calc_kind="mean"
+    )
+
+    assert aggregated != values
+
+
+# ---------------------------------------------------------------------------
 # add_threshold / add_clip
 # ---------------------------------------------------------------------------
 
@@ -551,6 +635,24 @@ def test_scalar_bar_is_titled_with_the_diff_kind(plotter):
     plotter.set_scalars("PRESSURE", 60, diff_rstep=0, diff_kind="relative")
 
     assert list(plotter.plotter.scalar_bars.keys()) == ["ΔPRESSURE [%]"]
+
+
+def test_scalar_bar_is_titled_with_the_calc_kind(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars("PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="mean")
+
+    assert list(plotter.plotter.scalar_bars.keys()) == ["mean(PRESSURE) [psia]"]
+
+
+def test_scalar_bar_is_titled_with_the_calc_kind_and_diff_kind(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.set_scalars(
+        "PRESSURE", 60, slice_dim="k", slice_ind=0, calc_kind="mean", diff_rstep=0
+    )
+
+    assert list(plotter.plotter.scalar_bars.keys()) == ["Δmean(PRESSURE) [psia]"]
 
 
 # ---------------------------------------------------------------------------

@@ -11,8 +11,8 @@ developed and covering a smaller subset.
 
 ``-i``/``-j``/``-k`` slice indices are 1-based (matching Eclipse-style indexing, e.g.
 ``COMPDAT``): the first cell along an axis is 1, not 0. The most common options also have short
-forms - ``-K`` for ``--keyword``, ``-r`` for ``--rstep``, ``-d`` for ``--diff`` - used
-throughout the examples below.
+forms - ``-K`` for ``--keyword``, ``-r`` for ``--rstep``, ``-d`` for ``--diff``, ``-c`` for
+``--calculator`` - used throughout the examples below.
 
 Examples
 --------
@@ -81,6 +81,30 @@ same fixed ``--diff-rstep``:
 .. code-block:: bash
 
    opm-vis-pv tests/data/SPE1CASE1 -K SGAS -k 1 --animate -d --save sgas_diff.gif
+
+``--calculator``/``-c`` aggregates a keyword across grid layers along the sliced dimension,
+from the given ``-i``/``-j``/``-k`` index to the grid's last layer, instead of colouring by the
+slice's own values - e.g. the mean pressure from layer 1 down to the base of the model. It needs
+exactly one of ``-i``/``-j``/``-k``, and needs ``--keyword``:
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -c mean --save pressure_mean.png
+
+``--calc-count`` limits the aggregation to that many layers starting at the given index,
+instead of continuing to the grid's last layer:
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 -K SGAS -k 1 -r 60 -c sum --calc-count 2
+
+``--calculator`` combines with ``--diff``: the aggregate is computed separately at ``--rstep``
+and at ``--diff-rstep``, and ``--diff`` differences the two aggregates - "how much did the mean
+change between these two report steps":
+
+.. code-block:: bash
+
+   opm-vis-pv tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -c mean -d --diff-rstep 0
 
 Plot the grid itself in a solid colour instead of colouring by a keyword, with cell outlines
 drawn on top - ``--keyword``/``-K`` is neither needed nor allowed with ``--grid-only``:
