@@ -821,7 +821,9 @@ class GridPlotter:
         if self._scalar_bar_title is not None:
             self.plotter.remove_scalar_bar(self._scalar_bar_title)
 
-        self.plotter.add_scalar_bar(title=title, mapper=mapper)
+        self.plotter.add_scalar_bar(
+            title=title, mapper=mapper, vertical=True, position_x=0.85, position_y=0.05,
+        )
         self._scalar_bar_title = title
 
     def global_clim(
