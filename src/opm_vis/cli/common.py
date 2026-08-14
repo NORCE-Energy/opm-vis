@@ -551,8 +551,8 @@ def default_output_name(
     Returns
     -------
     str
-        e.g. "SGAS_k1_60.png", "SGAS_k1_j6_0-120.gif", "SGAS-diff0-absolute_k1_60.png" with
-        --diff, or "SGAS-mean_k1-3_60.png" with --calculator aggregating layers 1-3, written to
+        e.g. "SGAS_k1_r60.png", "SGAS_k1_j6_r0-120.gif", "SGAS-diff0-absolute_k1_r60.png" with
+        --diff, or "SGAS-mean_k1-3_r60.png" with --calculator aggregating layers 1-3, written to
         the current directory
 
     Notes
@@ -561,9 +561,9 @@ def default_output_name(
     even though `slices` (and calc_end) are 0-based internally.
     """
     if rsteps is not None:
-        step_tag = f"{rsteps[0]}-{rsteps[-1]}"
+        step_tag = f"r{rsteps[0]}-{rsteps[-1]}"
     elif rstep is not None:
-        step_tag = str(rstep)
+        step_tag = f"r{rstep}"
     else:
         step_tag = "all"
 

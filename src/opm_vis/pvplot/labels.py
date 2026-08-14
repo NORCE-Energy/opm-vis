@@ -118,7 +118,43 @@ def scalar_bar_title(
     return f"{name} [{unit_label}]" if unit_label else name
 
 
-def axis_titles(label: Label) -> tuple[str, str, str]:
+def glyph_bar_title(label: Label, x_keyword: str, y_keyword: str, z_keyword: str) -> str:
+    """
+    Title for a glyph field's magnitude scalar bar
+
+    Parameters
+    ----------
+    label : Label
+        Unit label lookup for the case's unit convention
+    x_keyword : str
+        OPM keyword giving the vector's x-component, e.g. "DISPX"
+    y_keyword : str
+        OPM keyword giving the vector's y-component
+    z_keyword : str
+        OPM keyword giving the vector's z-component
+
+    Returns
+    -------
+    str
+        e.g. ``mag(DISPX, DISPY, DISPZ) [m]``, or without brackets when no unit applies
+
+    Notes
+    -----
+    "mag(...)", not the more common |...| notation, since VTK's text rendering silently drops
+    the "|" character (tested against its default font).
+
+    The unit comes from x_keyword alone: a vector's three components share one physical unit
+    in every case this is used for (e.g. a displacement field, all in metres), so there is
+    nothing for y_keyword/z_keyword's own units to add.
+    """
+    name = f"mag({x_keyword}, {y_keyword}, {z_keyword})"
+    unit_label = unit(label, x_keyword)
+    return f"{name} [{unit_label}]" if unit_label else name
+
+
+def axis_titles(
+    label: Label, km_axes: tuple[bool, bool, bool] = (False, False, False),
+) -> tuple[str, str, str]:
     """
     Titles for the x-, y- and z-axis
 
@@ -126,6 +162,10 @@ def axis_titles(label: Label) -> tuple[str, str, str]:
     ----------
     label : Label
         Unit label lookup for the case's unit convention
+    km_axes : tuple[bool, bool, bool], optional
+        Whether the x-, y- and z-axis ticks are shown in km rather than the case's own length
+        unit, by default none of them. Only takes effect when that length unit is metres; see
+        GridPlotter.show_axes_grid.
 
     Returns
     -------
@@ -141,8 +181,7 @@ def axis_titles(label: Label) -> tuple[str, str, str]:
     if not length:
         return _AXIS_NAMES
 
-    return (
-        f"{_AXIS_NAMES[0]} [{length}]",
-        f"{_AXIS_NAMES[1]} [{length}]",
-        f"{_AXIS_NAMES[2]} [{length}]",
+    units = (
+        "km" if scaled and length == "m" else length for scaled in km_axes
     )
+    return tuple(f"{name} [{u}]" for name, u in zip(_AXIS_NAMES, units))

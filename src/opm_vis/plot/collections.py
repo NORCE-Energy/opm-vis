@@ -12,6 +12,7 @@ import numpy as np
 from matplotlib import animation
 from matplotlib.collections import PolyCollection
 from matplotlib.figure import Figure
+from matplotlib.ticker import FuncFormatter
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from opm_vis.plot.slice_poly import SlicePoly2D, SlicePoly3D
@@ -19,6 +20,67 @@ from opm_vis.utils.calc import calc_label
 from opm_vis.utils.diff import diff_label
 from opm_vis.utils.restart import Report
 from opm_vis.utils.units import Label
+
+# An axis is switched from metres to km once its own span exceeds this, to keep tick labels
+# on a wide field readable. opm_vis.plot hard-codes metres for every case regardless of its
+# own unit convention (see set_labels below), so unlike opm_vis.pvplot this needs no check of
+# what unit the case is actually in.
+_KM_AXIS_SPAN_M = 1000.0
+
+
+def _km_axis_label(name: str, span: float) -> str:
+    """
+    Axis title, switched to km once its span exceeds _KM_AXIS_SPAN_M
+
+    Parameters
+    ----------
+    name : str
+        Axis name, e.g. "E(x)"
+    span : float
+        Axis extent in metres (max - min)
+
+    Returns
+    -------
+    str
+        e.g. "E(x) [m]", or "E(x) [km]" once span is wide enough
+    """
+    return f"{name} [km]" if abs(span) > _KM_AXIS_SPAN_M else f"{name} [m]"
+
+
+def _km_tick_formatter(value: float, _pos: int) -> str:
+    """
+    Format one tick value in km, for FuncFormatter
+
+    Parameters
+    ----------
+    value : float
+        Tick value, in the axis' own metres
+    _pos : int
+        Tick position; part of FuncFormatter's signature, unused here
+
+    Returns
+    -------
+    str
+        value/1000 to three decimals - metre resolution, since a km-scaled axis is often only
+        one or two decimals wide otherwise (e.g. a 1200 m span becomes 1.2 - a single decimal
+        would round every tick to the same-looking label)
+    """
+    return f"{value / 1000:.3f}"
+
+
+def _use_km_ticks_if_wide(axis, span: float) -> None:
+    """
+    Switch one matplotlib axis to km-scaled tick labels once its span is wide enough
+
+    Parameters
+    ----------
+    axis : matplotlib.axis.Axis
+        Axis to format, e.g. ax_.xaxis
+    span : float
+        Axis extent in metres (max - min)
+    """
+    if abs(span) > _KM_AXIS_SPAN_M:
+        axis.set_major_formatter(FuncFormatter(_km_tick_formatter))
 
 
 # pylint: disable=too-many-instance-attributes
@@ -685,21 +747,35 @@ class SlicePoly3DCollection(_SlicePolyCollection):
         # Init parent class
         super().__init__(paths, fig, ax_, slice_coll)
 
+        # Set limits first, since set_labels needs them to decide which axes go to km
+        self.set_lims()
+
         # Set labels
         self.set_labels()
-
-        # Set limits
-        self.set_lims()
 
         # Invert z-axis
         self.ax_.invert_zaxis()
 
     def set_labels(self) -> None:
-        """Set labels to Easting, Northing, and depth"""
-        # Set labels
-        self.ax_.set_xlabel("E(x) [m]")
-        self.ax_.set_ylabel("N(y) [m]")
-        self.ax_.set_zlabel("Depth(z) [m]")
+        """
+        Set labels to Easting, Northing, and depth
+
+        Notes
+        -----
+        Also switches an axis to km-scaled tick labels once its own span (set by set_lims,
+        which must run first) exceeds _KM_AXIS_SPAN_M metres - see that constant.
+        """
+        x_min, x_max = self.ax_.get_xlim()
+        y_min, y_max = self.ax_.get_ylim()
+        z_min, z_max = self.ax_.get_zlim()
+
+        self.ax_.set_xlabel(_km_axis_label("E(x)", x_max - x_min))
+        self.ax_.set_ylabel(_km_axis_label("N(y)", y_max - y_min))
+        self.ax_.set_zlabel(_km_axis_label("Depth(z)", z_max - z_min))
+
+        _use_km_ticks_if_wide(self.ax_.xaxis, x_max - x_min)
+        _use_km_ticks_if_wide(self.ax_.yaxis, y_max - y_min)
+        _use_km_ticks_if_wide(self.ax_.zaxis, z_max - z_min)
 
     def set_lims(self) -> None:
         """
@@ -760,31 +836,41 @@ class SlicePoly2DCollection(_SlicePolyCollection):
         # Init parent class
         super().__init__(paths, fig, ax_, slice_coll)
 
+        # Set limits first, since set_labels needs them to decide which axes go to km
+        self.set_lims()
+
         # Set labels
         self.set_labels()
-
-        # Set limits
-        self.set_lims()
 
         # Invert axis as needed
         if self.slice_coll[0].slice_dim in ["i", "j"]:
             self.ax_.invert_yaxis()
 
     def set_labels(self) -> None:
-        """Set labels according to slice dimension"""
+        """
+        Set labels according to slice dimension
+
+        Notes
+        -----
+        Also switches an axis to km-scaled tick labels once its own span (set by set_lims,
+        which must run first) exceeds _KM_AXIS_SPAN_M metres - see that constant.
+        """
         if self.slice_coll[0].slice_dim == "i":
-            xlabel = "N(y) [m]"
-            ylabel = "Depth [m]"
+            xname, yname = "N(y)", "Depth"
         elif self.slice_coll[0].slice_dim == "j":
-            xlabel = "E(x) [m]"
-            ylabel = "Depth [m]"
+            xname, yname = "E(x)", "Depth"
         else:
-            xlabel = "E(x) [m]"
-            ylabel = "N(y) [m]"
+            xname, yname = "E(x)", "N(y)"
+
+        x_min, x_max = self.ax_.get_xlim()
+        y_min, y_max = self.ax_.get_ylim()
 
         # Set labels
-        self.ax_.set_xlabel(xlabel)
-        self.ax_.set_ylabel(ylabel)
+        self.ax_.set_xlabel(_km_axis_label(xname, x_max - x_min))
+        self.ax_.set_ylabel(_km_axis_label(yname, y_max - y_min))
+
+        _use_km_ticks_if_wide(self.ax_.xaxis, x_max - x_min)
+        _use_km_ticks_if_wide(self.ax_.yaxis, y_max - y_min)
 
     def set_lims(self) -> None:
         """

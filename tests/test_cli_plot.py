@@ -102,7 +102,7 @@ def test_save_with_no_path_generates_a_name(case1, runner):
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("SGAS_k1_60.png").exists()
+        assert Path("SGAS_k1_r60.png").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ def test_diff_default_name_reflects_diff_rstep_and_kind(case1, runner):
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("PRESSURE-diff0-absolute_k1_60.png").exists()
+        assert Path("PRESSURE-diff0-absolute_k1_r60.png").exists()
 
 
 def test_diff_animate_writes_output_file(case1, runner, tmp_path):
@@ -200,7 +200,7 @@ def test_calculator_default_name_reflects_calc_kind(case1, runner):
 
         assert result.exit_code == 0, result.output
         # SPE1CASE1 has 3 k-layers: -k 1 aggregates layers 1-3 (the grid's last layer)
-        assert Path("PRESSURE-sum_k1-3_60.png").exists()
+        assert Path("PRESSURE-sum_k1-3_r60.png").exists()
 
 
 def test_calculator_default_name_reflects_calc_count(case1, runner):
@@ -225,7 +225,7 @@ def test_calculator_default_name_reflects_calc_count(case1, runner):
 
         assert result.exit_code == 0, result.output
         # -k 1 is always included; --calc-count 1 adds just the next layer (k2)
-        assert Path("PRESSURE-sum_k1-2_60.png").exists()
+        assert Path("PRESSURE-sum_k1-2_r60.png").exists()
 
 
 def test_calculator_with_calc_count_writes_output_file(case1, runner, tmp_path):
@@ -337,7 +337,7 @@ def test_calculator_surface_default_name_reflects_calc_kind(case1, runner):
 
         assert result.exit_code == 0, result.output
         # SPE1CASE1 has 3 k-layers: -k 1 scans layers 1-3 (the grid's last layer) for surface
-        assert Path("PRESSURE-surface_k1-3_60.png").exists()
+        assert Path("PRESSURE-surface_k1-3_r60.png").exists()
 
 
 def test_calculator_surface_combines_with_diff(case1, runner, tmp_path):
@@ -554,7 +554,7 @@ def test_paths_default_to_the_working_directory(data_dir, runner, tmp_path, monk
     result = runner.invoke(main, ["--keyword", "SGAS", "-k", "1", "--rstep", "60", "-s"])
 
     assert result.exit_code == 0, result.output
-    assert (case_dir / "SGAS_k1_60.png").exists()
+    assert (case_dir / "SGAS_k1_r60.png").exists()
 
 
 def test_at_least_one_slice_dimension_is_required(case1, runner):

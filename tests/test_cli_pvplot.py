@@ -132,7 +132,7 @@ def test_save_with_no_path_generates_a_name(case1, offscreen, runner):
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("SGAS_k1_60.png").exists()
+        assert Path("SGAS_k1_r60.png").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +178,7 @@ def test_diff_default_name_reflects_diff_rstep_and_kind(case1, offscreen, runner
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("PRESSURE-diff0-relative_k1_60.png").exists()
+        assert Path("PRESSURE-diff0-relative_k1_r60.png").exists()
 
 
 def test_diff_animate_writes_output_file(case1, offscreen, runner, tmp_path):
@@ -258,7 +258,7 @@ def test_calculator_default_name_reflects_calc_kind(case1, offscreen, runner):
 
         assert result.exit_code == 0, result.output
         # SPE1CASE1 has 3 k-layers: -k 1 aggregates layers 1-3 (the grid's last layer)
-        assert Path("PRESSURE-sum_k1-3_60.png").exists()
+        assert Path("PRESSURE-sum_k1-3_r60.png").exists()
 
 
 def test_calculator_default_name_reflects_calc_count(case1, offscreen, runner):
@@ -285,7 +285,7 @@ def test_calculator_default_name_reflects_calc_count(case1, offscreen, runner):
 
         assert result.exit_code == 0, result.output
         # -k 1 is always included; --calc-count 1 adds just the next layer (k2)
-        assert Path("PRESSURE-sum_k1-2_60.png").exists()
+        assert Path("PRESSURE-sum_k1-2_r60.png").exists()
 
 
 def test_calculator_with_calc_count_writes_output_file(case1, offscreen, runner, tmp_path):
@@ -506,7 +506,7 @@ def test_calculator_surface_default_name_reflects_calc_kind(case1, offscreen, ru
 
         assert result.exit_code == 0, result.output
         # SPE1CASE1 has 3 k-layers: -k 1 scans layers 1-3 (the grid's last layer) for surface
-        assert Path("PRESSURE-surface_k1-3_60.png").exists()
+        assert Path("PRESSURE-surface_k1-3_r60.png").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -559,7 +559,7 @@ def test_grid_only_default_output_name_uses_grid_tag(case1, offscreen, runner):
         result = runner.invoke(main, [case1, "-k", "1", "--grid-only", "--save"])
 
         assert result.exit_code == 0, result.output
-        assert Path("GRID_k1_0.png").exists()
+        assert Path("GRID_k1_r0.png").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -707,7 +707,7 @@ def test_threshold_default_output_name_uses_threshold_tag(case1, offscreen, runn
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("SGAS-threshold_grid_60.png").exists()
+        assert Path("SGAS-threshold_grid_r60.png").exists()
 
 
 def test_threshold_with_a_slice_is_rejected(case1, runner):
@@ -915,7 +915,7 @@ def test_clip_default_output_name_uses_clip_tag(case1, offscreen, runner):
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("SGAS-clip_grid_60.png").exists()
+        assert Path("SGAS-clip_grid_r60.png").exists()
 
 
 def test_clip_and_threshold_default_output_name_combines_both_tags(case1, offscreen, runner):
@@ -941,7 +941,7 @@ def test_clip_and_threshold_default_output_name_combines_both_tags(case1, offscr
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("SGAS-threshold-clip_grid_60.png").exists()
+        assert Path("SGAS-threshold-clip_grid_r60.png").exists()
 
 
 def test_clip_with_a_slice_is_rejected(case1, runner):
@@ -998,7 +998,7 @@ def test_paths_default_to_the_working_directory(data_dir, offscreen, runner, tmp
     result = runner.invoke(main, ["--keyword", "SGAS", "-k", "1", "--rstep", "60", "-s"])
 
     assert result.exit_code == 0, result.output
-    assert (case_dir / "SGAS_k1_60.png").exists()
+    assert (case_dir / "SGAS_k1_r60.png").exists()
 
 
 def test_no_slice_with_default_2d_view_is_rejected(case1, runner):
@@ -1048,7 +1048,7 @@ def test_no_slice_default_output_name_uses_grid_tag(case1, offscreen, runner):
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("SGAS_grid_60.png").exists()
+        assert Path("SGAS_grid_r60.png").exists()
 
 
 def test_no_slice_animates_the_whole_grid(case1, offscreen, runner, tmp_path):
@@ -1252,7 +1252,7 @@ def test_default_output_name_joins_multiple_slice_tags(case1, offscreen, runner)
         )
 
         assert result.exit_code == 0, result.output
-        assert Path("SGAS_k1_k3_60.png").exists()
+        assert Path("SGAS_k1_k3_r60.png").exists()
 
 
 def test_wells_union_across_multiple_slices(case1, offscreen, runner, tmp_path):
