@@ -12,7 +12,7 @@ import pyvista as pv
 from numpy.typing import NDArray
 
 from opm_vis.pvplot.data import CaseData
-from opm_vis.pvplot.labels import axis_titles, scalar_bar_title, unit
+from opm_vis.pvplot.labels import axis_titles, glyph_bar_title, scalar_bar_title, unit
 from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
 from opm_vis.pvplot.wells import well_paths
 from opm_vis.utils.calc import apply_slice_calc, resolve_calc_range
@@ -37,6 +37,15 @@ _OUT_OF_PLANE_AXIS = {"i": "x", "j": "y", "k": "z"}
 # show_axes_grid switches an axis from metres to km once its own span exceeds this, to keep
 # tick labels on a wide field readable. Only applies to metric cases; feet are left alone.
 _KM_AXIS_SPAN_M = 1000.0
+
+# Vertical scalar bar layout, shared by _update_scalar_bar (the coloured field's own bar) and
+# add_glyphs (the glyph magnitude bar): both sit at the same x, glyphs' stacked directly above
+# the field's, rather than side by side, so a caller showing both at once gets one column of
+# bars along the right edge instead of two spread across the whole width.
+_SCALAR_BAR_POSITION_X = 0.85
+_SCALAR_BAR_HEIGHT = 0.4
+_FIELD_SCALAR_BAR_POSITION_Y = 0.05
+_GLYPH_SCALAR_BAR_POSITION_Y = 0.55
 
 # The axis names pyvista's own clip() accepts as a `normal`; matches its _NormalsLiteral, kept
 # as our own alias since that name is private to pyvista.
@@ -592,10 +601,12 @@ class GridPlotter:
 
         Glyph actors take no part in set_scalars: an arrow's points carry per-glyph, not
         per-cell, data, so there is no ACTIVE_INDEX left to write scalar values through.
-        Coloured by magnitude (scalars="GlyphScale") by default; pass color=... for a flat
-        colour instead. PyVista colours by scalars whenever they are given regardless of a
-        color also being passed, so a caller-given color always takes priority here rather
-        than being silently overridden by the magnitude colouring.
+        Coloured by magnitude (scalars="GlyphScale") by default, with its own colour bar
+        alongside any set_scalars one; pass color=... for a flat colour instead, which leaves
+        both the magnitude colouring and its bar out entirely. PyVista colours by scalars
+        whenever they are given regardless of a color also being passed, so a caller-given
+        color always takes priority here rather than being silently overridden by the
+        magnitude colouring.
         """
         source = self._glyph_source(slice_dim, slice_ind, quads=quads)
         vectors = self._glyph_vectors(source, x_keyword, y_keyword, z_keyword, rstep)
@@ -620,6 +631,19 @@ class GridPlotter:
             kwargs.pop("scalars", None)
         else:
             kwargs.setdefault("scalars", "GlyphScale")
+            kwargs.setdefault("show_scalar_bar", True)
+            scalar_bar_args = dict(kwargs.get("scalar_bar_args") or {})
+            scalar_bar_args.setdefault(
+                "title", glyph_bar_title(self.label, x_keyword, y_keyword, z_keyword)
+            )
+            scalar_bar_args.setdefault("vertical", True)
+            # Directly above the keyword field's own colour bar (see _update_scalar_bar and
+            # the _SCALAR_BAR_* constants), so the two stack in one column along the right
+            # edge instead of overlapping when both are shown at once.
+            scalar_bar_args.setdefault("position_x", _SCALAR_BAR_POSITION_X)
+            scalar_bar_args.setdefault("position_y", _GLYPH_SCALAR_BAR_POSITION_Y)
+            scalar_bar_args.setdefault("height", _SCALAR_BAR_HEIGHT)
+            kwargs["scalar_bar_args"] = scalar_bar_args
 
         registered = self._add(glyphs, name or default_name, carries_scalars=False, **kwargs)
 
@@ -822,7 +846,12 @@ class GridPlotter:
             self.plotter.remove_scalar_bar(self._scalar_bar_title)
 
         self.plotter.add_scalar_bar(
-            title=title, mapper=mapper, vertical=True, position_x=0.85, position_y=0.05,
+            title=title,
+            mapper=mapper,
+            vertical=True,
+            position_x=_SCALAR_BAR_POSITION_X,
+            position_y=_FIELD_SCALAR_BAR_POSITION_Y,
+            height=_SCALAR_BAR_HEIGHT,
         )
         self._scalar_bar_title = title
 

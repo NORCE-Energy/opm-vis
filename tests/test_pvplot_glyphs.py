@@ -84,6 +84,28 @@ def test_add_glyphs_explicit_colour_overrides_magnitude_colouring(plotter):
     assert plotter._actors[name].actor.mapper.scalar_visibility is False
 
 
+def test_add_glyphs_adds_a_magnitude_colour_bar(plotter):
+    plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15)
+
+    assert "mag(DISPX, DISPY, DISPZ)" in plotter.plotter.scalar_bars
+
+
+def test_add_glyphs_explicit_colour_adds_no_colour_bar(plotter):
+    plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, color="red")
+
+    assert len(plotter.plotter.scalar_bars) == 0
+
+
+def test_add_glyphs_colour_bar_coexists_with_set_scalars_own(plotter):
+    plotter.add_slice("k", 0)
+    plotter.set_scalars("PRESSURE", 15)
+    plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15)
+
+    bars = plotter.plotter.scalar_bars
+    assert "mag(DISPX, DISPY, DISPZ)" in bars
+    assert "PRESSURE [barsa]" in bars
+
+
 def test_add_glyphs_does_not_carry_scalars(plotter):
     name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15)
 

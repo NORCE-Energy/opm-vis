@@ -5,6 +5,7 @@ pytest.importorskip("pyvista")  # importing opm_vis.pvplot at all needs it
 
 from opm_vis.pvplot.labels import (  # noqa: E402
     axis_titles,
+    glyph_bar_title,
     plain_text,
     scalar_bar_title,
     unit,
@@ -156,4 +157,28 @@ def test_axis_titles_ignore_km_axes_flag_for_a_field_units_case():
     # ft is not metres, so nothing switches to km even if flagged
     assert axis_titles(Label("field"), km_axes=(True, True, True)) == (
         "E(x) [ft]", "N(y) [ft]", "Depth [ft]",
+    )
+
+
+# ---------------------------------------------------------------------------
+# glyph_bar_title
+# ---------------------------------------------------------------------------
+
+
+def test_glyph_bar_title_wraps_the_three_keywords_in_mag():
+    assert glyph_bar_title(Label("metric"), "DX", "DY", "DZ") == "mag(DX, DY, DZ) [m]"
+
+
+def test_glyph_bar_title_omits_empty_brackets():
+    # DISPX/DISPY/DISPZ are not tabulated in opm_vis.utils.units
+    assert glyph_bar_title(Label("metric"), "DISPX", "DISPY", "DISPZ") == (
+        "mag(DISPX, DISPY, DISPZ)"
+    )
+
+
+def test_glyph_bar_title_unit_comes_from_x_keyword_alone():
+    # A mismatched trio is not expected in practice, but the unit should still come from
+    # x_keyword only, per the function's own contract
+    assert glyph_bar_title(Label("metric"), "DX", "NOSUCHKW", "ALSONOSUCHKW") == (
+        "mag(DX, NOSUCHKW, ALSONOSUCHKW) [m]"
     )
