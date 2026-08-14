@@ -38,14 +38,25 @@ _OUT_OF_PLANE_AXIS = {"i": "x", "j": "y", "k": "z"}
 # tick labels on a wide field readable. Only applies to metric cases; feet are left alone.
 _KM_AXIS_SPAN_M = 1000.0
 
-# Vertical scalar bar layout, shared by _update_scalar_bar (the coloured field's own bar) and
-# add_glyphs (the glyph magnitude bar): both sit at the same x, glyphs' stacked directly above
-# the field's, rather than side by side, so a caller showing both at once gets one column of
-# bars along the right edge instead of two spread across the whole width.
-_SCALAR_BAR_POSITION_X = 0.85
-_SCALAR_BAR_HEIGHT = 0.4
-_FIELD_SCALAR_BAR_POSITION_Y = 0.05
-_GLYPH_SCALAR_BAR_POSITION_Y = 0.55
+# Layout for set_scalars' own field bar and add_glyphs' magnitude bar, which sit side by side
+# rather than overlapping whenever both are shown at once; see _vertical_scalar_bars.
+#
+# A k-index (map) view is wide and short, with headroom on every side for two bars stacked
+# vertically along the right edge. An i- or j-index (cross-section) view is the opposite -
+# tall and already narrow, with only a slim margin below the plot: not enough room to stack
+# two bars there, vertical or horizontal, without the second one running into either the plot
+# or the window edge. There is, however, plenty of *width* free on both sides of a tall,
+# narrow cross-section, which is why both bars go horizontal and side by side along the
+# bottom in that case, rather than one stacked above the other.
+_VERTICAL_SCALAR_BAR_POSITION_X = 0.85
+_VERTICAL_SCALAR_BAR_HEIGHT = 0.4
+_VERTICAL_FIELD_SCALAR_BAR_POSITION_Y = 0.05
+_VERTICAL_GLYPH_SCALAR_BAR_POSITION_Y = 0.55
+
+_HORIZONTAL_SCALAR_BAR_POSITION_Y = 0.05
+_HORIZONTAL_SCALAR_BAR_WIDTH = 0.4
+_HORIZONTAL_FIELD_SCALAR_BAR_POSITION_X = 0.05
+_HORIZONTAL_GLYPH_SCALAR_BAR_POSITION_X = 0.55
 
 # The axis names pyvista's own clip() accepts as a `normal`; matches its _NormalsLiteral, kept
 # as our own alias since that name is private to pyvista.
@@ -636,13 +647,19 @@ class GridPlotter:
             scalar_bar_args.setdefault(
                 "title", glyph_bar_title(self.label, x_keyword, y_keyword, z_keyword)
             )
-            scalar_bar_args.setdefault("vertical", True)
-            # Directly above the keyword field's own colour bar (see _update_scalar_bar and
-            # the _SCALAR_BAR_* constants), so the two stack in one column along the right
-            # edge instead of overlapping when both are shown at once.
-            scalar_bar_args.setdefault("position_x", _SCALAR_BAR_POSITION_X)
-            scalar_bar_args.setdefault("position_y", _GLYPH_SCALAR_BAR_POSITION_Y)
-            scalar_bar_args.setdefault("height", _SCALAR_BAR_HEIGHT)
+            # Placed so it does not overlap the keyword field's own colour bar (see
+            # _update_scalar_bar and the comment above _VERTICAL_SCALAR_BAR_POSITION_X):
+            # stacked above it when both are vertical, beside it when both are horizontal.
+            if self._vertical_scalar_bars():
+                scalar_bar_args.setdefault("vertical", True)
+                scalar_bar_args.setdefault("position_x", _VERTICAL_SCALAR_BAR_POSITION_X)
+                scalar_bar_args.setdefault("position_y", _VERTICAL_GLYPH_SCALAR_BAR_POSITION_Y)
+                scalar_bar_args.setdefault("height", _VERTICAL_SCALAR_BAR_HEIGHT)
+            else:
+                scalar_bar_args.setdefault("vertical", False)
+                scalar_bar_args.setdefault("position_x", _HORIZONTAL_GLYPH_SCALAR_BAR_POSITION_X)
+                scalar_bar_args.setdefault("position_y", _HORIZONTAL_SCALAR_BAR_POSITION_Y)
+                scalar_bar_args.setdefault("width", _HORIZONTAL_SCALAR_BAR_WIDTH)
             kwargs["scalar_bar_args"] = scalar_bar_args
 
         registered = self._add(glyphs, name or default_name, carries_scalars=False, **kwargs)
@@ -811,6 +828,18 @@ class GridPlotter:
         # on screen: screenshot() on its own reuses the previous frame buffer.
         self.plotter.render()
 
+    def _vertical_scalar_bars(self) -> bool:
+        """
+        Whether scalar bars should be drawn vertically, along the right edge
+
+        Returns
+        -------
+        bool
+            True for a k-index 2D view or a 3D view, False for an i- or j-index 2D view; see
+            the comment above _VERTICAL_SCALAR_BAR_POSITION_X for why the split is there.
+        """
+        return self._view_2d_dim not in ("i", "j")
+
     def _update_scalar_bar(
         self,
         mapper: Any,
@@ -845,14 +874,24 @@ class GridPlotter:
         if self._scalar_bar_title is not None:
             self.plotter.remove_scalar_bar(self._scalar_bar_title)
 
-        self.plotter.add_scalar_bar(
-            title=title,
-            mapper=mapper,
-            vertical=True,
-            position_x=_SCALAR_BAR_POSITION_X,
-            position_y=_FIELD_SCALAR_BAR_POSITION_Y,
-            height=_SCALAR_BAR_HEIGHT,
-        )
+        if self._vertical_scalar_bars():
+            self.plotter.add_scalar_bar(
+                title=title,
+                mapper=mapper,
+                vertical=True,
+                position_x=_VERTICAL_SCALAR_BAR_POSITION_X,
+                position_y=_VERTICAL_FIELD_SCALAR_BAR_POSITION_Y,
+                height=_VERTICAL_SCALAR_BAR_HEIGHT,
+            )
+        else:
+            self.plotter.add_scalar_bar(
+                title=title,
+                mapper=mapper,
+                vertical=False,
+                position_x=_HORIZONTAL_FIELD_SCALAR_BAR_POSITION_X,
+                position_y=_HORIZONTAL_SCALAR_BAR_POSITION_Y,
+                width=_HORIZONTAL_SCALAR_BAR_WIDTH,
+            )
         self._scalar_bar_title = title
 
     def global_clim(

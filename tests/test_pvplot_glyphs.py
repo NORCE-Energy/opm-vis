@@ -106,6 +106,44 @@ def test_add_glyphs_colour_bar_coexists_with_set_scalars_own(plotter):
     assert "PRESSURE [barsa]" in bars
 
 
+def test_add_glyphs_colour_bar_is_vertical_for_a_k_index_view(plotter):
+    plotter.add_slice("k", 0)
+    plotter.view_2d("k")
+
+    plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15)
+
+    actor = plotter.plotter.scalar_bars._scalar_bar_actors["mag(DISPX, DISPY, DISPZ)"]
+    assert actor.GetOrientation() == 1  # vtkScalarBarActor: 0 horizontal, 1 vertical
+
+
+def test_add_glyphs_colour_bar_is_horizontal_for_an_i_index_view(plotter):
+    # Unlike a k-index view, an i-/j-index view's slim margin below the plot has no room to
+    # stack a second bar under the field's own one - vertical or horizontal - so both bars go
+    # horizontal and side by side there instead. See _HORIZONTAL_GLYPH_SCALAR_BAR_POSITION_X.
+    plotter.add_slice("j", 2)
+    plotter.view_2d("i")
+
+    plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15)
+
+    actor = plotter.plotter.scalar_bars._scalar_bar_actors["mag(DISPX, DISPY, DISPZ)"]
+    assert actor.GetOrientation() == 0  # vtkScalarBarActor: 0 horizontal, 1 vertical
+
+
+def test_add_glyphs_colour_bar_sits_beside_the_field_bar_when_both_are_horizontal(plotter):
+    plotter.add_slice("j", 2)
+    plotter.view_2d("i")
+    plotter.set_scalars("PRESSURE", 15)
+
+    plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15)
+
+    bars = plotter.plotter.scalar_bars._scalar_bar_actors
+    field_x = bars["PRESSURE [barsa]"].GetPosition()[0]
+    glyph_x = bars["mag(DISPX, DISPY, DISPZ)"].GetPosition()[0]
+    field_width = bars["PRESSURE [barsa]"].GetPosition2()[0]
+    # The glyph bar starts at or after where the field bar ends, so neither overlaps
+    assert glyph_x >= field_x + field_width
+
+
 def test_add_glyphs_does_not_carry_scalars(plotter):
     name = plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15)
 

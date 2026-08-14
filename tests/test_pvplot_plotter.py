@@ -718,6 +718,60 @@ def test_scalar_bar_can_be_turned_off(plotter):
     assert list(plotter.plotter.scalar_bars.keys()) == []
 
 
+def test_scalar_bar_is_vertical_for_a_k_index_view(plotter):
+    plotter.add_slice("k", 0)
+    plotter.view_2d("k")
+
+    plotter.set_scalars("SGAS", 60)
+
+    actor = plotter.plotter.scalar_bars._scalar_bar_actors["SGAS [-]"]
+    assert actor.GetOrientation() == 1  # vtkScalarBarActor: 0 horizontal, 1 vertical
+
+
+def test_scalar_bar_is_vertical_for_a_3d_view(plotter):
+    plotter.add_slice("k", 0)
+    plotter.view_3d()
+
+    plotter.set_scalars("SGAS", 60)
+
+    actor = plotter.plotter.scalar_bars._scalar_bar_actors["SGAS [-]"]
+    assert actor.GetOrientation() == 1
+
+
+def test_scalar_bar_is_horizontal_for_an_i_index_view(plotter):
+    plotter.add_slice("j", 5)
+    plotter.view_2d("i")
+
+    plotter.set_scalars("SGAS", 60)
+
+    actor = plotter.plotter.scalar_bars._scalar_bar_actors["SGAS [-]"]
+    assert actor.GetOrientation() == 0
+
+
+def test_scalar_bar_is_horizontal_for_a_j_index_view(plotter):
+    plotter.add_slice("j", 5)
+    plotter.view_2d("j")
+
+    plotter.set_scalars("SGAS", 60)
+
+    actor = plotter.plotter.scalar_bars._scalar_bar_actors["SGAS [-]"]
+    assert actor.GetOrientation() == 0
+
+
+def test_scalar_bar_switches_orientation_when_the_view_changes(plotter):
+    # show_axes_grid already documents that a view change needs its own call repeated; the
+    # scalar bar has the same requirement, since it is only (re)built by set_scalars
+    plotter.add_slice("j", 5)
+    plotter.view_2d("j")
+    plotter.set_scalars("SGAS", 60)
+    plotter.view_3d()
+
+    plotter.set_scalars("PRESSURE", 60)
+
+    actor = plotter.plotter.scalar_bars._scalar_bar_actors["PRESSURE [psia]"]
+    assert actor.GetOrientation() == 1
+
+
 def test_scalar_bar_is_titled_with_the_diff_kind(plotter):
     plotter.add_slice("k", 0)
 
