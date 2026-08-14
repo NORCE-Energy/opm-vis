@@ -140,7 +140,7 @@ def glyph_bar_title(label: Label, x_keyword: str, y_keyword: str, z_keyword: str
 
     Notes
     -----
-    "mag(...)", not the more common |...| notation, since VTK's text rendering silently drops
+    "mag(...)", not the more common \|...\| notation, since VTK's text rendering silently drops
     the "|" character (tested against its default font).
 
     The unit comes from x_keyword alone: a vector's three components share one physical unit
