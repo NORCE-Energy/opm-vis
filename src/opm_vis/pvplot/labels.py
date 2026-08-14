@@ -118,7 +118,9 @@ def scalar_bar_title(
     return f"{name} [{unit_label}]" if unit_label else name
 
 
-def axis_titles(label: Label) -> tuple[str, str, str]:
+def axis_titles(
+    label: Label, km_axes: tuple[bool, bool, bool] = (False, False, False),
+) -> tuple[str, str, str]:
     """
     Titles for the x-, y- and z-axis
 
@@ -126,6 +128,10 @@ def axis_titles(label: Label) -> tuple[str, str, str]:
     ----------
     label : Label
         Unit label lookup for the case's unit convention
+    km_axes : tuple[bool, bool, bool], optional
+        Whether the x-, y- and z-axis ticks are shown in km rather than the case's own length
+        unit, by default none of them. Only takes effect when that length unit is metres; see
+        GridPlotter.show_axes_grid.
 
     Returns
     -------
@@ -141,8 +147,7 @@ def axis_titles(label: Label) -> tuple[str, str, str]:
     if not length:
         return _AXIS_NAMES
 
-    return (
-        f"{_AXIS_NAMES[0]} [{length}]",
-        f"{_AXIS_NAMES[1]} [{length}]",
-        f"{_AXIS_NAMES[2]} [{length}]",
+    units = (
+        "km" if scaled and length == "m" else length for scaled in km_axes
     )
+    return tuple(f"{name} [{u}]" for name, u in zip(_AXIS_NAMES, units))

@@ -144,3 +144,16 @@ def test_axis_titles_follow_the_unit_convention():
 def test_axis_titles_drop_the_unit_when_it_is_unknown():
     with pytest.warns(UserWarning):
         assert axis_titles(Label("bogus")) == ("E(x)", "N(y)", "Depth")
+
+
+def test_axis_titles_switch_a_flagged_metric_axis_to_km():
+    assert axis_titles(Label("metric"), km_axes=(True, False, True)) == (
+        "E(x) [km]", "N(y) [m]", "Depth [km]",
+    )
+
+
+def test_axis_titles_ignore_km_axes_flag_for_a_field_units_case():
+    # ft is not metres, so nothing switches to km even if flagged
+    assert axis_titles(Label("field"), km_axes=(True, True, True)) == (
+        "E(x) [ft]", "N(y) [ft]", "Depth [ft]",
+    )

@@ -892,6 +892,158 @@ def test_show_axes_grid_labels_axes_in_the_cases_own_units(plotter):
     assert plotter.plotter.renderer.cube_axes_actor.GetZTitle() == "Depth [ft]"
 
 
+def test_show_axes_grid_keeps_a_field_units_axis_in_feet_however_wide(plotter):
+    plotter.add_slice("k", 0)
+
+    # SPE1CASE1 is field units, so the km relabeling never kicks in no matter the span
+    plotter.show_axes_grid(bounds=(0, 5000, 0, 5000, -100, 0))
+
+    axes = plotter.plotter.renderer.cube_axes_actor
+    assert axes.GetXTitle() == "E(x) [ft]"
+    assert axes.GetXAxisRange() == (0.0, 5000.0)
+
+
+def test_show_axes_grid_switches_a_wide_metric_axis_to_km(tpsa_lagged, offscreen):
+    del offscreen
+    with GridPlotter([tpsa_lagged], off_screen=True, window_size=(160, 120)) as gplot:
+        gplot.add_slice("k", 0)
+
+        # TPSA_LAGGED's own grid only spans 100 m a side; a synthetic wide x bounds exercises
+        # the km relabeling without needing test data that large. y and z keep their own small
+        # spans, so they stay in metres - this is per-axis, not all-or-nothing.
+        gplot.show_axes_grid(bounds=(0, 2000, 0, 100, -1020, -1000))
+
+        axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes.GetXTitle() == "E(x) [km]"
+        assert axes.GetYTitle() == "N(y) [m]"
+        assert axes.GetZTitle() == "Depth [m]"
+        assert axes.GetXAxisRange() == (0.0, 2.0)
+        assert axes.GetYAxisRange() == (0.0, 100.0)
+        assert axes.GetZAxisRange() == (1020.0, 1000.0)
+
+
+def test_show_axes_grid_km_switch_is_skipped_with_an_explicit_axes_ranges(tpsa_lagged, offscreen):
+    del offscreen
+    with GridPlotter([tpsa_lagged], off_screen=True, window_size=(160, 120)) as gplot:
+        gplot.add_slice("k", 0)
+
+        # An explicit axes_ranges opts out of the km relabeling, same as it already opts out
+        # of the z-axis sign flip
+        gplot.show_axes_grid(axes_ranges=(0, 2000, 0, 100, 1000, 1020))
+
+        axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes.GetXTitle() == "E(x) [m]"
+        assert axes.GetXAxisRange() == (0.0, 2000.0)
+
+
+def test_show_axes_grid_gives_a_km_axis_more_decimal_precision(tpsa_lagged, offscreen):
+    del offscreen
+    with GridPlotter([tpsa_lagged], off_screen=True, window_size=(160, 120)) as gplot:
+        gplot.add_slice("k", 0)
+
+        # show_bounds' own default format is one decimal place. At meter-scale values that is
+        # plenty, but a km-scaled 1200 m span becomes 1.2 - a range only one decimal wide -
+        # collapsing every tick to the same-looking label unless precision goes up too.
+        gplot.show_axes_grid(bounds=(500_000, 501_200, 0, 100, -1020, -1000))
+
+        axes = gplot.plotter.renderer.cube_axes_actor
+        # y stays in metres, so its format is untouched
+        assert axes.y_label_format == ("%.1f" if pv.vtk_version_info < (9, 6, 0) else "{0:.1f}")
+        assert axes.x_label_format == ("%.3f" if pv.vtk_version_info < (9, 6, 0) else "{0:.3f}")
+
+
+def test_show_axes_grid_respects_an_explicit_fmt_on_a_km_axis(tpsa_lagged, offscreen):
+    del offscreen
+    with GridPlotter([tpsa_lagged], off_screen=True, window_size=(160, 120)) as gplot:
+        gplot.add_slice("k", 0)
+
+        gplot.show_axes_grid(bounds=(500_000, 501_200, 0, 100, -1020, -1000), fmt="%.1f")
+
+        axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes.GetXTitle() == "E(x) [km]"
+        assert axes.x_label_format == "%.1f"
+
+
+def test_set_scalars_does_not_undo_the_km_relabeling(tpsa_lagged, offscreen):
+    del offscreen
+    with GridPlotter([tpsa_lagged], off_screen=True, window_size=(160, 120)) as gplot:
+        gplot.add_slice("k", 0)
+        gplot.show_axes_grid(bounds=(500_000, 501_200, 0, 100, -1020, -1000))
+
+        # pyvista's Renderer.add_actor calls update_bounds_axes() after every actor it adds -
+        # including the scalar bar set_scalars adds here - which resets a cube axes actor's
+        # axis ranges straight back to its plain physical bounds unless something puts the
+        # override back. Regression test for that: the km range must survive this call.
+        gplot.set_scalars("PRESSURE", 0)
+
+        axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes.GetXAxisRange() == (500.0, 501.2)
+        assert axes.x_label_format == ("%.3f" if pv.vtk_version_info < (9, 6, 0) else "{0:.3f}")
+
+
+def test_add_wells_does_not_undo_the_km_relabeling(tpsa_lagged, offscreen):
+    del offscreen
+    with GridPlotter([tpsa_lagged], off_screen=True, window_size=(160, 120)) as gplot:
+        gplot.add_slice("k", 0)
+        gplot.show_axes_grid(bounds=(500_000, 501_200, 0, 100, -1020, -1000))
+
+        gplot.add_wells(0)
+
+        axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes.GetXAxisRange() == (500.0, 501.2)
+
+
+def test_set_title_does_not_undo_the_km_relabeling(tpsa_lagged, offscreen):
+    del offscreen
+    with GridPlotter([tpsa_lagged], off_screen=True, window_size=(160, 120)) as gplot:
+        gplot.add_slice("k", 0)
+        gplot.set_scalars("PRESSURE", 0)
+        gplot.show_axes_grid(bounds=(500_000, 501_200, 0, 100, -1020, -1000))
+
+        gplot.set_title()
+
+        axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes.GetXAxisRange() == (500.0, 501.2)
+
+
+def test_km_relabeling_never_flashes_the_raw_range_mid_animation(tpsa_lagged, offscreen):
+    del offscreen
+    with GridPlotter([tpsa_lagged], off_screen=True, window_size=(160, 120)) as gplot:
+        gplot.add_slice("k", 0)
+        gplot.show_axes_grid(bounds=(500_000, 501_200, 0, 100, -1020, -1000))
+
+        # pyvista's Renderer.remove_actor renders *before* returning, so a fix applied only
+        # after add_wells finishes (once its removed wells are re-added) would be one render
+        # too late: the frame produced by the removal itself, mid-call, already went out with
+        # the raw metre range. Recording every render() call here - mirroring what
+        # animate()'s per-frame set_scalars/add_wells/set_title calls do - is how to catch
+        # that: a fix that is merely "eventually correct" would still show up as a bad frame
+        # partway through, even though the state checked at the end of each call looks fine.
+        seen_ranges = []
+        real_render = gplot.plotter.render
+
+        def instrumented_render(*args, **kwargs):
+            result = real_render(*args, **kwargs)
+            axes = gplot.plotter.renderer.cube_axes_actor
+            if axes is not None:
+                seen_ranges.append(axes.GetXAxisRange())
+            return result
+
+        gplot.plotter.render = instrumented_render
+
+        gplot.set_scalars("PRESSURE", 0)
+        gplot.add_wells(0)
+        gplot.set_title()
+        # A second frame: add_wells now removes the first frame's well actors before re-adding
+        # them, exercising remove_actor's own reset.
+        gplot.add_wells(0)
+        gplot.set_scalars("PRESSURE", 5)
+        gplot.set_title()
+
+        assert len(seen_ranges) > 0
+        assert all(rng == (500.0, 501.2) for rng in seen_ranges)
+
+
 def test_show_axes_grid_omits_the_axis_pointing_at_the_camera(plotter):
     plotter.add_slice("j", 5)
     plotter.view_2d("j")

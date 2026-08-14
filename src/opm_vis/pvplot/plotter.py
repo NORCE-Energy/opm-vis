@@ -12,7 +12,7 @@ import pyvista as pv
 from numpy.typing import NDArray
 
 from opm_vis.pvplot.data import CaseData
-from opm_vis.pvplot.labels import axis_titles, scalar_bar_title
+from opm_vis.pvplot.labels import axis_titles, scalar_bar_title, unit
 from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
 from opm_vis.pvplot.wells import well_paths
 from opm_vis.utils.calc import apply_slice_calc, resolve_calc_range
@@ -33,6 +33,10 @@ _VIEW_2D = {
 
 # Which coordinate axis points at the camera in each 2D view, and so should not be drawn
 _OUT_OF_PLANE_AXIS = {"i": "x", "j": "y", "k": "z"}
+
+# show_axes_grid switches an axis from metres to km once its own span exceeds this, to keep
+# tick labels on a wide field readable. Only applies to metric cases; feet are left alone.
+_KM_AXIS_SPAN_M = 1000.0
 
 # The axis names pyvista's own clip() accepts as a `normal`; matches its _NormalsLiteral, kept
 # as our own alias since that name is private to pyvista.
@@ -164,6 +168,32 @@ class GridPlotter:
         self._scalar_bar_title: str | None = None
         self._view_2d_dim: str | None = None
         self._axes_shown = False
+
+        # The z-axis sign flip and any km relabeling that show_axes_grid sets up, kept around
+        # so _reapply_axes_overrides can restore them; see that method for why they need
+        # restoring at all.
+        self._axes_ranges: tuple[float, float, float, float, float, float] | None = None
+        self._km_axes: tuple[bool, bool, bool] = (False, False, False)
+        self._km_label_format: str | None = None
+
+        # pyvista's Renderer.add_actor/remove_actor both call update_bounds_axes() after
+        # touching the scene - which every add_* method here eventually does - and that resets
+        # the cube axes actor's per-axis tick range straight back to its plain physical bounds,
+        # discarding the z-axis sign flip or any km relabeling show_axes_grid set up.
+        # remove_actor in particular renders *before* returning, so reapplying the override
+        # only afterwards (e.g. once add_wells is done) is one render too late: a frame with
+        # the wrong-looking ticks has already reached the screen, visible as a brief blink
+        # while --animate is playing. Wrapping update_bounds_axes itself instead puts the
+        # override back inside the very call that breaks it, before pyvista's own subsequent
+        # render, so no wrong frame is produced in the first place. See
+        # _reapply_axes_overrides for what gets restored.
+        original_update_bounds_axes = self.plotter.renderer.update_bounds_axes
+
+        def _update_bounds_axes_and_restore(*args, **kwargs):
+            original_update_bounds_axes(*args, **kwargs)
+            self._reapply_axes_overrides()
+
+        self.plotter.renderer.update_bounds_axes = _update_bounds_axes_and_restore
 
     def add_slice(
         self,
@@ -1094,20 +1124,41 @@ class GridPlotter:
         One limitation remains in the 2D cross-sections: VTK draws no ticks along the depth
         axis when it is looked at edge-on, so those views get a horizontal scale but no vertical
         one. The mesh geometry is unaffected.
+
+        A metric case additionally gets its own x-/y-/z-axis switched from metres to km,
+        independently of the other two, once that axis' own span exceeds _KM_AXIS_SPAN_M - a
+        wide field is easier to read in km, while a shallow depth range usually is not. This
+        only changes the tick labels (and the axis title's unit); the mesh geometry is
+        unaffected, same as the z-axis sign flip above. Passing an explicit `axes_ranges`
+        opts out of this, same as it opts out of the z-axis sign flip.
         """
-        xtitle, ytitle, ztitle = axis_titles(self.label)
-        kwargs.setdefault("xtitle", xtitle)
-        kwargs.setdefault("ytitle", ytitle)
-        kwargs.setdefault("ztitle", ztitle)
+        km_axes = (False, False, False)
 
         if "axes_ranges" not in kwargs:
             bounds = kwargs.get("bounds")
             if bounds is None:
                 mesh = kwargs.get("mesh")
                 bounds = mesh.bounds if mesh is not None else self.plotter.bounds
-            kwargs["axes_ranges"] = (
+            axes_ranges = [
                 bounds[0], bounds[1], bounds[2], bounds[3], -bounds[4], -bounds[5],
-            )
+            ]
+
+            if unit(self.label, "DEPTH") == "m":
+                km_axes = tuple(
+                    abs(axes_ranges[2 * i + 1] - axes_ranges[2 * i]) > _KM_AXIS_SPAN_M
+                    for i in range(3)
+                )
+                for i, scaled in enumerate(km_axes):
+                    if scaled:
+                        axes_ranges[2 * i] /= 1000
+                        axes_ranges[2 * i + 1] /= 1000
+
+            kwargs["axes_ranges"] = tuple(axes_ranges)
+
+        xtitle, ytitle, ztitle = axis_titles(self.label, km_axes)
+        kwargs.setdefault("xtitle", xtitle)
+        kwargs.setdefault("ytitle", ytitle)
+        kwargs.setdefault("ztitle", ztitle)
 
         if self._view_2d_dim is not None:
             hidden = _OUT_OF_PLANE_AXIS[self._view_2d_dim]
@@ -1118,12 +1169,62 @@ class GridPlotter:
         if self._axes_shown:
             self.plotter.remove_bounds_axes()
 
-        self.plotter.show_bounds(**kwargs)
+        cube_axes_actor = self.plotter.show_bounds(**kwargs)
         self._axes_shown = True
+
+        # Remembered so _reapply_axes_overrides can restore them; see that method for why
+        # they need restoring at all rather than just being set once here.
+        self._axes_ranges = kwargs["axes_ranges"]
+        self._km_axes = km_axes
+        self._km_label_format = None
+
+        if "fmt" not in kwargs and any(km_axes):
+            # show_bounds' own default format is one decimal place, tuned for its usual
+            # whole-metre values; on a km-scaled axis that resolves to metre-scale ticks a
+            # few hundred metres apart, so keep three decimals there for metre resolution. An
+            # explicit `fmt` from the caller is left alone, same as every other setdefault
+            # above.
+            self._km_label_format = "%.3f" if pv.vtk_version_info < (9, 6, 0) else "{0:.3f}"
+
+        self._reapply_axes_overrides()
 
         # Without this the new box does not appear if anything has already been rendered, in
         # the same way that set_scalars needs an explicit render to show new values
         self.plotter.render()
+
+    def _reapply_axes_overrides(self) -> None:
+        """
+        Restore the axis ranges/label formats show_axes_grid last set
+
+        Notes
+        -----
+        Called from show_axes_grid itself, right after computing this state, and from the
+        __init__-installed update_bounds_axes wrapper every time pyvista's own add_actor or
+        remove_actor would otherwise reset the cube axes actor's per-axis tick range back to
+        its plain physical bounds - see __init__ for why patching update_bounds_axes, rather
+        than calling this after each of our own add_wells/set_scalars/etc., is what keeps a
+        wrong-looking frame from ever reaching the screen. A no-op before axes have ever been
+        shown.
+        """
+        if self._axes_ranges is None:
+            return
+
+        cube_axes_actor = self.plotter.renderer.cube_axes_actor
+        if cube_axes_actor is None:
+            return
+
+        ranges = self._axes_ranges
+        cube_axes_actor.x_axis_range = ranges[0], ranges[1]
+        cube_axes_actor.y_axis_range = ranges[2], ranges[3]
+        cube_axes_actor.z_axis_range = ranges[4], ranges[5]
+
+        if self._km_label_format is not None:
+            if self._km_axes[0]:
+                cube_axes_actor.x_label_format = self._km_label_format
+            if self._km_axes[1]:
+                cube_axes_actor.y_label_format = self._km_label_format
+            if self._km_axes[2]:
+                cube_axes_actor.z_label_format = self._km_label_format
 
     def set_title(self, text: str | None = None) -> None:
         """
