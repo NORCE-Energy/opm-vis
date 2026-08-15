@@ -20,6 +20,12 @@ Plot a keyword on a grid slice without writing any Python:
 opm-vis-pv tests/data/SPE1CASE1 -K SGAS -k 1 -r 60 --save sgas_k1.png
 ```
 
+List the case's report steps with their dates and the time since the simulation started:
+
+```bash
+opm-vis-rdates tests/data/SPE1CASE1
+```
+
 ## API
 
 The same plot, driven from Python with `opm_vis.pvplot`:
