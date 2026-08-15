@@ -295,6 +295,19 @@ one line per case:
    plot.plot(["FOPR"])
    plot.show()
 
+:meth:`~opm_vis.plot.plot_summary.SummaryPlot.export_csv` renders the same data as CSV instead of
+drawing it - the same export ``opm-vis-sum --export`` writes. Cases being compared do not need
+matching timesteps: rows are the union of every case's own, and a case missing a value at a row
+leaves that cell blank.
+
+.. code-block:: python
+
+   plot = SummaryPlot(["tests/data/SPE1CASE1"])
+   print(plot.export_csv(["FOPR", "FGOR"]))
+   # date,FOPR,FGOR
+   # 2015-01-02T00:00:00,20000,1.27
+   # ...
+
 Alternative Matplotlib backend
 ---------------------------------
 

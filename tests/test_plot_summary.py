@@ -429,3 +429,74 @@ def test_save_plot_generates_a_name_next_to_the_case(data_dir, tmp_path):
 def test_save_plot_refuses_before_anything_is_drawn(case1, tmp_path):
     with pytest.raises(RuntimeError, match="No plot to save"):
         SummaryPlot([case1]).save_plot(tmp_path / "nothing.png")
+
+
+# ---------------------------------------------------------------------------
+# SummaryPlot.export_csv
+# ---------------------------------------------------------------------------
+
+
+def test_export_csv_has_one_column_per_keyword(case1):
+    lines = SummaryPlot([case1]).export_csv(["FOPR", "FGOR"]).splitlines()
+
+    assert lines[0] == "date,FOPR,FGOR"
+    assert len(lines) == 124  # header + 123 timesteps
+
+
+def test_export_csv_dates_are_iso_8601(case1):
+    lines = SummaryPlot([case1]).export_csv(["FOPR"]).splitlines()
+
+    assert lines[1].startswith("2015-01-02T00:00:00,")
+    assert lines[-1].startswith("2024-12-29T00:00:00,")
+
+
+def test_export_csv_can_use_days_or_years(case1):
+    days = SummaryPlot([case1]).export_csv(["FOPR"], x_axis="days").splitlines()
+    years = SummaryPlot([case1]).export_csv(["FOPR"], x_axis="years").splitlines()
+
+    assert days[0] == "days,FOPR"
+    assert days[1].startswith("1,")
+    assert years[0] == "years,FOPR"
+
+
+def test_export_csv_rounds_values_to_six_significant_digits(case1):
+    lines = SummaryPlot([case1]).export_csv(["FOPR"]).splitlines()
+
+    assert lines[1] == "2015-01-02T00:00:00,20000"
+
+
+def test_export_csv_prefixes_columns_with_the_case_under_compare(compare_paths):
+    lines = SummaryPlot(compare_paths, compare=True).export_csv(["FOPR"]).splitlines()
+
+    assert lines[0] == "date,runA/CASE:FOPR,runB/CASE:FOPR"
+
+
+def test_export_csv_aligns_mismatched_cases_and_blanks_missing_cells(compare_paths):
+    # runA is the full run, runB restarts it from report step 60: rows before runB started only
+    # have a value in runA's column, and both share every row after that
+    rows = SummaryPlot(compare_paths, compare=True).export_csv(["FOPR"]).splitlines()[1:]
+
+    first_row = rows[0].split(",")
+    assert first_row[1] != ""
+    assert first_row[2] == ""
+
+    last_row = rows[-1].split(",")
+    assert last_row[1] != ""
+    assert last_row[2] != ""
+
+
+def test_export_csv_rejects_no_keywords(case1):
+    with pytest.raises(ValueError, match="No keywords given"):
+        SummaryPlot([case1]).export_csv([])
+
+
+def test_export_csv_rejects_an_unknown_x_axis(case1):
+    with pytest.raises(ValueError, match="x_axis must be one of"):
+        SummaryPlot([case1]).export_csv(["FOPR"], x_axis="hours")
+
+
+def test_export_csv_does_not_require_plot_to_have_been_called(case1):
+    # Export is independent of the figure: it should work even if plot() was never run
+    text = SummaryPlot([case1]).export_csv(["FOPR"])
+
+    assert text.startswith("date,FOPR")

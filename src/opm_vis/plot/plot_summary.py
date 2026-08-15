@@ -1,7 +1,9 @@
 """Plot summary vectors (time series) with the Matplotlib backend"""
 from __future__ import annotations
 
+import csv
 import datetime as dt
+import io
 import math
 import warnings
 from collections.abc import Sequence
@@ -368,6 +370,75 @@ class SummaryPlot:
             keywords.update(reader.available_keywords())
 
         return sorted(keywords)
+
+    def export_csv(self, keywords: Sequence[str], *, x_axis: str = "date") -> str:
+        """
+        Render the selected summary vectors as CSV
+
+        Parameters
+        ----------
+        keywords : Sequence[str]
+            Summary mnemonics to export, in the order they should appear as columns
+        x_axis : str, optional
+            One of X_AXES, by default "date". Becomes the first column.
+
+        Returns
+        -------
+        str
+            Header row followed by one row per timestep, without a trailing newline. One
+            column per case and keyword (just the keyword when there is only one case); a case
+            missing a keyword leaves that column blank at every row rather than failing outright,
+            the same as a curve that plot() finds missing under --compare.
+
+        Raises
+        ------
+        ValueError
+            If no keywords were given, x_axis is unknown, or none of the keywords exists in any
+            of the cases
+
+        Notes
+        -----
+        Rows are the union of every case's own x axis values, sorted, since cases being compared
+        need not share a report frequency or even a start date. With a single case - the common,
+        non-compare use - every keyword shares the same rows, so this reduces to a plain
+        per-timestep table.
+
+        Dates are ISO-8601, matching the CSV export opm-vis-rdates already offers. Numbers are
+        rounded to 6 significant digits: this is meant to accompany a plot, not to be the
+        authoritative record of a run, and the export would otherwise carry more digits than the
+        plot itself is read to.
+        """
+        if not keywords:
+            raise ValueError("No keywords given; nothing to export!")
+        if x_axis not in X_AXES:
+            raise ValueError(f"x_axis must be one of {X_AXES}; got '{x_axis}'.")
+
+        multi_case = len(self.readers) > 1
+        columns: list[tuple[str, dict[Any, Any]]] = []
+        for reader, case in zip(self.readers, self.case_labels):
+            keys = list(x_axis_values(reader, x_axis))
+            for keyword in keywords:
+                if not reader.has_keyword(keyword):
+                    continue
+                header = f"{case}:{keyword}" if multi_case else keyword
+                columns.append((header, dict(zip(keys, reader.read(keyword)))))
+
+        if not columns:
+            raise ValueError("No curves could be exported for the selected keywords!")
+
+        all_keys = sorted({key for _, column in columns for key in column})
+
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, lineterminator="\n")
+        writer.writerow([x_axis] + [header for header, _ in columns])
+        for key in all_keys:
+            row = [key.isoformat() if x_axis == "date" else f"{key:.6g}"]
+            for _, column in columns:
+                value = column.get(key)
+                row.append("" if value is None else f"{float(value):.6g}")
+            writer.writerow(row)
+
+        return buffer.getvalue().rstrip("\n")
 
     def _unit(self, keyword: str) -> str:
         """

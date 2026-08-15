@@ -41,6 +41,12 @@ By default every ``PATHS`` entry belongs to one case - a main run and its restar
 a single non-overlapping series. ``--compare`` reads each path as a case of its own instead,
 drawing one line per case and vector.
 
+``--export`` writes the same data as CSV, alongside the plot or instead of it:
+
+.. code-block:: bash
+
+   opm-vis-sum tests/data/SPE1CASE1 -K FOPR -K FGOR --export rates.csv
+
 Each option group below has its own page with a description and a runnable example of every
 option in it: :doc:`cli_sum_input`, :doc:`cli_sum_layout`, :doc:`cli_sum_axes`,
 :doc:`cli_sum_appearance`, :doc:`cli_sum_output`.

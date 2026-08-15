@@ -213,6 +213,21 @@ def _parse_xlim(raw: tuple[str, str] | None, x_axis: str) -> tuple[Any, Any] | N
     show_default=True,
     help="Label each curve with its vector name, and with its case when --compare is given.",
 )
+# Independent of --save: --export writes the plotted data itself, not an image of it, so both
+# can be given together to get a PNG and a CSV from one invocation. Three states, the same
+# mechanism as --save: not given (no export), given with no value (print to stdout, since a
+# CSV - unlike an image - is as useful on the terminal as in a file), given a path (write there).
+@click.option(
+    "--export",
+    "-e",
+    is_flag=False,
+    flag_value="",
+    default=None,
+    metavar="[PATH]",
+    help="Export the plotted data as CSV, in addition to (or instead of) drawing it. Prints to "
+    "stdout if PATH is omitted. Combine with --save to skip the interactive window and only "
+    "write files.",
+)
 @SAVE_OPTION
 @handle_errors
 # pylint: disable=too-many-arguments,too-many-locals
@@ -231,6 +246,7 @@ def main(
     figsize: tuple[float, float] | None,
     grid: bool,
     legend: bool,
+    export: str | None,
     save: str | None,
 ) -> None:
     """
@@ -244,6 +260,8 @@ def main(
     Pick vectors with -K/--keyword, once per vector; a value containing a wildcard is an fnmatch
     pattern, so -K 'WOPR*' plots the oil rate of every well. Run --list-keywords to see what
     the case has.
+
+    --export writes the same data as CSV, alongside the plot or instead of it.
 
     See the documentation for the full option reference with examples.
     """
@@ -286,6 +304,13 @@ def main(
     plot = SummaryPlot(resolved_paths, compare=compare, figsize=figsize)
     selected = resolve_summary_keywords(keywords, plot.available_keywords())
     layout_shape = resolve_subplot_layout(layout, subplots, len(selected))
+
+    if export is not None:
+        csv_text = plot.export_csv(selected, x_axis=x_axis)
+        if export:
+            Path(export).write_text(csv_text + "\n", encoding="utf-8")
+        else:
+            click.echo(csv_text)
 
     plot.plot(
         selected,

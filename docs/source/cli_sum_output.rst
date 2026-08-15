@@ -30,3 +30,40 @@ change how the same data is laid out, not what it is.
 
 The file format follows the extension, as Matplotlib reads it - ``.png``, ``.pdf`` and ``.svg``
 all work.
+
+``--export``, ``-e``
+-----------------------
+
+Exports the plotted data as CSV, independently of ``--save``: give both to get a plot and its
+data from one invocation, or ``--export`` alone to skip the image entirely.
+
+.. code-block:: bash
+
+   opm-vis-sum tests/data/SPE1CASE1 -K FOPR -K FGOR --export rates.csv
+   opm-vis-sum tests/data/SPE1CASE1 -K FOPR --export --save rates.png
+
+Given with no path at all, the CSV is printed to standard output instead of being written to a
+file - useful for piping straight into another tool:
+
+.. code-block:: bash
+
+   opm-vis-sum tests/data/SPE1CASE1 -K FOPR --export | column -s, -t
+
+.. code-block:: text
+
+   date,FOPR
+   2015-01-02T00:00:00,20000
+   2015-01-05T00:00:00,20000
+   ...
+   2024-12-29T00:00:00,5558.12
+
+The first column follows ``--x-axis``, with dates as ISO-8601. One column follows per vector, or
+one per case and vector under ``--compare`` (``case:vector``). Numbers are rounded to 6
+significant digits - this accompanies a plot, not a full-precision export of the run.
+
+Cases being compared do not have to share a report frequency or a start date: rows are the union
+of every case's own timesteps, and a case with no value at a given row leaves that cell blank
+rather than forcing every case onto one grid.
+
+``--subplots``, ``--layout``, the axis limits and the appearance options have no effect on
+``--export`` - they only change how the plot is drawn.

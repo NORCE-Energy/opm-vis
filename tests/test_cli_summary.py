@@ -204,6 +204,74 @@ def test_compare_marks_the_generated_name(compare_paths, runner):
 
 
 # ---------------------------------------------------------------------------
+# opm-vis-sum - --export
+# ---------------------------------------------------------------------------
+
+
+def test_export_writes_a_csv_file(case1, runner, tmp_path):
+    csv_out = tmp_path / "rates.csv"
+    png_out = tmp_path / "rates.png"
+    result = runner.invoke(
+        main,
+        [case1, "-K", "FOPR", "-K", "FGOR", "--export", str(csv_out), "-s", str(png_out)],
+    )
+
+    assert result.exit_code == 0, result.output
+    lines = csv_out.read_text().splitlines()
+    assert lines[0] == "date,FOPR,FGOR"
+
+
+def test_export_with_no_path_prints_to_stdout(case1, runner):
+    # --save with no value also generates a file next to the case; run in an isolated
+    # filesystem so that file lands in a throwaway directory, not the repo itself
+    with runner.isolated_filesystem():
+        result = runner.invoke(main, [case1, "-K", "FOPR", "--export", "--save"])
+
+    assert result.exit_code == 0, result.output
+    assert "date,FOPR" in result.output
+
+
+def test_export_and_save_both_write_their_own_file(case1, runner, tmp_path):
+    csv_out = tmp_path / "rates.csv"
+    png_out = tmp_path / "rates.png"
+    result = runner.invoke(
+        main, [case1, "-K", "FOPR", "--export", str(csv_out), "--save", str(png_out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert csv_out.stat().st_size > 0
+    assert png_out.stat().st_size > 0
+
+
+def test_export_respects_x_axis(case1, runner):
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            main, [case1, "-K", "FOPR", "--x-axis", "years", "--export", "--save"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.startswith("years,FOPR")
+
+
+def test_export_reflects_compare(compare_paths, runner):
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            main, ["--compare", *compare_paths, "-K", "FOPR", "--export", "--save"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "runA/CASE:FOPR" in result.output
+    assert "runB/CASE:FOPR" in result.output
+
+
+def test_export_combined_with_list_keywords_is_rejected(case1, runner):
+    result = runner.invoke(main, [case1, "--list-keywords", "--export"])
+
+    assert result.exit_code != 0
+    assert "--export/-e" in result.output
+
+
+# ---------------------------------------------------------------------------
 # opm-vis-sum - PATHS, restart chain and --compare
 # ---------------------------------------------------------------------------
 
