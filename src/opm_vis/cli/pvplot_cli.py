@@ -354,38 +354,7 @@ def main(
     PATHS are filename prefixes: the first is the main run, any further ones are restart runs.
     Defaults to searching the working directory (./) if not given.
 
-    -i/-j/-k are repeatable (e.g. -k 1 -k 6 -j 3) to plot several slices at once, all coloured
-    by the same --keyword; --view 3d is required whenever more than one is given. Leaving out
-    -i/-j/-k entirely plots the whole active grid instead, which also needs --view 3d.
-
-    --glyphs overlays vector arrows on every chosen slice, from three keyword components (e.g.
-    a displacement vector), alongside --keyword's scalar colouring.
-
-    --diff colours by the difference from --diff-rstep (default: report step 0) instead of
-    --keyword's own values; --diff-kind picks plain/absolute/relative(%).
-
-    --calculator reduces --keyword across grid layers along the sliced dimension, from the
-    given -i/-j/-k index to the grid's last layer (or --calc-count further layers after it),
-    instead of colouring by the slice's own values; it needs exactly one of -i/-j/-k, and needs
-    --keyword (so it is not compatible with --grid-only). mean/sum aggregate every layer in
-    that range and combine with --diff as "diff first, then aggregate": the per-cell difference
-    between --rstep and --diff-rstep is computed first, then --calculator aggregates that
-    difference across the layer range. surface instead shows each lateral position's first
-    active cell in that range - its own geometry and value - skipping over any inactive/
-    pinched-out cells nearer -i/-j/-k, which is useful for e.g. a "top of reservoir" map through
-    an eroded or faulted structure.
-
-    --grid-only plots the grid (or the chosen slice(s)) in a solid colour instead - --keyword
-    is not needed, and not allowed, in this mode. --animate is not supported with --grid-only.
-
-    --threshold shows only the cells passing a bound on --keyword's own value (e.g. a gas
-    plume), instead of the whole grid; it needs --keyword and works on the whole grid only, so
-    it is not compatible with -i/-j/-k, --grid-only or --animate.
-
-    --clip cuts the whole grid open with a plane, instead of showing it whole; it works on
-    the whole grid only, so it is not compatible with -i/-j/-k. Unlike --threshold it needs no
-    --keyword, so it can be combined with --grid-only or --animate, and with --threshold
-    itself (both subsets are then shown together).
+    See the documentation for the full option reference with examples.
     """
     keyword = resolve_keyword(keyword, grid_only)
     if grid_only and animate:
