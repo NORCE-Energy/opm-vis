@@ -505,6 +505,47 @@ def resolve_animate_rsteps(
     return selected
 
 
+def resolve_rstep_selection(available_steps: Sequence[int], raw: str | None) -> list[int]:
+    """
+    Report steps to list, from a --rstep that is either a single step or a range
+
+    Parameters
+    ----------
+    available_steps : Sequence[int]
+        Every report step the case actually has
+    raw : str | None
+        Raw value of --rstep: a single report step, a START:END[:STEP] range, or None for
+        every report step
+
+    Returns
+    -------
+    list[int]
+        Selected report steps, in the case's own order
+
+    Raises
+    ------
+    click.UsageError
+        If the value is not made of integers, or the case has no report step matching it
+
+    Notes
+    -----
+    Unlike the plotting commands, where the shape of --rstep follows --animate, a listing
+    command accepts either shape at any time - so the branch is picked from the value itself
+    and handed to the same parse_rstep/resolve_animate_rsteps pair the plotters use.
+    """
+    if raw is None:
+        return list(available_steps)
+
+    if ":" in raw:
+        return resolve_animate_rsteps(available_steps, parse_rstep(raw, animate=True))
+
+    rstep = parse_rstep(raw, animate=False)
+    if rstep not in available_steps:
+        raise click.UsageError(f"Report step {rstep} was not found in this case.")
+
+    return [rstep]
+
+
 def default_output_name(
     keyword: str,
     slices: Sequence[tuple[str, int]],

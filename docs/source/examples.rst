@@ -1,8 +1,8 @@
 API examples
 ============
 
-All of these use :mod:`opm_vis.pvplot`, the recommended backend; a Matplotlib example is at the
-bottom for the alternative backend.
+Most of these use :mod:`opm_vis.pvplot`, the recommended backend; the report-date and
+Matplotlib examples at the bottom cover the timeline helpers and the alternative backend.
 
 Basic slice with wells
 -------------------------
@@ -218,6 +218,41 @@ plotter, e.g. to pull values into NumPy for your own analysis:
    case = CaseData(["tests/data/SPE1CASE1"])
    sgas = case.read("SGAS", 60)                     # one value per active cell
    prange = case.value_range("PRESSURE", [0, 60])   # taken from the data, never clamped to zero
+
+Report dates and time since simulation start
+---------------------------------------------
+
+:class:`~opm_vis.utils.restart.Report` reads the date of every report step from the restart
+files, and measures the time from the start of the simulation to any of them - the same data
+the ``opm-vis-rdates`` command prints:
+
+.. code-block:: python
+
+   from opm_vis.utils.restart import Report
+
+   report = Report(["tests/data/SPE1CASE1"])
+
+   print(report)                      # aligned table: report step, date, days, years
+   report.report_steps()              # [0, 1, ..., 120]
+   report.start_date()                # datetime(2015, 1, 1)
+   report.report_date(60)             # datetime(2019, 12, 31)
+   report.elapsed_days(60)            # 1825
+   report.elapsed_years(60)           # 4.9965...  (365.25-day years, as in the YEARS vector)
+
+:meth:`~opm_vis.utils.restart.Report.timeline` returns the whole thing as plain dicts, ready to
+feed into your own code (or a ``pandas.DataFrame``), and
+:meth:`~opm_vis.utils.restart.Report.format_timeline` renders it as a table, CSV or JSON. Both
+take an optional list of report steps to restrict the output to:
+
+.. code-block:: python
+
+   report.timeline([0, 60, 120])
+   # [{'rstep': 0, 'date': datetime.datetime(2015, 1, 1, 0, 0), 'days': 0, 'years': 0.0}, ...]
+
+   print(report.format_timeline("csv", [0, 120]))
+   # rstep,date,days,years
+   # 0,2015-01-01,0,0.000000
+   # 120,2024-12-29,3650,9.993155
 
 Alternative Matplotlib backend
 ---------------------------------

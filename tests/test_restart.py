@@ -123,12 +123,52 @@ def test_report_date_looks_up_by_report_step(report):
     assert report.report_date(120) == dt.datetime(2024, 12, 29)
 
 
-def test_report_str_formats_table(report):
-    output = str(report)
+def test_report_start_date_is_the_first_report_date(report):
+    assert report.start_date() == dt.datetime(2015, 1, 1)
 
-    assert output.startswith("Report step\tDate\n")
-    assert "0\t\t01.01.2015\n" in output
-    assert "120\t\t29.12.2024\n" in output
+
+def test_report_start_date_raises_without_restart_files(tmp_path):
+    with pytest.warns(UserWarning, match="No .UNRST or .X files found"):
+        empty = Report([str(tmp_path / "MISSING")])
+
+    with pytest.raises(ValueError, match="cannot determine the start date"):
+        empty.start_date()
+
+
+def test_report_elapsed_time_since_simulation_start(report):
+    assert report.elapsed_days(0) == 0
+    assert report.elapsed_days(120) == 3650  # cross-checked against TIME in SPE1CASE1.UNSMRY
+    assert report.elapsed_years(120) == pytest.approx(9.9931555, abs=1e-6)
+
+
+def test_report_timeline_covers_every_report_step(report):
+    entries = report.timeline()
+
+    assert len(entries) == 121
+    assert entries[0] == {
+        "rstep": 0,
+        "date": dt.datetime(2015, 1, 1),
+        "days": 0,
+        "years": 0.0,
+    }
+
+
+def test_report_timeline_takes_a_selection(report):
+    assert [entry["rstep"] for entry in report.timeline([0, 120])] == [0, 120]
+
+
+def test_report_format_timeline_renders_csv(report):
+    output = report.format_timeline("csv", [120])
+
+    assert output.splitlines() == ["rstep,date,days,years", "120,2024-12-29,3650,9.993155"]
+
+
+def test_report_str_formats_table(report):
+    lines = str(report).splitlines()
+
+    assert lines[0].split() == ["Report", "step", "Date", "Days", "Years"]
+    assert lines[1].split() == ["0", "01.01.2015", "0", "0.000"]
+    assert lines[-1].split() == ["120", "29.12.2024", "3650", "9.993"]
 
 
 # ---------------------------------------------------------------------------

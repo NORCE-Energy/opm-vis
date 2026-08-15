@@ -10,6 +10,10 @@ import numpy as np
 from numpy.typing import NDArray
 from opm.io.ecl import ERst
 
+from opm_vis.utils.timeline import DAYS_PER_YEAR
+from opm_vis.utils.timeline import format_timeline as _format_timeline
+from opm_vis.utils.timeline import timeline_entries as _timeline_entries
+
 
 _IGNORE = frozenset(
     {
@@ -259,19 +263,14 @@ class Report(_RestartFiles):
 
     def __str__(self) -> str:
         """
-        Print an table of report dates and steps if called by Python print method
+        Print a table of report steps, dates and time since simulation start
 
         Returns
         -------
         str
-            Table of report steps // report dates
+            Table with columns report step // date // days // years
         """
-        # Print table with columns: report step // report dates
-        output_string = "Report step\tDate\n"
-        for i, date in enumerate(self.rdates):
-            output_string += f'{self.rsteps[i]}\t\t{date.strftime("%d.%m.%Y")}\n'
-
-        return output_string
+        return self.format_timeline()
 
     def report_date(self, rstep: int) -> dt.datetime:
         """
@@ -310,6 +309,115 @@ class Report(_RestartFiles):
             List of report steps
         """
         return self.rsteps
+
+    def start_date(self) -> dt.datetime:
+        """
+        Return the date the simulation started
+
+        Returns
+        -------
+        dt.datetime
+            Date of the first report step
+
+        Raises
+        ------
+        ValueError
+            If no report steps were read, i.e. no restart files were found
+
+        Notes
+        -----
+        This is the earliest report date across all given paths. Report step 0 is written at
+        the start of the run, so for a normal case it is the deck's START date. Given only a
+        restart run's own path, it is instead the date that run restarted from.
+        """
+        if not self.rdates:
+            raise ValueError("No report steps found; cannot determine the start date!")
+
+        return self.rdates[0]
+
+    def elapsed_days(self, rstep: int) -> int:
+        """
+        Return days from the start of the simulation to a report step
+
+        Parameters
+        ----------
+        rstep : int
+            Report step
+
+        Returns
+        -------
+        int
+            Whole days since start_date()
+
+        Notes
+        -----
+        Report dates are read at day resolution (see _report_dates_and_steps), so the elapsed
+        time is a whole number of days. This is the same quantity as the TIME summary vector.
+        """
+        return (self.report_date(rstep) - self.start_date()).days
+
+    def elapsed_years(self, rstep: int) -> float:
+        """
+        Return years from the start of the simulation to a report step
+
+        Parameters
+        ----------
+        rstep : int
+            Report step
+
+        Returns
+        -------
+        float
+            Years since start_date(), i.e. elapsed_days() divided by DAYS_PER_YEAR (365.25),
+            the same convention as the YEARS summary vector
+        """
+        return self.elapsed_days(rstep) / DAYS_PER_YEAR
+
+    def timeline(self, rsteps: list[int] | None = None) -> list[dict[str, Any]]:
+        """
+        Return report steps with their dates and time since simulation start
+
+        Parameters
+        ----------
+        rsteps : list[int] | None, optional
+            Report steps to include. If None (the default), every report step is included.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            One dict per report step, with keys "rstep", "date", "days" and "years"; see
+            opm_vis.utils.timeline.timeline_entries
+
+        Raises
+        ------
+        ValueError
+            If no report steps were read, i.e. no restart files were found
+        """
+        return _timeline_entries(self.rsteps, self.rdates, rsteps)
+
+    def format_timeline(self, fmt: str = "table", rsteps: list[int] | None = None) -> str:
+        """
+        Render the timeline as a printable table, CSV or JSON
+
+        Parameters
+        ----------
+        fmt : str, optional
+            One of opm_vis.utils.timeline.TIMELINE_FORMATS: "table" (the default), "csv" or
+            "json"
+        rsteps : list[int] | None, optional
+            Report steps to include. If None (the default), every report step is included.
+
+        Returns
+        -------
+        str
+            The rendered timeline, without a trailing newline
+
+        Raises
+        ------
+        ValueError
+            If no report steps were read, or if fmt is not a known format
+        """
+        return _format_timeline(self.timeline(rsteps), fmt)
 
 
 class Wells(_RestartFiles):
