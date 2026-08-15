@@ -1,6 +1,8 @@
-"""Click options and helpers shared by opm-vis-pv and opm-vis-mpl"""
+"""Click options and helpers shared by the opm-vis command line programs"""
 from __future__ import annotations
 
+import fnmatch
+import re
 from collections.abc import Callable, Sequence
 from functools import wraps
 from pathlib import Path
@@ -66,9 +68,10 @@ SLICE_OPTIONS = [
 ]
 
 # An interactive window is shown by default (no value); --save/-s switches to writing a file
-# instead, either an explicit PATH or (given with no value) a name generated from the keyword,
-# slice and report step(s). This is click's "option with an optional value" mechanism: the
-# three observable states are None (not given), "" (given with no value) and a path string.
+# instead, either an explicit PATH or (given with no value) a name generated from what is being
+# plotted - see default_output_name and default_summary_output_name. This is click's "option
+# with an optional value" mechanism: the three observable states are None (not given), "" (given
+# with no value) and a path string.
 SAVE_OPTION = click.option(
     "--save",
     "-s",
@@ -78,7 +81,7 @@ SAVE_OPTION = click.option(
     metavar="[PATH]",
     help=(
         "Save to file instead of opening an interactive window. If PATH is omitted, a name is "
-        "generated from the keyword, slice and report step(s)."
+        "generated from what is being plotted."
     ),
 )
 
@@ -342,6 +345,111 @@ def resolve_keyword(keyword: str | None, grid_only: bool) -> str | None:
         raise click.UsageError("Pass --keyword, or --grid-only to plot without colouring it.")
 
     return keyword
+
+
+# fnmatch metacharacters. A -K/--keyword value carrying one of these is a pattern to expand
+# against the case's own summary vectors; one without is a plain vector name, and gets a "not in
+# this case" error rather than a "matched nothing" one - a misspelling and an over-narrow pattern
+# need different advice.
+_WILDCARD_CHARS = "*?["
+
+
+def resolve_summary_keywords(
+    patterns: Sequence[str], available: Sequence[str]
+) -> list[str]:
+    """
+    Expand every -K/--keyword value against the summary vectors a case actually has
+
+    Parameters
+    ----------
+    patterns : Sequence[str]
+        Values of -K/--keyword: plain vector names, or fnmatch patterns such as "WOPR*"
+    available : Sequence[str]
+        Every summary vector in the case, as SummaryReader.available_keywords() returns them
+
+    Returns
+    -------
+    list[str]
+        Selected vectors, in the order the patterns were given; each pattern's own matches are
+        sorted among themselves, and a vector matched by more than one pattern is kept once
+
+    Raises
+    ------
+    click.UsageError
+        If any pattern matches no summary vector in the case
+
+    Notes
+    -----
+    fnmatchcase, not fnmatch: fnmatch normalizes the case of both sides, so "-K fopr" would
+    match on Windows and not on Linux. Summary mnemonics are upper case, so matching them
+    exactly is both portable and unsurprising.
+    """
+    selected: list[str] = []
+    for pattern in patterns:
+        matches = sorted(name for name in available if fnmatch.fnmatchcase(name, pattern))
+        if not matches:
+            if any(char in pattern for char in _WILDCARD_CHARS):
+                raise click.UsageError(
+                    f"No summary vector matches '{pattern}'. Run --list-keywords to see what "
+                    "this case has."
+                )
+            raise click.UsageError(
+                f"{pattern} is not a summary vector in this case. Run --list-keywords to see "
+                "what it has."
+            )
+        selected.extend(match for match in matches if match not in selected)
+
+    return selected
+
+
+def resolve_subplot_layout(
+    layout: tuple[int, int] | None, subplots: bool, n_plots: int
+) -> tuple[int, int] | None:
+    """
+    Validate --layout against --subplots and the number of subplots it has to hold
+
+    Parameters
+    ----------
+    layout : tuple[int, int] | None
+        Value of --layout, as (rows, cols)
+    subplots : bool
+        Value of --subplots
+    n_plots : int
+        Number of subplots the grid has to hold, i.e. the number of selected keywords
+
+    Returns
+    -------
+    tuple[int, int] | None
+        layout unchanged, or None to leave the grid shape to the plotter's own near-square
+        default
+
+    Raises
+    ------
+    click.UsageError
+        If --layout was given without --subplots, either of its values is below 1, or the grid
+        it describes has fewer cells than there are keywords to place in it
+    """
+    if layout is None:
+        return None
+
+    if not subplots:
+        raise click.UsageError(
+            "--layout only shapes the --subplots grid; pass --subplots, or drop --layout to "
+            "draw every keyword in one axes."
+        )
+
+    rows, cols = layout
+    if rows < 1 or cols < 1:
+        raise click.UsageError(
+            f"--layout ROWS COLS must both be at least 1; got {rows} {cols}."
+        )
+    if rows * cols < n_plots:
+        raise click.UsageError(
+            f"--layout {rows} {cols} has room for {rows * cols} of the {n_plots} keywords "
+            "selected; give a larger grid, or fewer -K/--keyword."
+        )
+
+    return layout
 
 
 def grid_color_kwargs(grid_color: str | None) -> dict:
@@ -626,6 +734,66 @@ def default_output_name(
             keyword_tag += f"-{diff_kind}"
 
     return f"{keyword_tag}_{slice_tag}_{step_tag}.{ext}"
+
+
+# At most this many keywords are spelled out in a generated summary file name; beyond that the
+# name says how many more there were, so a wildcard matching twenty wells still gives a usable
+# file name.
+_MAX_NAME_KEYWORDS = 3
+
+
+def default_summary_output_name(
+    keywords: Sequence[str],
+    *,
+    x_axis: str = "date",
+    compare: bool = False,
+    ext: str = "png",
+) -> str:
+    """
+    Build an output filename for opm-vis-sum when --save is given with no path
+
+    Parameters
+    ----------
+    keywords : Sequence[str]
+        Summary vectors being plotted, already expanded by resolve_summary_keywords - never a
+        pattern, so no wildcard ever reaches a file name
+    x_axis : str, optional
+        Value of --x-axis, by default "date"
+    compare : bool, optional
+        Value of --compare, by default False
+    ext : str, optional
+        File extension, by default "png"
+
+    Returns
+    -------
+    str
+        e.g. "FOPR_date.png", "WOPR-INJ_WOPR-PROD_years.png", "FOPR_compare_date.png" or
+        "FGOR_FOPR_WBHP-INJ_and19more_date.png", written to the current directory
+
+    Notes
+    -----
+    A sibling of default_output_name rather than an extension of it: two of that name's three
+    parts (slice, report step) do not exist for a time series, and the two this one needs (a
+    list of keywords, an x axis) have no place there.
+
+    Summary mnemonics carry ":" and "," separators - WBHP:PROD, BPR:1,1,1 - which make awkward
+    file names, and ":" is outright invalid on Windows, so every run of non-alphanumeric
+    characters becomes a single "-".
+
+    Only what is plotted goes into the name. --compare does, since it changes which cases are
+    read, while --subplots, --layout and the axis limits do not: they change how the same data
+    is laid out, not what it is.
+    """
+    tags = [
+        re.sub(r"[^A-Za-z0-9]+", "-", keyword) for keyword in keywords[:_MAX_NAME_KEYWORDS]
+    ]
+    if len(keywords) > _MAX_NAME_KEYWORDS:
+        tags.append(f"and{len(keywords) - _MAX_NAME_KEYWORDS}more")
+    if compare:
+        tags.append("compare")
+    tags.append(x_axis)
+
+    return f"{'_'.join(tags)}.{ext}"
 
 
 def require_dynamic_keyword_error(keyword: str) -> click.UsageError:
