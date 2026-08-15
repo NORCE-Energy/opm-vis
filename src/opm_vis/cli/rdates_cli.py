@@ -53,16 +53,10 @@ def main(paths: tuple[str, ...], rstep: str | None, fmt: str, save: str | None) 
     Defaults to searching the working directory (./) if not given.
 
     Dates are read from the restart files (.UNRST/.X), at day resolution - no summary file is
-    needed. Elapsed time is measured from the first report step, and is given both in days and
-    in years (365.25 days), matching the TIME and YEARS summary vectors.
+    needed. Elapsed time is measured from the first report step, in days and in years (365.25
+    days), matching the TIME and YEARS summary vectors.
 
-    -r/--rstep lists only part of the timeline, either a single report step or a START:END
-    range with an optional :STEP increment, e.g. -r 60 or -r 0:120:10. Report steps missing
-    from the case are skipped, so a range does not have to line up with the case's own output
-    frequency.
-
-    --format csv or --format json writes machine-readable output with ISO-8601 dates instead
-    of the aligned table, for piping into other tools.
+    See the documentation for the full option reference with examples.
     """
     report = Report(resolve_paths(paths))
     rsteps = resolve_rstep_selection(report.report_steps(), rstep)

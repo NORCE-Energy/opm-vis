@@ -35,8 +35,10 @@ Features
   time series.
 - **MAPAXES-aware.** Grids with a MAPAXES transform are read in real-world coordinates, not raw
   grid-local ones.
-- **Command-line tools.** ``opm-vis-pv`` and ``opm-vis-mpl`` plot or animate a case without
-  writing any Python.
+- **Report dates.** List every report step with its date and the time since the simulation
+  started, in days and years, as a table, CSV or JSON.
+- **Command-line tools.** ``opm-vis-pv`` and ``opm-vis-mpl`` plot or animate a case, and
+  ``opm-vis-rdates`` lists its report dates, without writing any Python.
 
 Install
 -------
