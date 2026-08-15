@@ -40,3 +40,15 @@ which is also why ``--subplots`` without ``--compare`` never draws one.
 ``--no-legend`` is worth reaching for when a wildcard matched a lot of wells: long legends are
 split into further columns rather than one very tall one, but at some point they cover the
 curves regardless.
+
+``--linewidth``, ``--lw``
+---------------------------
+
+Line width of every curve. Defaults to Matplotlib's own default.
+
+.. code-block:: bash
+
+   opm-vis-sum tests/data/SPE1CASE1 -K 'WOPR:*' --lw 1
+
+Thinner lines are worth reaching for alongside ``--no-legend`` on a busy wildcard selection,
+where the default width can make overlapping curves hard to tell apart.

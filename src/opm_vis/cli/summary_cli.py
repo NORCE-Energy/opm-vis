@@ -213,6 +213,15 @@ def _parse_xlim(raw: tuple[str, str] | None, x_axis: str) -> tuple[Any, Any] | N
     show_default=True,
     help="Label each curve with its vector name, and with its case when --compare is given.",
 )
+@click.option(
+    "--linewidth",
+    "--lw",
+    "linewidth",
+    type=click.FloatRange(min=0, min_open=True),
+    default=None,
+    metavar="WIDTH",
+    help="Line width of every curve. Defaults to Matplotlib's own default.",
+)
 # Independent of --save: --export writes the plotted data itself, not an image of it, so both
 # can be given together to get a PNG and a CSV from one invocation. Three states, the same
 # mechanism as --save: not given (no export), given with no value (print to stdout, since a
@@ -246,6 +255,7 @@ def main(
     figsize: tuple[float, float] | None,
     grid: bool,
     legend: bool,
+    linewidth: float | None,
     export: str | None,
     save: str | None,
 ) -> None:
@@ -323,6 +333,7 @@ def main(
         title=title,
         grid=grid,
         legend=legend,
+        linewidth=linewidth,
     )
 
     if save is None:

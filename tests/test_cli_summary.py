@@ -156,6 +156,8 @@ def test_default_name_marks_compare_and_x_axis():
         ["-K", "FOPR", "--ylim", "0", "25000"],
         ["-K", "FOPR", "--title", "Field rates", "--figsize", "8", "4", "--no-grid",
          "--no-legend"],
+        ["-K", "FOPR", "--linewidth", "2.5"],
+        ["-K", "FOPR", "--lw", "2.5"],
     ],
 )
 def test_plot_is_written_to_file(case1, runner, tmp_path, options):
@@ -368,6 +370,8 @@ def test_list_keywords_with_a_default_valued_option_is_rejected(case1, runner):
         (["-K", "FOPR", "--ylim", "10", "0"], "--ylim MIN MAX must be increasing"),
         (["-K", "FOPR", "--figsize", "0", "4"], "must both be positive"),
         (["-K", "FOPR", "--x-axis", "time"], "Invalid value for"),
+        (["-K", "FOPR", "--linewidth", "0"], "Invalid value for"),
+        (["-K", "FOPR", "--linewidth", "-1"], "Invalid value for"),
     ],
 )
 def test_usage_errors_are_clean(case1, runner, options, message):

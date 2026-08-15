@@ -571,6 +571,7 @@ class SummaryPlot:
         title: str | None = None,
         grid: bool = True,
         legend: bool = True,
+        linewidth: float | None = None,
         **kwargs,
     ) -> None:
         """
@@ -601,14 +602,17 @@ class SummaryPlot:
             Whether to draw grid lines, by default True
         legend : bool, optional
             Whether to label the curves, by default True
+        linewidth : float | None, optional
+            Line width of every curve, by default None, which keeps Matplotlib's own default
         **kwargs
-            Passed on to Axes.plot, overriding the computed colour and dash pattern
+            Passed on to Axes.plot, overriding the computed colour and dash pattern, and
+            linewidth if both are given
 
         Raises
         ------
         ValueError
-            If no keywords were given, x_axis is unknown, the layout has no room for every
-            keyword, or none of the keywords exists in any of the cases
+            If no keywords were given, x_axis is unknown, linewidth is not positive, the layout
+            has no room for every keyword, or none of the keywords exists in any of the cases
 
         Warns
         -----
@@ -620,6 +624,8 @@ class SummaryPlot:
             raise ValueError("No keywords given; nothing to plot!")
         if x_axis not in X_AXES:
             raise ValueError(f"x_axis must be one of {X_AXES}; got '{x_axis}'.")
+        if linewidth is not None and linewidth <= 0:
+            raise ValueError(f"linewidth must be positive; got {linewidth}.")
 
         self.x_axis = x_axis
         self.axes_keywords = (
@@ -648,6 +654,8 @@ class SummaryPlot:
                     style = self._curve_style(
                         keyword_ind, case_ind, multi_keyword, multi_case
                     )
+                    if linewidth is not None:
+                        style["linewidth"] = linewidth
                     (line,) = ax_.plot(
                         x_axis_values(reader, x_axis),
                         reader.read(keyword),

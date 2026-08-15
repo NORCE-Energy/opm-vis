@@ -404,6 +404,25 @@ def test_grid_can_be_turned_off(case1):
     assert not plot.axes[0].xaxis.get_gridlines()[0].get_visible()
 
 
+def test_linewidth_is_applied_to_every_curve(case1):
+    plot = SummaryPlot([case1])
+    plot.plot(["FOPR", "FGOR"], linewidth=3.0)
+
+    assert [line.get_linewidth() for line in plot.lines] == [3.0, 3.0]
+
+
+def test_linewidth_defaults_to_matplotlibs_own(case1):
+    plot = SummaryPlot([case1])
+    plot.plot(["FOPR"])
+
+    assert plot.lines[0].get_linewidth() == plt.rcParams["lines.linewidth"]
+
+
+def test_linewidth_rejects_a_non_positive_value(case1):
+    with pytest.raises(ValueError, match="linewidth must be positive"):
+        SummaryPlot([case1]).plot(["FOPR"], linewidth=0)
+
+
 def test_save_plot_writes_a_file(case1, tmp_path):
     out = tmp_path / "fopr.png"
     plot = SummaryPlot([case1])
