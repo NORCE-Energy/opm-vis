@@ -1,4 +1,5 @@
 """Unit labels and conversion"""
+import re
 import warnings
 
 _METRIC = {
@@ -160,3 +161,81 @@ class Label:
     def unit_convention(self) -> str:
         """Return unit convention"""
         return self.unit_type
+
+
+# Summary vectors need none of the convention tables above: .SMSPEC stores a unit string per
+# vector, so the file itself says whether a rate is in STB/DAY or SM3/DAY (see
+# opm_vis.utils.summary.SummaryReader.unit). Only the rendering is ours - Eclipse spells those
+# units in upper-case ASCII, while the rest of opm_vis writes them as Matplotlib mathtext.
+_SUMMARY_UNIT_TOKENS = {
+    "SM3": r"Sm$^3$",
+    "RM3": r"Rm$^3$",
+    "M3": r"m$^3$",
+    "SCM3": r"Scm$^3$",
+    "RCM3": r"Rcm$^3$",
+    "CM3": r"cm$^3$",
+    "STB": "stb",
+    "RB": "Rb",
+    "MSCF": "Mscf",
+    "SCF": "scf",
+    "DAY": "day",
+    "DAYS": "days",
+    "HOUR": "hour",
+    "HOURS": "hours",
+    "HR": "hr",
+    "YEARS": "years",
+    "BARSA": "barsa",
+    "BARS": "bar",
+    "BAR": "bar",
+    "PSIA": "psia",
+    "PSI": "psi",
+    "ATMA": "atma",
+    "ATM": "atm",
+    "KG": "kg",
+    "LB": "lb",
+    "CP": "cP",
+    "MD": "mD",
+    "DEGC": r"$^\circ$C",
+    "DEGF": r"$^\circ$F",
+    "M": "m",
+    "FT": "ft",
+    "CM": "cm",
+}
+
+# Written on the axis when .SMSPEC reports an empty unit string, e.g. for a saturation
+_DIMENSIONLESS_LABEL = "-"
+
+# Units are built from tokens joined by "/" and "*", e.g. "STB/DAY" or "CP*RM3/DAY/BAR". Keeping
+# the separators in the split result is what lets each token be looked up on its own.
+_UNIT_SEPARATORS = re.compile(r"([/*])")
+
+
+def summary_unit_label(unit: str) -> str:
+    """
+    Render the unit string of a summary vector as a Matplotlib-ready label
+
+    Parameters
+    ----------
+    unit : str
+        Raw unit string from the summary file, as SummaryReader.unit() returns it, e.g.
+        "STB/DAY" or "" for a dimensionless vector
+
+    Returns
+    -------
+    str
+        Label to write on an axis, e.g. "stb/day", "Sm$^3$/Sm$^3$" or "-"
+
+    Notes
+    -----
+    An unrecognised token is passed through unchanged rather than warned about, unlike Label:
+    there is no fixed vocabulary here, since user-defined (UDQ) vectors carry whatever unit
+    string the deck gave them, so a warning would fire on perfectly valid data.
+    """
+    unit = unit.strip()
+    if not unit:
+        return _DIMENSIONLESS_LABEL
+
+    return "".join(
+        token if token in "/*" else _SUMMARY_UNIT_TOKENS.get(token.upper(), token)
+        for token in _UNIT_SEPARATORS.split(unit)
+    )
