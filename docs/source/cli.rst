@@ -15,7 +15,7 @@ forms - ``-K`` for ``--keyword``, ``-r`` for ``--rstep``, ``-d`` for ``--diff``,
 ``--calculator`` - used throughout the examples on both program pages.
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    cli_pv
    cli_mpl
