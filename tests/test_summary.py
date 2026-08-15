@@ -135,6 +135,86 @@ def test_summary_dates_returns_empty_list_when_no_smspec_file_was_found(tmp_path
 
 
 # ---------------------------------------------------------------------------
+# SummaryReader.has_keyword / unit / read caching
+# ---------------------------------------------------------------------------
+
+
+def test_has_keyword_finds_an_existing_keyword(reader):
+    assert reader.has_keyword("FOPR")
+
+
+def test_has_keyword_is_false_for_an_unknown_keyword(reader):
+    assert not reader.has_keyword("NOPE")
+
+
+def test_has_keyword_is_false_when_no_smspec_file_was_found(tmp_path):
+    # Deliberately not a raise: a caller picking which vectors a case can contribute should not
+    # have to guard the call
+    with pytest.warns(UserWarning, match="No .SMSPEC found"):
+        sr = SummaryReader([str(tmp_path / "MISSING")])
+
+    assert not sr.has_keyword("FOPR")
+
+
+def test_unit_returns_the_smspec_unit_string(reader):
+    assert reader.unit("FOPR") == "STB/DAY"
+
+
+def test_unit_is_empty_for_a_dimensionless_keyword(reader):
+    assert reader.unit("BGSAT:1,1,1") == ""
+
+
+def test_unit_raises_key_error_for_an_unknown_keyword(reader):
+    # ESmry.units() itself raises a bare IndexError("unordered_map::at"), which names neither
+    # the keyword nor the problem
+    with pytest.raises(KeyError, match="NOPE"):
+        reader.unit("NOPE")
+
+
+def test_read_raises_key_error_naming_the_file_for_an_unknown_keyword(reader):
+    with pytest.raises(KeyError, match="NOPE"):
+        reader.read("NOPE")
+
+
+def test_read_caches_the_array(reader):
+    # The same object, not merely an equal one: several axes reading one vector otherwise costs
+    # a decompression pass over the .UNSMRY each time
+    assert reader.read("FOPR") is reader.read("FOPR")
+
+
+# ---------------------------------------------------------------------------
+# SummaryReader.start_date / end_date / elapsed_days / elapsed_years
+# ---------------------------------------------------------------------------
+
+
+def test_start_and_end_date_match_dataset(reader):
+    assert reader.start_date() == dt.datetime(2015, 1, 1)
+    assert reader.end_date() == dt.datetime(2024, 12, 29)
+
+
+def test_elapsed_days_equals_the_time_vector(reader):
+    # The point of anchoring on start_date rather than on the first reported timestep
+    np.testing.assert_allclose(reader.elapsed_days(), reader.read("TIME"))
+
+
+def test_elapsed_days_starts_at_the_first_reported_step_not_at_zero(reader):
+    # SPE1CASE1 starts on 2015-01-01 but first reports on 2015-01-02
+    np.testing.assert_allclose(reader.elapsed_days()[0], 1.0)
+
+
+def test_elapsed_years_equals_the_years_vector(reader):
+    np.testing.assert_allclose(reader.elapsed_years(), reader.read("YEARS"))
+
+
+def test_elapsed_days_raises_when_no_smspec_file_was_found(tmp_path):
+    with pytest.warns(UserWarning, match="No .SMSPEC found"):
+        sr = SummaryReader([str(tmp_path / "MISSING")])
+
+    with pytest.raises(ValueError, match="No .SMSPEC file was found"):
+        sr.elapsed_days()
+
+
+# ---------------------------------------------------------------------------
 # SummaryReader - restart behavior (SPE1CASE2 + SPE1CASE2_RESTART_60)
 # ---------------------------------------------------------------------------
 
@@ -198,6 +278,11 @@ def _bypass_summary_init(smry):
     """Build a SummaryReader from fake ESmry stand-ins, without touching real files."""
     obj = object.__new__(SummaryReader)
     obj.smry = smry
+    # The attributes __init__ sets besides the ESmry list itself: the resolved file names read()
+    # names in its errors, and the lazy caches read()/has_keyword() fill
+    obj.smry_paths = [f"fake_{i}.SMSPEC" for i in range(len(smry))]
+    obj._keyword_set = None
+    obj._cache = {}
     obj._time_and_indices()
     return obj
 
