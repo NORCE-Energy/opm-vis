@@ -1,8 +1,9 @@
 API examples
 ============
 
-Most of these use :mod:`opm_vis.pvplot`, the recommended backend; the report-date and
-Matplotlib examples at the bottom cover the timeline helpers and the alternative backend.
+Most of these use :mod:`opm_vis.pvplot`, the recommended backend; the report-date, summary and
+Matplotlib examples at the bottom cover the timeline helpers, the summary vectors and the
+alternative backend.
 
 Basic slice with wells
 -------------------------
@@ -253,6 +254,59 @@ take an optional list of report steps to restrict the output to:
    # rstep,date,days,years
    # 0,2015-01-01,0,0.000000
    # 120,2024-12-29,3650,9.993155
+
+Summary vectors
+----------------
+
+:class:`~opm_vis.utils.summary.SummaryReader` reads the time series in a case's ``.SMSPEC``/
+``.UNSMRY`` files, stitching a main run and any restarts into one non-overlapping series:
+
+.. code-block:: python
+
+   from opm_vis.utils.summary import SummaryReader
+
+   summary = SummaryReader(["tests/data/SPE1CASE1"])
+
+   summary.available_keywords()       # ['BGSAT:1,1,1', ..., 'FOPR', 'TIME', 'WBHP:PROD', ...]
+   summary.read("FOPR")               # one value per timestep
+   summary.unit("FOPR")               # 'STB/DAY', as the summary file records it
+   summary.summary_dates()            # one datetime per timestep, ministeps included
+   summary.elapsed_days()             # the same values as the TIME vector
+   summary.elapsed_years()            # the same values as the YEARS vector
+
+:class:`~opm_vis.plot.plot_summary.SummaryPlot` draws them - the same plot the ``opm-vis-sum``
+command makes. Several vectors share one axes by default, or get one subplot each with
+``subplots=True``:
+
+.. code-block:: python
+
+   from opm_vis.plot.plot_summary import SummaryPlot
+
+   plot = SummaryPlot(["tests/data/SPE1CASE1"])
+   plot.plot(["FOPR", "FGOR"], x_axis="years", subplots=True)
+   plot.save_plot("rates.png")
+
+``compare=True`` reads every path as a case of its own rather than as a restart chain, drawing
+one line per case:
+
+.. code-block:: python
+
+   plot = SummaryPlot(["runs/base/CASE", "runs/high_rate/CASE"], compare=True)
+   plot.plot(["FOPR"])
+   plot.show()
+
+:meth:`~opm_vis.plot.plot_summary.SummaryPlot.export_csv` renders the same data as CSV instead of
+drawing it - the same export ``opm-vis-sum --export`` writes. Cases being compared do not need
+matching timesteps: rows are the union of every case's own, and a case missing a value at a row
+leaves that cell blank.
+
+.. code-block:: python
+
+   plot = SummaryPlot(["tests/data/SPE1CASE1"])
+   print(plot.export_csv(["FOPR", "FGOR"]))
+   # date,FOPR,FGOR
+   # 2015-01-02T00:00:00,20000,1.27
+   # ...
 
 Alternative Matplotlib backend
 ---------------------------------

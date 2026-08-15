@@ -20,6 +20,13 @@ Plot a keyword on a grid slice without writing any Python:
 opm-vis-pv tests/data/SPE1CASE1 -K SGAS -k 1 -r 60 --save sgas_k1.png
 ```
 
+Plot summary vectors (time series) from the case's `.SMSPEC`/`.UNSMRY` files, one line per
+vector or one subplot each:
+
+```bash
+opm-vis-sum tests/data/SPE1CASE1 -K FOPR -K 'WBHP:*' --subplots --save rates.png
+```
+
 List the case's report steps with their dates and the time since the simulation started:
 
 ```bash

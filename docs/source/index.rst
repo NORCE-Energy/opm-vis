@@ -37,8 +37,13 @@ Features
   grid-local ones.
 - **Report dates.** List every report step with its date and the time since the simulation
   started, in days and years, as a table, CSV or JSON.
-- **Command-line tools.** ``opm-vis-pv`` and ``opm-vis-mpl`` plot or animate a case, and
-  ``opm-vis-rdates`` lists its report dates, without writing any Python.
+- **Summary vectors.** Plot the time series in a case's ``.SMSPEC``/``.UNSMRY`` files - field and
+  well rates, totals, pressures - several at once, in one axes or a grid of subplots, against
+  dates, days or years, with wildcard selection and a comparison mode for putting several cases
+  side by side.
+- **Command-line tools.** ``opm-vis-pv`` and ``opm-vis-mpl`` plot or animate a case's grid,
+  ``opm-vis-sum`` plots its summary vectors, and ``opm-vis-rdates`` lists its report dates,
+  without writing any Python.
 
 Install
 -------

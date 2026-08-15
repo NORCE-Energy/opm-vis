@@ -30,6 +30,7 @@ pyvista = ["pyvista>=0.44", "imageio", "imageio-ffmpeg"]
 [project.scripts]
 opm-vis-pv = "opm_vis.cli.pvplot_cli:main"
 opm-vis-mpl = "opm_vis.cli.plot_cli:main"
+opm-vis-sum = "opm_vis.cli.summary_cli:main"
 opm-vis-rdates = "opm_vis.cli.rdates_cli:main"
 
 [tool.setuptools.packages.find]
