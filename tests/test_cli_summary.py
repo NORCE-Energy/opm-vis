@@ -188,6 +188,9 @@ def test_default_name_marks_compare_and_x_axis():
         ["-K", "FOPR", "-K", "FGOR", "--ls", "dashed", "--ls", "dotted"],
         ["-K", "FOPR", "-K", "FGOR", "--marker", "o", "--marker", "s"],
         ["-K", "FOPR", "-K", "FGOR", "--ls", "dashed", "--marker", "o", "--marker", "s"],
+        ["-K", "FOPR", "--color", "red"],
+        ["-K", "FOPR", "-K", "FGOR", "--color", "red", "--color", "#00ff00"],
+        ["-K", "FOPR", "-c", "red"],
     ],
 )
 def test_plot_is_written_to_file(case1, runner, tmp_path, options):
@@ -416,6 +419,11 @@ def test_list_keywords_with_a_default_valued_option_is_rejected(case1, runner):
         (
             ["-K", "FOPR", "-K", "FGOR", "--ls", "none", "--ls", "dashed"],
             "--linestyle none needs --marker as well for FOPR",
+        ),
+        (["-K", "FOPR", "--color", "not-a-color"], "not a valid value for color"),
+        (
+            ["-K", "FOPR", "-K", "FGOR", "-K", "WBHP:PROD", "--color", "red", "--color", "green"],
+            "--color was given 2 times, but 3 keyword",
         ),
     ],
 )

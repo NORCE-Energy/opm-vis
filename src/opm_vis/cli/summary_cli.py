@@ -243,6 +243,16 @@ def _parse_xlim(raw: tuple[str, str] | None, x_axis: str) -> tuple[Any, Any] | N
     "-K/--keyword, matched the same way as --linestyle. Replaces the line for a vector unless "
     "--linestyle is also given for it. Repeatable.",
 )
+@click.option(
+    "--color",
+    "-c",
+    "color",
+    multiple=True,
+    metavar="COLOR",
+    help="Matplotlib colour for every curve, e.g. a name, 'C0'/'C1'/... or a hex code - or one "
+    "per -K/--keyword, matched the same way as --linestyle. Defaults to one colour per "
+    "keyword, or one per case under --compare. Repeatable.",
+)
 # Independent of --save: --export writes the plotted data itself, not an image of it, so both
 # can be given together to get a PNG and a CSV from one invocation. Three states, the same
 # mechanism as --save: not given (no export), given with no value (print to stdout, since a
@@ -279,6 +289,7 @@ def main(
     linewidth: float | None,
     linestyle: tuple[str, ...],
     marker: tuple[str, ...],
+    color: tuple[str, ...],
     export: str | None,
     save: str | None,
 ) -> None:
@@ -332,14 +343,15 @@ def main(
     xlim_values = _parse_xlim(xlim, x_axis)
 
     # Keywords are resolved against the plot's own cases rather than a reader of their own, so a
-    # pattern under --compare can match a vector any of them has; --layout, --linestyle and
-    # --marker are then checked against however many that turned out to be.
+    # pattern under --compare can match a vector any of them has; --layout, --linestyle,
+    # --marker and --color are then checked against however many that turned out to be.
     plot = SummaryPlot(resolved_paths, compare=compare, figsize=figsize)
     selected = resolve_summary_keywords(keywords, plot.available_keywords())
     layout_shape = resolve_subplot_layout(layout, subplots, len(selected))
 
     check_curve_option_count("--linestyle", linestyle, selected)
     check_curve_option_count("--marker", marker, selected)
+    check_curve_option_count("--color", color, selected)
     linestyles = resolve_curve_option(linestyle, selected)
     markers = resolve_curve_option(marker, selected)
     for keyword in selected:
@@ -370,6 +382,7 @@ def main(
         linewidth=linewidth,
         linestyle=linestyle,
         marker=marker,
+        color=color,
     )
 
     if save is None:

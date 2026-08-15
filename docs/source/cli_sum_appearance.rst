@@ -95,3 +95,19 @@ plot a handful of report steps as discrete points instead of a continuous curve.
 .. code-block:: bash
 
    opm-vis-sum tests/data/SPE1CASE1 -K FOPR --marker o --linestyle solid
+
+``--color``, ``-c``
+---------------------
+
+Matplotlib colour for every curve: a name, a hex code, or ``C0``/``C1``/... for the default
+colour cycle. Left out, curves get one colour per keyword, or one per case under ``--compare``.
+Repeatable in the same way as ``--linestyle``: once for every curve, or once per
+``-K``/``--keyword`` for one colour per vector.
+
+.. code-block:: bash
+
+   opm-vis-sum tests/data/SPE1CASE1 -K FOPR -c red
+   opm-vis-sum tests/data/SPE1CASE1 -K FOPR -K FGOR -c red -c '#00aa00'
+
+Under ``--compare``, a colour given for a keyword applies to every case plotting it - the cases
+are then told apart only by the legend, not by colour.

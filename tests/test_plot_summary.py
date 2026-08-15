@@ -530,6 +530,42 @@ def test_per_keyword_none_without_a_marker_names_the_keyword(case1):
         SummaryPlot([case1]).plot(["FOPR", "FGOR"], linestyle=["none", "dashed"])
 
 
+# ---------------------------------------------------------------------------
+# SummaryPlot.plot - color
+# ---------------------------------------------------------------------------
+
+
+def test_color_is_broadcast_to_every_curve(case1):
+    plot = SummaryPlot([case1])
+    plot.plot(["FOPR", "FGOR"], color="red")
+
+    assert [line.get_color() for line in plot.lines] == ["red", "red"]
+
+
+def test_color_can_be_given_once_per_keyword(case1):
+    plot = SummaryPlot([case1])
+    plot.plot(["FOPR", "FGOR"], color=["red", "#00ff00"])
+
+    assert [line.get_color() for line in plot.lines] == ["red", "#00ff00"]
+
+
+def test_color_rejects_a_mismatched_count(case1):
+    with pytest.raises(ValueError, match="Got 3 values, but 2 keyword"):
+        SummaryPlot([case1]).plot(["FOPR", "FGOR"], color=["red", "green", "blue"])
+
+
+def test_color_rejects_an_unknown_value(case1):
+    with pytest.raises(ValueError, match="not a valid value for color"):
+        SummaryPlot([case1]).plot(["FOPR"], color="not-a-color")
+
+
+def test_color_overrides_the_per_case_default_under_compare(compare_paths):
+    plot = SummaryPlot(compare_paths, compare=True)
+    plot.plot(["FOPR"], color="red")
+
+    assert [line.get_color() for line in plot.lines] == ["red", "red"]
+
+
 def test_save_plot_writes_a_file(case1, tmp_path):
     out = tmp_path / "fopr.png"
     plot = SummaryPlot([case1])

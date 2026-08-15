@@ -632,6 +632,7 @@ class SummaryPlot:
         linewidth: float | None = None,
         linestyle: str | Sequence[str] | None = None,
         marker: str | Sequence[str] | None = None,
+        color: str | Sequence[str] | None = None,
         **kwargs,
     ) -> None:
         """
@@ -675,18 +676,24 @@ class SummaryPlot:
             Matplotlib marker for every data point (e.g. "o", "s", "^"), applied to every
             keyword or one per keyword, in the same order as `keywords`. By default None (no
             marker). See Matplotlib's marker reference for the full set.
+        color : str | Sequence[str] | None, optional
+            Matplotlib colour (name, hex code, "C0"/"C1"/...) for every curve, applied to every
+            keyword or one per keyword, in the same order as `keywords`. By default None, which
+            keeps the computed colour - one per keyword normally, or one per case under
+            --compare, where an explicit colour here then applies to every case sharing that
+            keyword, and only the legend still tells the cases apart.
         **kwargs
             Passed on to Axes.plot, overriding the computed colour and dash pattern, and
-            linewidth/linestyle/marker if given there too
+            linewidth/linestyle/marker/color if given there too
 
         Raises
         ------
         ValueError
-            If no keywords were given, x_axis or a linestyle is unknown, linewidth is not
-            positive, linestyle or marker was given as a sequence whose length matches
-            neither 1 nor the number of keywords, a keyword's linestyle is "none" with no
-            marker for it (nothing would be drawn), the layout has no room for every keyword,
-            or none of the keywords exists in any of the cases
+            If no keywords were given, x_axis, a linestyle or a colour is unknown, linewidth is
+            not positive, linestyle, marker or color was given as a sequence whose length
+            matches neither 1 nor the number of keywords, a keyword's linestyle is "none" with
+            no marker for it (nothing would be drawn), the layout has no room for every
+            keyword, or none of the keywords exists in any of the cases
 
         Warns
         -----
@@ -703,6 +710,7 @@ class SummaryPlot:
 
         linestyles = resolve_curve_option(linestyle, keywords)
         markers = resolve_curve_option(marker, keywords)
+        colors = resolve_curve_option(color, keywords)
         for keyword in keywords:
             keyword_linestyle = linestyles[keyword]
             if keyword_linestyle is not None and keyword_linestyle not in LINE_STYLES:
@@ -753,6 +761,8 @@ class SummaryPlot:
                         style["linestyle"] = linestyles[keyword]
                     if markers[keyword] is not None:
                         style["marker"] = markers[keyword]
+                    if colors[keyword] is not None:
+                        style["color"] = colors[keyword]
                     (line,) = ax_.plot(
                         x_axis_values(reader, x_axis),
                         reader.read(keyword),
