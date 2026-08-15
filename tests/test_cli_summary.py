@@ -10,6 +10,7 @@ from click.testing import CliRunner
 matplotlib.use("Agg")  # headless: never try to open a GUI window while saving
 
 from opm_vis.cli.common import (  # noqa: E402
+    check_curve_option_count,
     default_summary_output_name,
     resolve_subplot_layout,
     resolve_summary_keywords,
@@ -109,6 +110,28 @@ def test_layout_too_small_is_rejected():
 
 
 # ---------------------------------------------------------------------------
+# check_curve_option_count
+# ---------------------------------------------------------------------------
+
+
+def test_curve_option_count_accepts_none_given():
+    check_curve_option_count("--linestyle", (), ["FOPR", "FGOR"])
+
+
+def test_curve_option_count_accepts_one_value_for_all():
+    check_curve_option_count("--linestyle", ("dashed",), ["FOPR", "FGOR"])
+
+
+def test_curve_option_count_accepts_one_value_per_keyword():
+    check_curve_option_count("--linestyle", ("dashed", "dotted"), ["FOPR", "FGOR"])
+
+
+def test_curve_option_count_rejects_a_mismatched_count():
+    with pytest.raises(click.UsageError, match="was given 2 times, but 3 keyword"):
+        check_curve_option_count("--linestyle", ("dashed", "dotted"), ["FOPR", "FGOR", "FGPR"])
+
+
+# ---------------------------------------------------------------------------
 # default_summary_output_name
 # ---------------------------------------------------------------------------
 
@@ -158,6 +181,13 @@ def test_default_name_marks_compare_and_x_axis():
          "--no-legend"],
         ["-K", "FOPR", "--linewidth", "2.5"],
         ["-K", "FOPR", "--lw", "2.5"],
+        ["-K", "FOPR", "--linestyle", "dashed"],
+        ["-K", "FOPR", "--ls", "dashed"],
+        ["-K", "FOPR", "--marker", "o"],
+        ["-K", "FOPR", "--marker", "o", "--linestyle", "solid"],
+        ["-K", "FOPR", "-K", "FGOR", "--ls", "dashed", "--ls", "dotted"],
+        ["-K", "FOPR", "-K", "FGOR", "--marker", "o", "--marker", "s"],
+        ["-K", "FOPR", "-K", "FGOR", "--ls", "dashed", "--marker", "o", "--marker", "s"],
     ],
 )
 def test_plot_is_written_to_file(case1, runner, tmp_path, options):
@@ -372,6 +402,21 @@ def test_list_keywords_with_a_default_valued_option_is_rejected(case1, runner):
         (["-K", "FOPR", "--x-axis", "time"], "Invalid value for"),
         (["-K", "FOPR", "--linewidth", "0"], "Invalid value for"),
         (["-K", "FOPR", "--linewidth", "-1"], "Invalid value for"),
+        (["-K", "FOPR", "--linestyle", "bogus"], "Invalid value for"),
+        (["-K", "FOPR", "--linestyle", "none"], "--linestyle none needs --marker"),
+        (["-K", "FOPR", "--marker", "bogus-marker"], "Unrecognized marker style"),
+        (
+            ["-K", "FOPR", "-K", "FGOR", "-K", "WBHP:PROD", "--ls", "dashed", "--ls", "dotted"],
+            "--linestyle was given 2 times, but 3 keyword",
+        ),
+        (
+            ["-K", "FOPR", "-K", "FGOR", "--marker", "o", "--marker", "s", "--marker", "^"],
+            "--marker was given 3 times, but 2 keyword",
+        ),
+        (
+            ["-K", "FOPR", "-K", "FGOR", "--ls", "none", "--ls", "dashed"],
+            "--linestyle none needs --marker as well for FOPR",
+        ),
     ],
 )
 def test_usage_errors_are_clean(case1, runner, options, message):

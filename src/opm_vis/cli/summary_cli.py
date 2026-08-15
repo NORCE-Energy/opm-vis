@@ -12,13 +12,14 @@ from opm_vis.cli.common import (
     COMMAND_SETTINGS,
     PATHS_ARGUMENT,
     SAVE_OPTION,
+    check_curve_option_count,
     default_summary_output_name,
     handle_errors,
     resolve_paths,
     resolve_subplot_layout,
     resolve_summary_keywords,
 )
-from opm_vis.plot.plot_summary import X_AXES, SummaryPlot
+from opm_vis.plot.plot_summary import LINE_STYLES, X_AXES, SummaryPlot, resolve_curve_option
 from opm_vis.utils.summary import SummaryReader
 
 # --xlim's date form, matching the ISO-8601 dates opm-vis-rdates prints in csv/json: on a
@@ -222,6 +223,26 @@ def _parse_xlim(raw: tuple[str, str] | None, x_axis: str) -> tuple[Any, Any] | N
     metavar="WIDTH",
     help="Line width of every curve. Defaults to Matplotlib's own default.",
 )
+@click.option(
+    "--linestyle",
+    "--ls",
+    "linestyle",
+    type=click.Choice(LINE_STYLES),
+    multiple=True,
+    help="Line style of every curve, or one per -K/--keyword (matched in the same order, "
+    "after any wildcard is expanded). Left out, curves default to solid, or a dash pattern per "
+    "vector when several share one axes under --compare. Given together with --marker for a "
+    "vector, both are drawn; given alone, it defaults to 'none' for that vector so the marker "
+    "replaces the line. Repeatable.",
+)
+@click.option(
+    "--marker",
+    multiple=True,
+    metavar="MARKER",
+    help="Matplotlib marker for every data point, e.g. 'o', 's' or '^' - or one per "
+    "-K/--keyword, matched the same way as --linestyle. Replaces the line for a vector unless "
+    "--linestyle is also given for it. Repeatable.",
+)
 # Independent of --save: --export writes the plotted data itself, not an image of it, so both
 # can be given together to get a PNG and a CSV from one invocation. Three states, the same
 # mechanism as --save: not given (no export), given with no value (print to stdout, since a
@@ -256,6 +277,8 @@ def main(
     grid: bool,
     legend: bool,
     linewidth: float | None,
+    linestyle: tuple[str, ...],
+    marker: tuple[str, ...],
     export: str | None,
     save: str | None,
 ) -> None:
@@ -309,11 +332,22 @@ def main(
     xlim_values = _parse_xlim(xlim, x_axis)
 
     # Keywords are resolved against the plot's own cases rather than a reader of their own, so a
-    # pattern under --compare can match a vector any of them has; --layout is then checked
-    # against however many that turned out to be.
+    # pattern under --compare can match a vector any of them has; --layout, --linestyle and
+    # --marker are then checked against however many that turned out to be.
     plot = SummaryPlot(resolved_paths, compare=compare, figsize=figsize)
     selected = resolve_summary_keywords(keywords, plot.available_keywords())
     layout_shape = resolve_subplot_layout(layout, subplots, len(selected))
+
+    check_curve_option_count("--linestyle", linestyle, selected)
+    check_curve_option_count("--marker", marker, selected)
+    linestyles = resolve_curve_option(linestyle, selected)
+    markers = resolve_curve_option(marker, selected)
+    for keyword in selected:
+        if linestyles[keyword] == "none" and markers[keyword] is None:
+            raise click.UsageError(
+                f"--linestyle none needs --marker as well for {keyword}, or nothing would be "
+                "drawn; pass --marker to plot markers instead of a line."
+            )
 
     if export is not None:
         csv_text = plot.export_csv(selected, x_axis=x_axis)
@@ -334,6 +368,8 @@ def main(
         grid=grid,
         legend=legend,
         linewidth=linewidth,
+        linestyle=linestyle,
+        marker=marker,
     )
 
     if save is None:

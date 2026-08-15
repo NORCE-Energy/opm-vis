@@ -452,6 +452,42 @@ def resolve_subplot_layout(
     return layout
 
 
+def check_curve_option_count(
+    option_name: str, values: Sequence[str], keywords: Sequence[str]
+) -> None:
+    """
+    Validate a --linestyle/--marker-style option was given once, or once per keyword
+
+    Parameters
+    ----------
+    option_name : str
+        Display name of the option, e.g. "--linestyle"
+    values : Sequence[str]
+        Values given on the command line, in the order given
+    keywords : Sequence[str]
+        Keywords being plotted, already resolved from -K/--keyword
+
+    Raises
+    ------
+    click.UsageError
+        If more than one value was given and the count does not match the number of keywords
+
+    Notes
+    -----
+    A single value broadcasts to every keyword - this only rejects a count that is neither 1
+    nor len(keywords), e.g. two --linestyle for three keywords, which is ambiguous rather than
+    a deliberate choice.
+    """
+    if len(values) in (0, 1, len(keywords)):
+        return
+
+    raise click.UsageError(
+        f"{option_name} was given {len(values)} times, but {len(keywords)} keyword(s) were "
+        f"selected ({', '.join(keywords)}); give it once to use for all of them, or exactly "
+        f"{len(keywords)} times, one per keyword in that order."
+    )
+
+
 def grid_color_kwargs(grid_color: str | None) -> dict:
     """
     Build the fill-colour kwarg for --grid-only, or none at all to keep the backend's default

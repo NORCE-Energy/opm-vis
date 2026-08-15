@@ -13,6 +13,7 @@ from opm_vis.plot.plot_summary import (  # noqa: E402
     axes_ylabel,
     curve_label,
     default_figsize,
+    resolve_curve_option,
     subplot_grid,
     unique_case_labels,
     x_axis_values,
@@ -421,6 +422,112 @@ def test_linewidth_defaults_to_matplotlibs_own(case1):
 def test_linewidth_rejects_a_non_positive_value(case1):
     with pytest.raises(ValueError, match="linewidth must be positive"):
         SummaryPlot([case1]).plot(["FOPR"], linewidth=0)
+
+
+def test_linestyle_is_applied_to_every_curve(case1):
+    plot = SummaryPlot([case1])
+    plot.plot(["FOPR", "FGOR"], linestyle="dashed")
+
+    assert [line.get_linestyle() for line in plot.lines] == ["--", "--"]
+
+
+def test_linestyle_rejects_an_unknown_value(case1):
+    with pytest.raises(ValueError, match="linestyle must be one of"):
+        SummaryPlot([case1]).plot(["FOPR"], linestyle="bogus")
+
+
+def test_linestyle_none_without_a_marker_is_rejected(case1):
+    with pytest.raises(ValueError, match="linestyle='none' with no marker"):
+        SummaryPlot([case1]).plot(["FOPR"], linestyle="none")
+
+
+def test_marker_alone_replaces_the_line(case1):
+    plot = SummaryPlot([case1])
+    plot.plot(["FOPR"], marker="o")
+
+    assert plot.lines[0].get_marker() == "o"
+    assert plot.lines[0].get_linestyle() == "None"
+
+
+def test_marker_with_an_explicit_linestyle_draws_both(case1):
+    plot = SummaryPlot([case1])
+    plot.plot(["FOPR"], marker="o", linestyle="solid")
+
+    assert plot.lines[0].get_marker() == "o"
+    assert plot.lines[0].get_linestyle() == "-"
+
+
+def test_marker_rejects_an_unknown_value(case1):
+    with pytest.raises(ValueError, match="Unrecognized marker style"):
+        SummaryPlot([case1]).plot(["FOPR"], marker="bogus-marker")
+
+
+# ---------------------------------------------------------------------------
+# resolve_curve_option
+# ---------------------------------------------------------------------------
+
+
+def test_curve_option_is_none_when_nothing_given():
+    assert resolve_curve_option(None, ["FOPR", "FGOR"]) == {"FOPR": None, "FGOR": None}
+
+
+def test_curve_option_broadcasts_a_single_string():
+    assert resolve_curve_option("dashed", ["FOPR", "FGOR"]) == {
+        "FOPR": "dashed",
+        "FGOR": "dashed",
+    }
+
+
+def test_curve_option_broadcasts_a_one_item_sequence():
+    assert resolve_curve_option(["dashed"], ["FOPR", "FGOR"]) == {
+        "FOPR": "dashed",
+        "FGOR": "dashed",
+    }
+
+
+def test_curve_option_treats_an_empty_sequence_as_nothing_given():
+    assert resolve_curve_option([], ["FOPR", "FGOR"]) == {"FOPR": None, "FGOR": None}
+
+
+def test_curve_option_maps_one_value_per_keyword():
+    assert resolve_curve_option(["dashed", "dotted"], ["FOPR", "FGOR"]) == {
+        "FOPR": "dashed",
+        "FGOR": "dotted",
+    }
+
+
+def test_curve_option_rejects_a_mismatched_count():
+    with pytest.raises(ValueError, match="Got 3 values, but 2 keyword"):
+        resolve_curve_option(["a", "b", "c"], ["FOPR", "FGOR"])
+
+
+# ---------------------------------------------------------------------------
+# SummaryPlot.plot - per-keyword linestyle/marker
+# ---------------------------------------------------------------------------
+
+
+def test_linestyle_can_be_given_once_per_keyword(case1):
+    plot = SummaryPlot([case1])
+    plot.plot(["FOPR", "FGOR"], linestyle=["dashed", "dotted"])
+
+    assert [line.get_linestyle() for line in plot.lines] == ["--", ":"]
+
+
+def test_marker_can_be_given_once_per_keyword(case1):
+    plot = SummaryPlot([case1])
+    plot.plot(["FOPR", "FGOR"], marker=["o", "s"])
+
+    assert [line.get_marker() for line in plot.lines] == ["o", "s"]
+
+
+def test_per_keyword_linestyle_rejects_a_mismatched_count(case1):
+    with pytest.raises(ValueError, match="Got 3 values, but 2 keyword"):
+        SummaryPlot([case1]).plot(["FOPR", "FGOR"], linestyle=["dashed", "dotted", "solid"])
+
+
+def test_per_keyword_none_without_a_marker_names_the_keyword(case1):
+    with pytest.raises(ValueError, match=r"FOPR: linestyle='none' with no marker"):
+        SummaryPlot([case1]).plot(["FOPR", "FGOR"], linestyle=["none", "dashed"])
 
 
 def test_save_plot_writes_a_file(case1, tmp_path):

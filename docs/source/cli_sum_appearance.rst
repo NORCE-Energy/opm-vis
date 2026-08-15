@@ -52,3 +52,46 @@ Line width of every curve. Defaults to Matplotlib's own default.
 
 Thinner lines are worth reaching for alongside ``--no-legend`` on a busy wildcard selection,
 where the default width can make overlapping curves hard to tell apart.
+
+``--linestyle``, ``--ls``
+---------------------------
+
+Line style: ``solid`` (the default), ``dashed``, ``dashdot``, ``dotted``, or ``none``. Left out,
+several keywords sharing one axes under ``--compare`` instead get a dash pattern per keyword, so
+the same vector can be told apart across cases.
+
+.. code-block:: bash
+
+   opm-vis-sum tests/data/SPE1CASE1 -K FOPR --ls dashed
+
+Repeatable: given once, it applies to every curve; given once per ``-K``/``--keyword`` (in the
+same order, after any wildcard is expanded), each vector gets its own style.
+
+.. code-block:: bash
+
+   opm-vis-sum tests/data/SPE1CASE1 -K FOPR -K FGOR --ls dashed --ls dotted
+
+Any other count is an error naming both the count given and the vectors selected. ``none`` needs
+``--marker`` as well for that vector - a curve with neither a line nor a marker would not be
+drawn at all, so this combination is rejected before anything is plotted.
+
+``--marker``
+-------------
+
+Matplotlib marker for every data point, e.g. ``o``, ``s`` or ``^`` - see `Matplotlib's marker
+reference <https://matplotlib.org/stable/api/markers_api.html>`_ for the full set. Repeatable in
+the same way as ``--linestyle``: once for every curve, or once per ``-K``/``--keyword`` for one
+marker per vector.
+
+.. code-block:: bash
+
+   opm-vis-sum tests/data/SPE1CASE1 -K FOPR --marker o
+   opm-vis-sum tests/data/SPE1CASE1 -K FOPR -K FGOR --marker o --marker s
+
+Given alone for a vector, its marker replaces the line rather than joining it - the usual way to
+plot a handful of report steps as discrete points instead of a continuous curve. Add
+``--linestyle`` to draw both:
+
+.. code-block:: bash
+
+   opm-vis-sum tests/data/SPE1CASE1 -K FOPR --marker o --linestyle solid

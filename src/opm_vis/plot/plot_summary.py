@@ -27,6 +27,12 @@ X_AXES = ("date", "days", "years")
 
 _X_AXIS_LABELS = {"date": "Date", "days": "Time [days]", "years": "Time [years]"}
 
+# --linestyle's vocabulary, Matplotlib's own named line styles. Unlike --marker (whose valid
+# values number in the dozens - every plot marker Matplotlib knows), there are only five of
+# these, so they are worth spelling out and validating up front rather than leaving an
+# unrecognised one to surface as Matplotlib's own error.
+LINE_STYLES = ("solid", "dashed", "dashdot", "dotted", "none")
+
 # Cycled per keyword when several keywords and several cases share one axes: colour then encodes
 # the case and the dash pattern the keyword, so a comparison of several runs stays readable.
 _LINESTYLES = ("-", "--", "-.", ":")
@@ -232,6 +238,58 @@ def curve_label(
         return case
 
     return keyword
+
+
+def resolve_curve_option(
+    values: str | Sequence[str] | None, keywords: Sequence[str]
+) -> dict[str, str | None]:
+    """
+    Map a linestyle/marker value - or one value per keyword - onto every keyword
+
+    Parameters
+    ----------
+    values : str | Sequence[str] | None
+        None (nothing given), a single value applied to every keyword, or one value per
+        keyword, in the same order as keywords
+    keywords : Sequence[str]
+        Keywords being plotted
+
+    Returns
+    -------
+    dict[str, str | None]
+        One entry per keyword; every value is None if values was None or empty
+
+    Raises
+    ------
+    ValueError
+        If more than one value was given and the count does not match the number of keywords
+
+    Notes
+    -----
+    A single value broadcasts to every keyword, which is what lets --linestyle/--marker work
+    the same way whether one vector or several are being plotted; passing one value per keyword
+    instead gives each its own. Used identically by SummaryPlot.plot() and by the CLI's own
+    pre-validation (see cli.common.check_curve_option_count), so the two never disagree about
+    what a given count of values means.
+    """
+    if values is None:
+        return {keyword: None for keyword in keywords}
+    if isinstance(values, str):
+        return {keyword: values for keyword in keywords}
+
+    values = list(values)
+    if not values:
+        return {keyword: None for keyword in keywords}
+    if len(values) == 1:
+        return {keyword: values[0] for keyword in keywords}
+    if len(values) == len(keywords):
+        return dict(zip(keywords, values))
+
+    raise ValueError(
+        f"Got {len(values)} values, but {len(keywords)} keyword(s) are being plotted "
+        f"({', '.join(keywords)}); give one value to use for all of them, or exactly "
+        f"{len(keywords)}, one per keyword in that order."
+    )
 
 
 def axes_ylabel(keywords: Sequence[str], units: Sequence[str]) -> str:
@@ -572,6 +630,8 @@ class SummaryPlot:
         grid: bool = True,
         legend: bool = True,
         linewidth: float | None = None,
+        linestyle: str | Sequence[str] | None = None,
+        marker: str | Sequence[str] | None = None,
         **kwargs,
     ) -> None:
         """
@@ -604,15 +664,29 @@ class SummaryPlot:
             Whether to label the curves, by default True
         linewidth : float | None, optional
             Line width of every curve, by default None, which keeps Matplotlib's own default
+        linestyle : str | Sequence[str] | None, optional
+            One of LINE_STYLES, applied to every keyword; or one per keyword, in the same
+            order as `keywords`. By default None, which draws a solid line - or, with several
+            keywords sharing one axes under --compare, the per-keyword dash pattern that tells
+            them apart from one case to the next. Given together with marker for a keyword,
+            both are drawn; given alone with marker, it defaults to "none" for that keyword so
+            the marker replaces the line instead of joining it.
+        marker : str | Sequence[str] | None, optional
+            Matplotlib marker for every data point (e.g. "o", "s", "^"), applied to every
+            keyword or one per keyword, in the same order as `keywords`. By default None (no
+            marker). See Matplotlib's marker reference for the full set.
         **kwargs
             Passed on to Axes.plot, overriding the computed colour and dash pattern, and
-            linewidth if both are given
+            linewidth/linestyle/marker if given there too
 
         Raises
         ------
         ValueError
-            If no keywords were given, x_axis is unknown, linewidth is not positive, the layout
-            has no room for every keyword, or none of the keywords exists in any of the cases
+            If no keywords were given, x_axis or a linestyle is unknown, linewidth is not
+            positive, linestyle or marker was given as a sequence whose length matches
+            neither 1 nor the number of keywords, a keyword's linestyle is "none" with no
+            marker for it (nothing would be drawn), the layout has no room for every keyword,
+            or none of the keywords exists in any of the cases
 
         Warns
         -----
@@ -626,6 +700,25 @@ class SummaryPlot:
             raise ValueError(f"x_axis must be one of {X_AXES}; got '{x_axis}'.")
         if linewidth is not None and linewidth <= 0:
             raise ValueError(f"linewidth must be positive; got {linewidth}.")
+
+        linestyles = resolve_curve_option(linestyle, keywords)
+        markers = resolve_curve_option(marker, keywords)
+        for keyword in keywords:
+            keyword_linestyle = linestyles[keyword]
+            if keyword_linestyle is not None and keyword_linestyle not in LINE_STYLES:
+                raise ValueError(
+                    f"linestyle must be one of {LINE_STYLES}; got '{keyword_linestyle}'."
+                )
+            if keyword_linestyle == "none" and markers[keyword] is None:
+                raise ValueError(
+                    f"{keyword}: linestyle='none' with no marker draws nothing; pass marker "
+                    "to plot markers instead of a line."
+                )
+            # A marker with no explicit linestyle replaces the line rather than joining it -
+            # the per-keyword dash pattern a bare curve gets otherwise is not what "give me
+            # markers" implies.
+            if keyword_linestyle is None and markers[keyword] is not None:
+                linestyles[keyword] = "none"
 
         self.x_axis = x_axis
         self.axes_keywords = (
@@ -656,6 +749,10 @@ class SummaryPlot:
                     )
                     if linewidth is not None:
                         style["linewidth"] = linewidth
+                    if linestyles[keyword] is not None:
+                        style["linestyle"] = linestyles[keyword]
+                    if markers[keyword] is not None:
+                        style["marker"] = markers[keyword]
                     (line,) = ax_.plot(
                         x_axis_values(reader, x_axis),
                         reader.read(keyword),
