@@ -171,7 +171,10 @@ class GridPlotter:
             window_size=list(window_size) if window_size is not None else None,
         )
         if z_scale != 1.0:
-            self.plotter.set_scale(zscale=z_scale)
+            # pv.Plotter.set_scale is wrapped with functools.wraps(Renderer.set_scale), which
+            # makes pyright infer its signature from the wrapped (unbound) Renderer method
+            # instead of the bound Plotter one - a pyvista stub artifact, not a real issue.
+            self.plotter.set_scale(zscale=z_scale)  # pyright: ignore[reportCallIssue]
 
         # Internal variables. Every dataset added is tracked by name so its scalars can be
         # updated later; see the _MeshActor docstring. Glyph actors are also registered in
@@ -770,6 +773,7 @@ class GridPlotter:
             data = self.case.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
 
         if calc_kind is not None and calc_kind != "surface":
+            assert slice_dim is not None and slice_ind is not None
             n_slice = slice_dimension_size(self.grid.egrid, slice_dim)
             start, end = resolve_calc_range(slice_ind, n_slice, calc_count)
             layer_grid = slice_range_layer_grid(self.grid.egrid, slice_dim, start, end)
@@ -871,11 +875,14 @@ class GridPlotter:
         if title == self._scalar_bar_title:
             return
 
+        # pv.Plotter.remove_scalar_bar/add_scalar_bar are wrapped with functools.wraps(...) onto
+        # a differently-signatured method, which makes pyright infer their signature from the
+        # wrapped function instead of the bound Plotter method - a pyvista stub artifact.
         if self._scalar_bar_title is not None:
-            self.plotter.remove_scalar_bar(self._scalar_bar_title)
+            self.plotter.remove_scalar_bar(self._scalar_bar_title)  # pyright: ignore[reportArgumentType]
 
         if self._vertical_scalar_bars():
-            self.plotter.add_scalar_bar(
+            self.plotter.add_scalar_bar(  # pyright: ignore[reportCallIssue]
                 title=title,
                 mapper=mapper,
                 vertical=True,
@@ -884,7 +891,7 @@ class GridPlotter:
                 height=_VERTICAL_SCALAR_BAR_HEIGHT,
             )
         else:
-            self.plotter.add_scalar_bar(
+            self.plotter.add_scalar_bar(  # pyright: ignore[reportCallIssue]
                 title=title,
                 mapper=mapper,
                 vertical=False,
@@ -947,6 +954,7 @@ class GridPlotter:
                 keyword, rsteps, diff_rstep=diff_rstep, diff_kind=diff_kind
             )
 
+        assert slice_dim is not None and slice_ind is not None
         n_slice = slice_dimension_size(self.grid.egrid, slice_dim)
         start, end = resolve_calc_range(slice_ind, n_slice, calc_count)
         layer_grid = slice_range_layer_grid(self.grid.egrid, slice_dim, start, end)
@@ -1112,8 +1120,11 @@ class GridPlotter:
             )
 
         _VIEW_2D[slice_dim](self.plotter)
-        self.plotter.enable_parallel_projection()
-        self.plotter.reset_camera()
+        # These pv.Plotter methods are wrapped with functools.wraps(...) onto a differently
+        # signatured method, which makes pyright infer their signature from the wrapped
+        # function instead of the bound Plotter method - a pyvista stub artifact.
+        self.plotter.enable_parallel_projection()  # pyright: ignore[reportCallIssue]
+        self.plotter.reset_camera()  # pyright: ignore[reportCallIssue]
 
         # Remembered so that show_axes_grid can leave out the axis pointing at the camera
         self._view_2d_dim = slice_dim
@@ -1140,8 +1151,11 @@ class GridPlotter:
         whatever `elevation` asks for - most noticeably turning the default call into a
         near-vertical, degenerate view on a reservoir far wider than it is thick.
         """
-        self.plotter.disable_parallel_projection()
-        self.plotter.view_vector((0.0, -1.0, 0.0), viewup=(0.0, 0.0, 1.0))
+        # See view_2d for why these pv.Plotter methods need a pyright ignore.
+        self.plotter.disable_parallel_projection()  # pyright: ignore[reportCallIssue]
+        self.plotter.view_vector(
+            (0.0, -1.0, 0.0), viewup=(0.0, 0.0, 1.0)  # pyright: ignore[reportArgumentType]
+        )
 
         # All three axes are meaningful again, see show_axes_grid
         self._view_2d_dim = None
@@ -1151,7 +1165,7 @@ class GridPlotter:
         if elevation:
             self.plotter.camera.Elevation(elevation)
 
-        self.plotter.reset_camera()
+        self.plotter.reset_camera()  # pyright: ignore[reportCallIssue]
 
     def set_z_scale(self, z_scale: float) -> None:
         """
@@ -1163,7 +1177,7 @@ class GridPlotter:
             Factor to stretch the depth axis by. Reservoirs are far wider than they are thick,
             so a value above 1 is usually needed before layering is visible.
         """
-        self.plotter.set_scale(zscale=z_scale)
+        self.plotter.set_scale(zscale=z_scale)  # pyright: ignore[reportCallIssue]
 
     def show_axes_grid(self, **kwargs) -> None:
         """
@@ -1202,7 +1216,7 @@ class GridPlotter:
         unaffected, same as the z-axis sign flip above. Passing an explicit `axes_ranges`
         opts out of this, same as it opts out of the z-axis sign flip.
         """
-        km_axes = (False, False, False)
+        km_axes: tuple[bool, bool, bool] = (False, False, False)
 
         if "axes_ranges" not in kwargs:
             bounds = kwargs.get("bounds")
@@ -1214,16 +1228,20 @@ class GridPlotter:
             ]
 
             if unit(self.label, "DEPTH") == "m":
-                km_axes = tuple(
-                    abs(axes_ranges[2 * i + 1] - axes_ranges[2 * i]) > _KM_AXIS_SPAN_M
-                    for i in range(3)
+                km_axes = (
+                    abs(axes_ranges[1] - axes_ranges[0]) > _KM_AXIS_SPAN_M,
+                    abs(axes_ranges[3] - axes_ranges[2]) > _KM_AXIS_SPAN_M,
+                    abs(axes_ranges[5] - axes_ranges[4]) > _KM_AXIS_SPAN_M,
                 )
                 for i, scaled in enumerate(km_axes):
                     if scaled:
                         axes_ranges[2 * i] /= 1000
                         axes_ranges[2 * i + 1] /= 1000
 
-            kwargs["axes_ranges"] = tuple(axes_ranges)
+            kwargs["axes_ranges"] = (
+                axes_ranges[0], axes_ranges[1], axes_ranges[2],
+                axes_ranges[3], axes_ranges[4], axes_ranges[5],
+            )
 
         xtitle, ytitle, ztitle = axis_titles(self.label, km_axes)
         kwargs.setdefault("xtitle", xtitle)
@@ -1235,9 +1253,10 @@ class GridPlotter:
             kwargs.setdefault(f"show_{hidden}axis", False)
             kwargs.setdefault(f"show_{hidden}labels", False)
 
-        # Replace any box a previous call left behind rather than adding a second one
+        # Replace any box a previous call left behind rather than adding a second one. See
+        # view_2d for why this pv.Plotter method needs a pyright ignore.
         if self._axes_shown:
-            self.plotter.remove_bounds_axes()
+            self.plotter.remove_bounds_axes()  # pyright: ignore[reportCallIssue]
 
         cube_axes_actor = self.plotter.show_bounds(**kwargs)
         self._axes_shown = True
@@ -1750,7 +1769,7 @@ class GridPlotter:
             return source, vectors
 
         indices = np.arange(0, source.n_cells, every_n)
-        return source.extract_cells(indices), vectors[indices]
+        return cast(pv.DataSet, source.extract_cells(indices)), vectors[indices]
 
     @staticmethod
     def _auto_glyph_factor(source: pv.DataSet, peak_magnitude: float, *, scale: bool) -> float:

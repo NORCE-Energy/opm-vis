@@ -6,13 +6,16 @@ import warnings
 from collections.abc import Sequence
 from functools import partial
 from pathlib import Path
+from typing import cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import animation
+from matplotlib.axes import Axes
 from matplotlib.collections import PolyCollection
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
+from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from opm_vis.plot.slice_poly import SlicePoly2D, SlicePoly3D
@@ -94,7 +97,7 @@ class _SlicePolyCollection:
         self,
         paths: list[str],
         fig: Figure,
-        ax_: plt.Axes,
+        ax_: Axes,
         slice_coll: list[SlicePoly3D] | list[SlicePoly2D],
     ) -> None:
         """
@@ -217,10 +220,13 @@ class _SlicePolyCollection:
                             name, (wcent[0, 0], wcent[0, 1]), c=color, ha="center"
                         )
                     else:
-                        self.ax_.plot(
+                        # self.ax_ is declared as the plain 2D Axes for _SlicePolyCollection's
+                        # own 2D use, but is actually an Axes3D here - see SlicePoly3DCollection.
+                        ax_3d = cast(Axes3D, self.ax_)
+                        ax_3d.plot(
                             wcent[:, 0], wcent[:, 1], wcent[:, 2], **well_kwargs
                         )
-                        self.ax_.text(
+                        ax_3d.text(
                             wcent[0, 0], wcent[0, 1], wcent[0, 2], name, color=color
                         )
 
@@ -304,8 +310,10 @@ class _SlicePolyCollection:
             min_polyc = 0
             max_polyc = 0
             for polyc in polyc_rstep:
-                min_polyc = np.minimum(min_polyc, polyc.get_array().min())
-                max_polyc = np.maximum(max_polyc, polyc.get_array().max())
+                polyc_array = polyc.get_array()
+                assert polyc_array is not None
+                min_polyc = np.minimum(min_polyc, polyc_array.min())
+                max_polyc = np.maximum(max_polyc, polyc_array.max())
 
             # Second, we set clim
             for polyc in polyc_rstep:
@@ -754,7 +762,7 @@ class SlicePoly3DCollection(_SlicePolyCollection):
         self.set_labels()
 
         # Invert z-axis
-        self.ax_.invert_zaxis()
+        cast(Axes3D, self.ax_).invert_zaxis()
 
     def set_labels(self) -> None:
         """
@@ -765,17 +773,20 @@ class SlicePoly3DCollection(_SlicePolyCollection):
         Also switches an axis to km-scaled tick labels once its own span (set by set_lims,
         which must run first) exceeds _KM_AXIS_SPAN_M metres - see that constant.
         """
-        x_min, x_max = self.ax_.get_xlim()
-        y_min, y_max = self.ax_.get_ylim()
-        z_min, z_max = self.ax_.get_zlim()
+        # self.ax_ is declared as the plain 2D Axes for _SlicePolyCollection's own 2D use, but
+        # is actually an Axes3D here - see __init__.
+        ax_3d = cast(Axes3D, self.ax_)
+        x_min, x_max = ax_3d.get_xlim()
+        y_min, y_max = ax_3d.get_ylim()
+        z_min, z_max = ax_3d.get_zlim()
 
-        self.ax_.set_xlabel(_km_axis_label("E(x)", x_max - x_min))
-        self.ax_.set_ylabel(_km_axis_label("N(y)", y_max - y_min))
-        self.ax_.set_zlabel(_km_axis_label("Depth(z)", z_max - z_min))
+        ax_3d.set_xlabel(_km_axis_label("E(x)", x_max - x_min))
+        ax_3d.set_ylabel(_km_axis_label("N(y)", y_max - y_min))
+        ax_3d.set_zlabel(_km_axis_label("Depth(z)", z_max - z_min))
 
-        _use_km_ticks_if_wide(self.ax_.xaxis, x_max - x_min)
-        _use_km_ticks_if_wide(self.ax_.yaxis, y_max - y_min)
-        _use_km_ticks_if_wide(self.ax_.zaxis, z_max - z_min)
+        _use_km_ticks_if_wide(ax_3d.xaxis, x_max - x_min)
+        _use_km_ticks_if_wide(ax_3d.yaxis, y_max - y_min)
+        _use_km_ticks_if_wide(ax_3d.zaxis, z_max - z_min)
 
     def set_lims(self) -> None:
         """
@@ -789,9 +800,10 @@ class SlicePoly3DCollection(_SlicePolyCollection):
             max_coll[i, :] = slc.cell_corners_max()
 
         # Set limits
-        self.ax_.set_xlim(min_coll[:, 0].min(), max_coll[:, 0].max())
-        self.ax_.set_ylim(min_coll[:, 1].min(), max_coll[:, 1].max())
-        self.ax_.set_zlim(min_coll[:, 2].min(), max_coll[:, 2].max())
+        ax_3d = cast(Axes3D, self.ax_)
+        ax_3d.set_xlim(min_coll[:, 0].min(), max_coll[:, 0].max())
+        ax_3d.set_ylim(min_coll[:, 1].min(), max_coll[:, 1].max())
+        ax_3d.set_zlim(min_coll[:, 2].min(), max_coll[:, 2].max())
 
 
 class SlicePoly2DCollection(_SlicePolyCollection):

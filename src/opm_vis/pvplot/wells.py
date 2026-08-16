@@ -3,13 +3,18 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 import pyvista as pv
 from numpy.typing import NDArray
 
-from opm_vis.utils.restart import Wells
+
+class _WellsLike(Protocol):
+    """Structural stand-in for opm_vis.utils.restart.Wells: well_paths only needs __getitem__,
+    so tests can stub it out without building a real Wells from restart files."""
+
+    def __getitem__(self, rstep: int) -> dict[str, list[Any]]: ...
 
 
 @dataclass
@@ -43,7 +48,7 @@ class WellPaths:
 
 def well_paths(
     egrid: Any,
-    wells: Wells,
+    wells: _WellsLike,
     rstep: int,
     *,
     slices: Sequence[tuple[str, int]] | None = None,

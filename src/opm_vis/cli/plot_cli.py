@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -122,7 +123,7 @@ def main(
     # what --show-edges needs, unlike PyVista's own boolean show_edges kwarg.
     edge_kwargs = {"edgecolor": "black"} if show_edges else {}
 
-    poly_kwargs = {"cmap": cmap, **edge_kwargs}
+    poly_kwargs: dict[str, Any] = {"cmap": cmap, **edge_kwargs}
     if clim is not None:
         poly_kwargs["clim"] = clim
 
@@ -143,6 +144,11 @@ def main(
         _, calc_end = resolve_calc_range(slice_index, n_slice, calc_count)
 
     if animate:
+        # grid_only+animate already raised above, so resolve_keyword guarantees a keyword here
+        assert keyword is not None
+        # --animate always parses --rstep with animate=True (see parse_rstep), so this is a
+        # range or None, never a bare int
+        assert rstep_value is None or isinstance(rstep_value, tuple)
         steps = resolve_animate_rsteps(coll.report.report_steps(), rstep_value)
         coll.animate(
             keyword,
@@ -186,6 +192,13 @@ def main(
                 Path(save) if save else default_output_name("GRID", slices, ext="png")
             )
         return
+
+    # Reached only when not animate (the branch above returns), so --rstep was parsed with
+    # animate=False (see parse_rstep): a bare int or None, never a range
+    assert rstep_value is None or isinstance(rstep_value, int)
+    # Reached only when not grid_only (the branch above returns), so resolve_keyword
+    # guarantees a keyword here
+    assert keyword is not None
 
     if rstep_value is None:
         probe_rstep = coll.report.report_steps()[0]
