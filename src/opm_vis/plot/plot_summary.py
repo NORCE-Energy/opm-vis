@@ -8,7 +8,7 @@ import math
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -16,7 +16,7 @@ import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from opm_vis.utils.summary import SummaryReader
 from opm_vis.utils.units import summary_unit_label
@@ -764,7 +764,9 @@ class SummaryPlot:
                     if colors[keyword] is not None:
                         style["color"] = colors[keyword]
                     (line,) = ax_.plot(
-                        x_axis_values(reader, x_axis),
+                        # matplotlib's own stub is stricter than its runtime support for
+                        # datetime x values (handled via its date unit converters)
+                        cast(ArrayLike, x_axis_values(reader, x_axis)),
                         reader.read(keyword),
                         label=curve_label(
                             keyword,
@@ -868,10 +870,10 @@ class SummaryPlot:
             return
 
         for line in self.lines:
-            values = line.get_ydata()
+            values = np.asarray(line.get_ydata())
             # Only an entirely non-positive curve is worth warning about: a rate that is zero
             # until its well opens is ordinary, and its later values still plot
-            if len(values) and not np.any(np.asarray(values) > 0):
+            if values.size and not np.any(values > 0):
                 warnings.warn(
                     f"{line.get_label()} has no positive values; it cannot be drawn on a "
                     "logarithmic y axis."

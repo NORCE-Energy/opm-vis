@@ -1,8 +1,10 @@
 """ Unit tests for opm_vis.pvplot.mesh, backed by the SPE1CASE1 EGRID test dataset """
 import shutil
+from typing import cast
 
 import numpy as np
 import pytest
+import pyvista as pv
 
 pytest.importorskip("pyvista")  # the pvplot backend is an optional extra
 
@@ -429,7 +431,7 @@ def test_cell_centers_matches_the_hexahedral_meshs_own_centers(case1):
     cheap = GridMesh(case1).cell_centers()
     from_hex = GridMesh(case1).mesh.cell_centers()
 
-    np.testing.assert_allclose(cheap.points, from_hex.points, atol=1e-3)
+    np.testing.assert_allclose(np.asarray(cheap.points), np.asarray(from_hex.points), atol=1e-3)
 
 
 def test_cell_centers_does_not_need_the_full_mesh(case1):
@@ -519,7 +521,9 @@ def test_welding_keeps_faulted_cells_apart():
 def test_mirrored_grid_still_yields_positive_volumes():
     gmesh = _bypass_init(_BoxEGrid(nx=2, ny=2, nz=2, z_sign=-1))
 
-    volumes = gmesh.mesh.compute_cell_sizes()["Volume"]
+    # compute_cell_sizes() is typed as the shared DataObject base rather than the concrete
+    # UnstructuredGrid it actually returns here, so __getitem__ needs a cast
+    volumes = cast(pv.UnstructuredGrid, gmesh.mesh.compute_cell_sizes())["Volume"]
     assert gmesh.mesh.n_cells == 8
     assert (volumes > 0).all()
 
@@ -527,7 +531,7 @@ def test_mirrored_grid_still_yields_positive_volumes():
 def test_standard_grid_is_not_reported_as_mirrored():
     gmesh = _bypass_init(_BoxEGrid(nx=2, ny=2, nz=2, z_sign=1))
 
-    volumes = gmesh.mesh.compute_cell_sizes()["Volume"]
+    volumes = cast(pv.UnstructuredGrid, gmesh.mesh.compute_cell_sizes())["Volume"]
     assert (volumes > 0).all()
 
 

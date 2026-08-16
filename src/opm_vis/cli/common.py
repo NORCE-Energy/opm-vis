@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable, Sequence
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, overload
 
 import click
 
@@ -557,6 +557,12 @@ def resolve_slices(
     return [(dim, index - 1) for dim, index in slices]
 
 
+@overload
+def parse_rstep(raw: str | None, animate: Literal[False]) -> int | None: ...
+@overload
+def parse_rstep(raw: str | None, animate: Literal[True]) -> tuple[int, int, int] | None: ...
+@overload
+def parse_rstep(raw: str | None, animate: bool) -> int | tuple[int, int, int] | None: ...
 def parse_rstep(raw: str | None, animate: bool) -> int | tuple[int, int, int] | None:
     """
     Parse --rstep, whose shape depends on --animate
@@ -684,6 +690,7 @@ def resolve_rstep_selection(available_steps: Sequence[int], raw: str | None) -> 
         return resolve_animate_rsteps(available_steps, parse_rstep(raw, animate=True))
 
     rstep = parse_rstep(raw, animate=False)
+    assert rstep is not None  # raw is not None, so parse_rstep(raw, animate=False) is not None
     if rstep not in available_steps:
         raise click.UsageError(f"Report step {rstep} was not found in this case.")
 

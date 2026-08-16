@@ -436,5 +436,7 @@ class SlicePoly2D(_SlicePoly, GridSlice2D):
         PolyCollection
             Collection of slice polygons to plot
         """
-        # Instantiate PolyCollection with cell corners and optional arguments
-        return PolyCollection(self.cell_corners(), **kwargs)
+        # Instantiate PolyCollection with cell corners and optional arguments. list() rather
+        # than the bare ndarray, since PolyCollection's verts wants a Sequence of per-polygon
+        # vertex arrays, which a numpy array does not structurally satisfy.
+        return PolyCollection(list(self.cell_corners()), **kwargs)

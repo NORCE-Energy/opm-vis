@@ -1,8 +1,13 @@
 """ Unit tests for opm_vis.plot.collections' km axis relabeling, backed by SPE1CASE1/TPSA_LAGGED """
+from typing import cast
+
 import matplotlib
 import pytest
 
 matplotlib.use("Agg")  # headless: never try to open a GUI window while saving
+
+from matplotlib.ticker import FuncFormatter  # noqa: E402
+from mpl_toolkits.mplot3d import Axes3D  # noqa: E402
 
 from opm_vis.plot.collections import (  # noqa: E402
     SlicePoly2DCollection,
@@ -47,8 +52,8 @@ def test_2d_k_slice_switches_wide_axes_to_km(case1):
 
     assert coll.ax_.get_xlabel() == "E(x) [km]"
     assert coll.ax_.get_ylabel() == "N(y) [km]"
-    assert isinstance(coll.ax_.xaxis.get_major_formatter(), matplotlib.ticker.FuncFormatter)
-    assert isinstance(coll.ax_.yaxis.get_major_formatter(), matplotlib.ticker.FuncFormatter)
+    assert isinstance(coll.ax_.xaxis.get_major_formatter(), FuncFormatter)
+    assert isinstance(coll.ax_.yaxis.get_major_formatter(), FuncFormatter)
 
 
 def test_2d_j_slice_keeps_the_shallow_depth_axis_in_metres(case1):
@@ -57,8 +62,8 @@ def test_2d_j_slice_keeps_the_shallow_depth_axis_in_metres(case1):
 
     assert coll.ax_.get_xlabel() == "E(x) [km]"
     assert coll.ax_.get_ylabel() == "Depth [m]"
-    assert isinstance(coll.ax_.xaxis.get_major_formatter(), matplotlib.ticker.FuncFormatter)
-    assert not isinstance(coll.ax_.yaxis.get_major_formatter(), matplotlib.ticker.FuncFormatter)
+    assert isinstance(coll.ax_.xaxis.get_major_formatter(), FuncFormatter)
+    assert not isinstance(coll.ax_.yaxis.get_major_formatter(), FuncFormatter)
 
 
 def test_2d_i_slice_labels_northing_on_x(case1):
@@ -74,8 +79,8 @@ def test_2d_slice_stays_in_metres_under_a_narrow_span(tpsa_lagged):
 
     assert coll.ax_.get_xlabel() == "E(x) [m]"
     assert coll.ax_.get_ylabel() == "N(y) [m]"
-    assert not isinstance(coll.ax_.xaxis.get_major_formatter(), matplotlib.ticker.FuncFormatter)
-    assert not isinstance(coll.ax_.yaxis.get_major_formatter(), matplotlib.ticker.FuncFormatter)
+    assert not isinstance(coll.ax_.xaxis.get_major_formatter(), FuncFormatter)
+    assert not isinstance(coll.ax_.yaxis.get_major_formatter(), FuncFormatter)
 
 
 # ---------------------------------------------------------------------------
@@ -85,10 +90,11 @@ def test_2d_slice_stays_in_metres_under_a_narrow_span(tpsa_lagged):
 
 def test_3d_collection_switches_wide_axes_to_km_independently(case1):
     coll = SlicePoly3DCollection([case1], [("j", 5)])
+    ax_3d = cast(Axes3D, coll.ax_)
 
-    assert coll.ax_.get_xlabel() == "E(x) [km]"
-    assert coll.ax_.get_ylabel() == "N(y) [m]"
-    assert coll.ax_.get_zlabel() == "Depth(z) [m]"
-    assert isinstance(coll.ax_.xaxis.get_major_formatter(), matplotlib.ticker.FuncFormatter)
-    assert not isinstance(coll.ax_.yaxis.get_major_formatter(), matplotlib.ticker.FuncFormatter)
-    assert not isinstance(coll.ax_.zaxis.get_major_formatter(), matplotlib.ticker.FuncFormatter)
+    assert ax_3d.get_xlabel() == "E(x) [km]"
+    assert ax_3d.get_ylabel() == "N(y) [m]"
+    assert ax_3d.get_zlabel() == "Depth(z) [m]"
+    assert isinstance(ax_3d.xaxis.get_major_formatter(), FuncFormatter)
+    assert not isinstance(ax_3d.yaxis.get_major_formatter(), FuncFormatter)
+    assert not isinstance(ax_3d.zaxis.get_major_formatter(), FuncFormatter)

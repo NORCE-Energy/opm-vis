@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import click
 
@@ -333,7 +334,7 @@ def main(
     quads: bool,
     threshold: str | None,
     threshold_invert: bool,
-    clip: str | None,
+    clip: Literal["x", "-x", "y", "-y", "z", "-z"] | None,
     clip_origin: tuple[float, float, float] | None,
     clip_invert: bool,
     clip_crinkle: bool,
@@ -412,8 +413,13 @@ def main(
     ) as plotter:
         calc_end = None
         if calc_slice is not None:
+            assert calc_slice_dim is not None and calc_slice_ind is not None
             n_slice = slice_dimension_size(plotter.grid.egrid, calc_slice_dim)
             _, calc_end = resolve_calc_range(calc_slice_ind, n_slice, calc_count)
+
+        # Set below, only reachable when threshold_value is not None (--threshold and slices
+        # are mutually exclusive, checked above, so that always takes the "else" branch below)
+        threshold_rstep: int | None = None
 
         if slices:
             for slice_dim, slice_index in slices:
@@ -437,6 +443,11 @@ def main(
             added_subset = False
 
             if threshold_value is not None:
+                # keyword is required whenever --threshold is given (checked above), and
+                # --animate is rejected together with --threshold (checked above), so --rstep
+                # was parsed with animate=False: a bare int or None, never a range
+                assert keyword is not None
+                assert rstep_value is None or isinstance(rstep_value, int)
                 # Resolved here (rather than at the usual, later point) since add_threshold
                 # needs to know which report step to read keyword at before it can decide
                 # which cells pass the threshold at all; reused below instead of being
@@ -478,6 +489,11 @@ def main(
             plotter.show_axes_grid()
 
         if animate:
+            # grid_only+animate already raised above, so resolve_keyword guarantees a keyword
+            # here, and --rstep was parsed with animate=True (see parse_rstep): a range or
+            # None, never a bare int
+            assert keyword is not None
+            assert rstep_value is None or isinstance(rstep_value, tuple)
             steps = resolve_animate_rsteps(plotter.case.report.report_steps(), rstep_value)
 
             if glyphs is not None:
@@ -547,6 +563,10 @@ def main(
             )
             return
 
+        # Reached only when not animate (the branch above returns), so --rstep was parsed
+        # with animate=False (see parse_rstep): a bare int or None, never a range
+        assert rstep_value is None or isinstance(rstep_value, int)
+
         if grid_only:
             # A solid-colour grid is time-invariant, so no report step is strictly needed;
             # one is still resolved for --wells/the title, defaulting to the first available.
@@ -556,12 +576,17 @@ def main(
                 else plotter.case.report.report_steps()[0]
             )
         elif threshold_value is not None:
-            actual_rstep = threshold_rstep  # already resolved above, before add_threshold
+            assert threshold_rstep is not None  # resolved above, before add_threshold
+            actual_rstep = threshold_rstep
         else:
+            # Not grid_only, so resolve_keyword guarantees a keyword here
+            assert keyword is not None
             actual_rstep = _resolve_actual_rstep(plotter, keyword, rstep_value)
 
         plotter.rstep = actual_rstep
         if not grid_only:
+            # keyword is required unless grid_only (checked by resolve_keyword)
+            assert keyword is not None
             plotter.set_scalars(
                 keyword,
                 actual_rstep,

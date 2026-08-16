@@ -119,7 +119,7 @@ def scalar_bar_title(
 
 
 def glyph_bar_title(label: Label, x_keyword: str, y_keyword: str, z_keyword: str) -> str:
-    """
+    r"""
     Title for a glyph field's magnitude scalar bar
 
     Parameters
@@ -184,4 +184,5 @@ def axis_titles(
     units = (
         "km" if scaled and length == "m" else length for scaled in km_axes
     )
-    return tuple(f"{name} [{u}]" for name, u in zip(_AXIS_NAMES, units))
+    titles = [f"{name} [{u}]" for name, u in zip(_AXIS_NAMES, units)]
+    return titles[0], titles[1], titles[2]
