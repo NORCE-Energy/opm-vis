@@ -97,7 +97,9 @@ def test_a_grid_gets_a_size_scaled_to_its_shape():
 
 
 def test_a_large_grid_is_capped():
-    width, height = default_figsize(8, 8)
+    figsize = default_figsize(8, 8)
+    assert figsize is not None
+    width, height = figsize
 
     assert (width, height) == (16.0, 11.0)
 
@@ -283,7 +285,9 @@ def test_several_keywords_get_a_legend_of_keyword_names(case1):
     plot = SummaryPlot([case1])
     plot.plot(["WOPR:PROD", "WOPR:INJ"])
 
-    labels = [text.get_text() for text in plot.axes[0].get_legend().get_texts()]
+    legend = plot.axes[0].get_legend()
+    assert legend is not None
+    labels = [text.get_text() for text in legend.get_texts()]
     assert labels == ["WOPR:PROD", "WOPR:INJ"]
 
 
@@ -291,7 +295,9 @@ def test_comparing_cases_gives_a_legend_of_case_names(compare_paths):
     plot = SummaryPlot(compare_paths, compare=True)
     plot.plot(["FOPR"])
 
-    labels = [text.get_text() for text in plot.axes[0].get_legend().get_texts()]
+    legend = plot.axes[0].get_legend()
+    assert legend is not None
+    labels = [text.get_text() for text in legend.get_texts()]
     assert labels == ["runA/CASE", "runB/CASE"]
 
 
@@ -299,7 +305,9 @@ def test_comparing_several_keywords_names_both(compare_paths):
     plot = SummaryPlot(compare_paths, compare=True)
     plot.plot(["WOPR:PROD", "WOPR:INJ"])
 
-    labels = [text.get_text() for text in plot.axes[0].get_legend().get_texts()]
+    legend = plot.axes[0].get_legend()
+    assert legend is not None
+    labels = [text.get_text() for text in legend.get_texts()]
     assert labels == [
         "runA/CASE - WOPR:PROD",
         "runB/CASE - WOPR:PROD",
@@ -354,7 +362,9 @@ def test_subplots_take_an_explicit_layout(case1):
     plot.plot(["FOPR", "FGOR"], subplots=True, layout=(2, 1))
 
     assert plot.fig is not None
-    assert plot.axes[0].get_subplotspec().get_gridspec().get_geometry() == (2, 1)
+    subplotspec = plot.axes[0].get_subplotspec()
+    assert subplotspec is not None
+    assert subplotspec.get_gridspec().get_geometry() == (2, 1)
 
 
 def test_subplots_reject_a_layout_with_no_room(case1):

@@ -968,6 +968,7 @@ def test_show_axes_grid_switches_a_wide_metric_axis_to_km(tpsa_lagged, offscreen
         gplot.show_axes_grid(bounds=(0, 2000, 0, 100, -1020, -1000))
 
         axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes is not None
         assert axes.GetXTitle() == "E(x) [km]"
         assert axes.GetYTitle() == "N(y) [m]"
         assert axes.GetZTitle() == "Depth [m]"
@@ -986,6 +987,7 @@ def test_show_axes_grid_km_switch_is_skipped_with_an_explicit_axes_ranges(tpsa_l
         gplot.show_axes_grid(axes_ranges=(0, 2000, 0, 100, 1000, 1020))
 
         axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes is not None
         assert axes.GetXTitle() == "E(x) [m]"
         assert axes.GetXAxisRange() == (0.0, 2000.0)
 
@@ -1001,6 +1003,7 @@ def test_show_axes_grid_gives_a_km_axis_more_decimal_precision(tpsa_lagged, offs
         gplot.show_axes_grid(bounds=(500_000, 501_200, 0, 100, -1020, -1000))
 
         axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes is not None
         # y stays in metres, so its format is untouched
         assert axes.y_label_format == ("%.1f" if pv.vtk_version_info < (9, 6, 0) else "{0:.1f}")
         assert axes.x_label_format == ("%.3f" if pv.vtk_version_info < (9, 6, 0) else "{0:.3f}")
@@ -1014,6 +1017,7 @@ def test_show_axes_grid_respects_an_explicit_fmt_on_a_km_axis(tpsa_lagged, offsc
         gplot.show_axes_grid(bounds=(500_000, 501_200, 0, 100, -1020, -1000), fmt="%.1f")
 
         axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes is not None
         assert axes.GetXTitle() == "E(x) [km]"
         assert axes.x_label_format == "%.1f"
 
@@ -1031,6 +1035,7 @@ def test_set_scalars_does_not_undo_the_km_relabeling(tpsa_lagged, offscreen):
         gplot.set_scalars("PRESSURE", 0)
 
         axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes is not None
         assert axes.GetXAxisRange() == (500.0, 501.2)
         assert axes.x_label_format == ("%.3f" if pv.vtk_version_info < (9, 6, 0) else "{0:.3f}")
 
@@ -1044,6 +1049,7 @@ def test_add_wells_does_not_undo_the_km_relabeling(tpsa_lagged, offscreen):
         gplot.add_wells(0)
 
         axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes is not None
         assert axes.GetXAxisRange() == (500.0, 501.2)
 
 
@@ -1057,6 +1063,7 @@ def test_set_title_does_not_undo_the_km_relabeling(tpsa_lagged, offscreen):
         gplot.set_title()
 
         axes = gplot.plotter.renderer.cube_axes_actor
+        assert axes is not None
         assert axes.GetXAxisRange() == (500.0, 501.2)
 
 

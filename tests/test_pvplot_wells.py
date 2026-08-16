@@ -55,6 +55,7 @@ def test_single_cell_completion_still_gives_a_drawable_line(egrid, wells):
     paths = well_paths(egrid, wells, 60)
 
     # Two wells, each completed in one cell, traced top face to bottom face
+    assert paths.open_wells is not None
     assert paths.open_wells.n_points == 4
     assert paths.open_wells.n_cells == 2
     assert paths.open_wells.length > 0
@@ -66,6 +67,7 @@ def test_trajectory_spans_the_thickness_of_its_completed_cell(egrid, wells):
     # SPE1CASE1's layers are 20, 30 and 50 ft thick from 8325 ft, so INJ in k=0 spans
     # 8325-8345 and PROD in k=2 spans 8375-8425. z points up (see mesh._read_corners), so
     # these depths come back negated.
+    assert paths.open_wells is not None
     depths = sorted(paths.open_wells.points[:, 2])
     np.testing.assert_allclose(depths, [-8425.0, -8375.0, -8345.0, -8325.0])
 
@@ -142,6 +144,8 @@ def test_shut_wells_are_kept_separate_from_open_ones(egrid):
 
     paths = well_paths(egrid, stub, 0)
 
+    assert paths.open_wells is not None
+    assert paths.shut_wells is not None
     assert paths.open_wells.n_cells == 1
     assert paths.shut_wells.n_cells == 1
     assert sorted(paths.label_names) == ["OPENW", "SHUTW"]
@@ -152,6 +156,7 @@ def test_multi_cell_completion_is_one_polyline(egrid):
 
     paths = well_paths(egrid, stub, 0)
 
+    assert paths.open_wells is not None
     assert paths.open_wells.n_cells == 1  # one well, one polyline
     assert paths.open_wells.n_points == 6  # 3 cells, top and bottom face of each
     # Anchored at the shallowest point of the whole path, not of the first cell alone. z
@@ -208,6 +213,7 @@ def test_apply_mapaxes_false_leaves_coordinates_untranslated():
 
     paths = well_paths(egrid, stub, 0, apply_mapaxes=False)
 
+    assert paths.open_wells is not None
     np.testing.assert_allclose(paths.open_wells.points[:, :2], [[0.0, 0.0]] * 2)
 
 
@@ -217,4 +223,5 @@ def test_apply_mapaxes_true_translates_coordinates():
 
     paths = well_paths(egrid, stub, 0, apply_mapaxes=True)
 
+    assert paths.open_wells is not None
     np.testing.assert_allclose(paths.open_wells.points[:, :2], [[1000.0, 2000.0]] * 2)
