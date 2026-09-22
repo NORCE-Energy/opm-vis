@@ -12,15 +12,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import animation
 from matplotlib.axes import Axes
-from matplotlib.collections import PolyCollection
+from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 
+from opm_vis.plot.faults import fault_edges
 from opm_vis.plot.slice_poly import SlicePoly2D, SlicePoly3D
 from opm_vis.utils.calc import calc_label
 from opm_vis.utils.diff import diff_label
+from opm_vis.utils.fault import FaultReader
 from opm_vis.utils.restart import Report
 from opm_vis.utils.units import Label
 
@@ -229,6 +231,81 @@ class _SlicePolyCollection:
                         ax_3d.text(
                             wcent[0, 0], wcent[0, 1], wcent[0, 2], name, color=color
                         )
+
+    def plot_faults(
+        self,
+        fault_path: str,
+        *,
+        names: Sequence[str] | None = None,
+        labels: bool = True,
+        **kwargs,
+    ) -> None:
+        """
+        Plot fault traces read from a FAULTS keyword, on every slice
+
+        Parameters
+        ----------
+        fault_path : str
+            Path to a .DATA file or an include file holding FAULTS keyword(s); see
+            opm_vis.utils.fault.FaultReader.
+        names : Sequence[str] | None, optional
+            Only draw these fault names, by default None, which draws every fault the file
+            defines (subject to each slice's own extent).
+        labels : bool, optional
+            Annotate each fault with its name, by default True
+        kwargs : optional
+            Optional arguments passed to LineCollection/Line3DCollection; "color" defaults to
+            "black" and "linewidth" to 2.0 unless overridden.
+
+        Raises
+        ------
+        KeyError
+            If a name in `names` is not a fault defined in the file
+
+        Notes
+        -----
+        Static geometry, drawn once: unlike plot()/animate(), FAULTS describes the grid itself
+        rather than simulation results, so there is no report-step-dependent variant.
+
+        A fault whose own direction matches a slice's axis (e.g. an X/X- fault on an i-slice)
+        lies flush in that slice's own plane rather than crossing it as a line, and is left out
+        of that slice entirely - see opm_vis.plot.faults.fault_edges.
+        """
+        kwargs.setdefault("color", "black")
+        kwargs.setdefault("linewidth", 2.0)
+
+        reader = FaultReader(fault_path)
+        target_names = names if names is not None else reader.names()
+        faces_by_name = {name: reader.faces(name) for name in target_names}
+
+        for slc in self.slice_coll:
+            edges = fault_edges(
+                slc.egrid,
+                faces_by_name,
+                slc.slice_dim,
+                slc.slice_ind,
+                apply_mapaxes=slc.apply_mapaxes,
+            )
+            if edges.is_empty():
+                continue
+
+            if isinstance(slc, SlicePoly2D):
+                self.ax_.add_collection(
+                    LineCollection(list(edges.segments[:, :, slc.slice_axis]), **kwargs)
+                )
+                if labels:
+                    for (x, y), name in zip(
+                        edges.label_points[:, slc.slice_axis], edges.label_names
+                    ):
+                        self.ax_.annotate(name, (x, y), color=kwargs["color"], ha="center")
+            else:
+                # self.ax_ is declared as the plain 2D Axes for _SlicePolyCollection's own 2D
+                # use, but is actually an Axes3D here - see SlicePoly3DCollection.
+                ax_3d = cast(Axes3D, self.ax_)
+                ax_3d.add_collection3d(Line3DCollection(edges.segments, **kwargs))
+                if labels:
+                    for (x, y, z), name in zip(edges.label_points, edges.label_names):
+                        ax_3d.text(x, y, z, name, color=kwargs["color"])
 
     # pylint: disable=too-many-arguments
     def plot(
