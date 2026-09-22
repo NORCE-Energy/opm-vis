@@ -89,6 +89,195 @@ def test_add_wireframe_draws_only_the_boundary(plotter):
     assert surface.n_cells < 300 * 6  # a boundary, not every face of every cell
 
 
+# ---------------------------------------------------------------------------
+# add_faults
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fault_file(tmp_path):
+    """Two named faults inside SPE1CASE1's 10x10x3 grid: FAULT1 at i=4/5 (0-based), spanning
+    every j and k, and FAULT2 at j=6 (0-based), spanning every i and k."""
+    path = tmp_path / "FAULTS.DATA"
+    path.write_text(
+        """
+FAULTS
+  'FAULT1'  5 5 1 10 1 3 'I' /
+  'FAULT2'  1 10 7 7 1 3 'J' /
+/
+"""
+    )
+    return str(path)
+
+
+def test_add_faults_registers_under_the_default_name(plotter, fault_file):
+    name = plotter.add_faults(fault_file)
+
+    assert name == "faults"
+    assert "faults" in plotter.actor_names()
+
+
+def test_add_faults_draws_every_fault_with_no_names_or_slices(plotter, fault_file):
+    plotter.add_faults(fault_file)
+
+    mesh = plotter._actors["faults"].mesh
+    # FAULT1 spans 10 j-layers x 3 k-layers = 30 cells; FAULT2 spans 10 i-layers x 3 k-layers
+    # = 30 cells
+    assert mesh.n_cells == 60
+
+
+def test_add_faults_names_restricts_to_the_given_faults(plotter, fault_file):
+    plotter.add_faults(fault_file, names=["FAULT1"])
+
+    assert plotter._actors["faults"].mesh.n_cells == 30
+
+
+def test_add_faults_slices_restricts_to_boxes_overlapping_the_slice(plotter, fault_file):
+    # FAULT1's box spans every j (0-9, 0-based); FAULT2's box is j in [6, 6] only. A j=2 slice
+    # therefore overlaps FAULT1 but not FAULT2.
+    plotter.add_faults(fault_file, slices=[("j", 2)])
+
+    assert plotter._actors["faults"].mesh.n_cells == 30  # FAULT1 only
+
+
+def test_add_faults_unknown_name_raises(plotter, fault_file):
+    with pytest.raises(KeyError, match="UNKNOWN"):
+        plotter.add_faults(fault_file, names=["UNKNOWN"])
+
+
+def test_add_faults_nothing_matched_warns_and_returns_none(plotter, fault_file):
+    with pytest.warns(UserWarning, match="No fault surfaces to draw"):
+        result = plotter.add_faults(fault_file, slices=[("k", 100)])
+
+    assert result is None
+    assert "faults" not in plotter.actor_names()
+
+
+def test_add_faults_accepts_an_explicit_name(plotter, fault_file):
+    assert plotter.add_faults(fault_file, name="my-faults") == "my-faults"
+
+
+def test_add_faults_defaults_to_a_flat_black_colour(plotter, fault_file):
+    plotter.add_faults(fault_file)
+
+    assert plotter._actors["faults"].carries_scalars is False
+
+
+def test_add_faults_forwards_kwargs_to_add_mesh(plotter, fault_file):
+    plotter.add_faults(fault_file, color="red", opacity=0.5)
+
+    assert plotter._actors["faults"].actor is not None
+
+
+def _fault_label_actors(plotter):
+    """Label actor names. add_point_labels suffixes the name it is given."""
+    return [n for n in plotter.plotter.actors if n.startswith("pvplot-fault-labels")]
+
+
+def test_add_faults_labels_each_fault_by_name(plotter, fault_file):
+    plotter.add_faults(fault_file)
+
+    assert _fault_label_actors(plotter) != []
+
+
+def test_add_faults_labels_can_be_turned_off(plotter, fault_file):
+    plotter.add_faults(fault_file, labels=False)
+
+    assert _fault_label_actors(plotter) == []
+
+
+def test_add_faults_nothing_matched_adds_no_labels(plotter, fault_file):
+    with pytest.warns(UserWarning, match="No fault surfaces to draw"):
+        plotter.add_faults(fault_file, slices=[("k", 100)])
+
+    assert _fault_label_actors(plotter) == []
+
+
+# ---------------------------------------------------------------------------
+# _label_anchor_points - label positions kept in step with z_scale
+# ---------------------------------------------------------------------------
+
+
+def test_label_anchor_points_untouched_at_default_z_scale(plotter):
+    points = np.array([[1.0, 2.0, -100.0]])
+
+    scaled = plotter._label_anchor_points(points)
+
+    np.testing.assert_allclose(scaled, points)
+
+
+def test_label_anchor_points_scales_only_z(case1, offscreen):
+    del offscreen
+    with GridPlotter([case1], off_screen=True, z_scale=5.0) as gplot:
+        points = np.array([[1.0, 2.0, -100.0]])
+
+        scaled = gplot._label_anchor_points(points)
+
+        np.testing.assert_allclose(scaled, [[1.0, 2.0, -500.0]])
+
+
+def test_label_anchor_points_does_not_mutate_its_input(plotter):
+    points = np.array([[1.0, 2.0, -100.0]])
+
+    plotter._label_anchor_points(points)
+
+    np.testing.assert_allclose(points, [[1.0, 2.0, -100.0]])
+
+
+def _label_hierarchy_points(plotter, actor_name):
+    """The points add_point_labels' text-placement pipeline actually places labels from:
+    vtkActor2D -> vtkLabelPlacementMapper -> vtkPointSetToLabelHierarchy -> its PolyData
+    input. Walked directly, rather than trusting what was passed in, since this text actor -
+    unlike the (now disabled, see show_points=False) point marker - never gets the renderer's
+    own per-actor z_scale applied on top; see _label_anchor_points' notes."""
+    actor = plotter.plotter.actors[actor_name]
+    hierarchy = actor.GetMapper().GetInputConnection(0, 0).GetProducer()
+    producer = hierarchy.GetInputConnection(0, 0).GetProducer()
+    producer.Update()
+    return producer.GetOutputDataObject(0).points
+
+
+def test_fault_labels_are_placed_at_the_scaled_z(case1, fault_file, offscreen):
+    del offscreen
+    with GridPlotter([case1], off_screen=True, window_size=(160, 120), z_scale=5.0) as gplot:
+        gplot.add_faults(fault_file)
+
+        raw_z = gplot._actors["faults"].mesh.points[:, 2].max()
+        points = _label_hierarchy_points(gplot, "pvplot-fault-labels-labels")
+        np.testing.assert_allclose(points[:, 2], raw_z * 5.0)
+
+
+def test_add_faults_labels_have_no_point_markers(plotter, fault_file):
+    # A marker dot is a real 3D actor, unlike the label text - it would get the renderer's
+    # z_scale applied a second time on top of the manual correction already baked into its
+    # position, landing it far from both the label text and the fault surface. See
+    # _label_anchor_points' notes.
+    plotter.add_faults(fault_file)
+
+    assert "pvplot-fault-labels-points" not in plotter.plotter.actors
+
+
+def test_well_labels_are_placed_at_the_scaled_z(case1, offscreen):
+    del offscreen
+    with GridPlotter([case1], off_screen=True, window_size=(160, 120), z_scale=5.0) as gplot:
+        gplot.add_slice("k", 0)
+        gplot.add_wells(60)
+
+        points = _label_hierarchy_points(gplot, "pvplot-well-labels-labels")
+        # INJ is anchored at OPM depth 8325 ft, PROD at 8375 ft (each well's own shallowest
+        # completed layer - see test_pvplot_wells.py's identical check); z points up (see
+        # mesh._read_corners), so the unscaled anchors are -8325 and -8375.
+        np.testing.assert_allclose(sorted(points[:, 2]), [-8375.0 * 5.0, -8325.0 * 5.0])
+
+
+def test_add_wells_labels_have_no_point_markers(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.add_wells(60)
+
+    assert "pvplot-well-labels-points" not in plotter.plotter.actors
+
+
 def test_adding_the_same_name_twice_raises(plotter):
     plotter.add_slice("k", 0)
 

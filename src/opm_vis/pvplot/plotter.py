@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,11 +13,13 @@ import pyvista as pv
 from numpy.typing import NDArray
 
 from opm_vis.pvplot.data import CaseData
+from opm_vis.pvplot.faults import fault_surfaces
 from opm_vis.pvplot.labels import axis_titles, glyph_bar_title, scalar_bar_title, unit
 from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
 from opm_vis.pvplot.wells import well_paths
 from opm_vis.utils.calc import apply_slice_calc, resolve_calc_range
 from opm_vis.utils.diff import compute_diff
+from opm_vis.utils.fault import FaultReader
 from opm_vis.utils.grid import slice_dimension_size, slice_range_layer_grid
 from opm_vis.utils.units import Label
 
@@ -67,6 +70,7 @@ _TITLE_NAME = "pvplot-title"
 _WELLS_OPEN = "pvplot-wells-open"
 _WELLS_SHUT = "pvplot-wells-shut"
 _WELL_LABELS = "pvplot-well-labels"
+_FAULT_LABELS = "pvplot-fault-labels"
 
 # Cell array a vector's components are gathered into before glyphing. Reused across calls
 # rather than named after the keywords, since a glyph actor's source mesh may be shared (the
@@ -326,6 +330,86 @@ class GridPlotter:
             **kwargs,
         )
 
+    def add_faults(
+        self,
+        fault_path: str,
+        *,
+        names: Sequence[str] | None = None,
+        slices: Sequence[tuple[str, int]] | None = None,
+        labels: bool = True,
+        name: str = "faults",
+        **kwargs,
+    ) -> str | None:
+        """
+        Add fault surfaces read from a FAULTS keyword
+
+        Parameters
+        ----------
+        fault_path : str
+            Path to a .DATA file or an include file holding FAULTS keyword(s); see
+            opm_vis.utils.fault.FaultReader.
+        names : Sequence[str] | None, optional
+            Only draw these fault names, by default None, which draws every fault the file
+            defines (subject to slices).
+        slices : Sequence[tuple[str, int]] | None, optional
+            Only include a fault's face box if its index range overlaps at least one of these
+            (dim, index) i-, j- or k-slices, by default None, which includes every face box
+            regardless of slice.
+        labels : bool, optional
+            Annotate each fault with its name, by default True
+        name : str, optional
+            Name to register the fault surfaces under, by default "faults"
+        kwargs : optional
+            Optional arguments passed to pyvista.Plotter.add_mesh
+
+        Returns
+        -------
+        str | None
+            Name the fault surfaces were registered under, or None if nothing was drawn - a
+            warning is issued in that case instead of raising, since an empty result is not
+            necessarily a mistake (e.g. a fault that simply has no face on the chosen slice)
+
+        Raises
+        ------
+        KeyError
+            If a name in `names` is not a fault defined in the file
+
+        Notes
+        -----
+        Static geometry, drawn once: unlike set_scalars/set_vectors there is no per-report-step
+        variant, since FAULTS describes the grid itself rather than simulation results.
+        """
+        reader = FaultReader(fault_path)
+        target_names = names if names is not None else reader.names()
+
+        faces_by_name = {
+            fault_name: reader.faces(fault_name) for fault_name in target_names
+        }
+        surfaces = fault_surfaces(
+            self.grid.egrid, faces_by_name, slices=slices, apply_mapaxes=self.grid.apply_mapaxes
+        )
+        if surfaces.mesh is None:
+            warnings.warn(
+                "No fault surfaces to draw: nothing matched the given fault name(s)/slice(s)."
+            )
+            return None
+
+        kwargs.setdefault("color", "black")
+        registered = self._add(surfaces.mesh, name, carries_scalars=False, **kwargs)
+
+        if labels and len(surfaces.label_names) > 0:
+            self.plotter.add_point_labels(
+                self._label_anchor_points(surfaces.label_points),
+                surfaces.label_names,
+                name=_FAULT_LABELS,
+                font_size=10,
+                shape=None,
+                always_visible=True,
+                show_points=False,
+            )
+
+        return registered
+
     def add_threshold(
         self,
         keyword: str,
@@ -516,12 +600,13 @@ class GridPlotter:
 
         if labels and len(paths.label_names) > 0:
             self.plotter.add_point_labels(
-                paths.label_points,
+                self._label_anchor_points(paths.label_points),
                 paths.label_names,
                 name=_WELL_LABELS,
                 font_size=10,
                 shape=None,
                 always_visible=True,
+                show_points=False,
             )
 
     def add_glyphs(
@@ -1861,6 +1946,47 @@ class GridPlotter:
                 geom=geom,
             ),
         )
+
+    def _label_anchor_points(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
+        """
+        Scale a label anchor's z-coordinate to match the scene's current z_scale
+
+        Parameters
+        ----------
+        points : NDArray[np.float64]
+            Label anchor points, shape (n, 3), e.g. WellPaths.label_points or
+            FaultSurfaces.label_points
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Same points, with the z column multiplied by the renderer's current z scale
+
+        Notes
+        -----
+        add_point_labels' text actor is a vtkActor2D, which - unlike every mesh actor added
+        through _add - has no SetScale for pyvista's Renderer.add_actor to apply the scene's
+        per-actor z_scale (see __init__/set_z_scale) to. Its label-placement pipeline instead
+        places each label straight from the raw point coordinates handed to add_point_labels,
+        with no scaling applied at all. Left uncorrected, a label anchor built from the
+        unscaled geometry (as well_paths/fault_surfaces label anchors are) ends up positioned
+        as though z_scale were 1, while the surface around it is stretched by the real
+        z_scale - the label drifting further from what it is meant to sit on the larger that
+        exaggeration is. Reading self.plotter.renderer.scale fresh here, rather than caching
+        z_scale at __init__, is what keeps this correct after a later set_z_scale call too.
+
+        This is also exactly why add_wells/add_faults pass show_points=False to
+        add_point_labels: its optional point marker is a real vtkActor (unlike the label text
+        itself), which - unlike the label text - *does* get the renderer's z_scale applied
+        automatically by add_actor. Feeding it the same pre-scaled points this method returns
+        would double the z_scale on the marker alone, landing it far from both the label text
+        and the surface it is meant to mark; there is no single point array that is correct
+        for both actors at once, so the marker is dropped instead of trying to reconcile the
+        two.
+        """
+        scaled = points.copy()
+        scaled[:, 2] *= self.plotter.renderer.scale[2]
+        return scaled
 
     def _add(
         self, mesh: pv.DataSet, name: str, *, carries_scalars: bool = True, **kwargs
