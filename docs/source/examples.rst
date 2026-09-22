@@ -355,3 +355,16 @@ themselves, not to ``plot``/``animate``:
    coll = SlicePoly2DCollection(["tests/data/SPE1CASE1"], "k", 0, surface=True)
    coll.plot(60, "PRESSURE", calc_kind="surface")
    coll.save_plot("pressure_top.png")
+
+:meth:`~opm_vis.plot.collections._SlicePolyCollection.plot_faults` reads a ``FAULTS`` keyword
+from a ``.DATA`` file or an arbitrary include file and draws every fault trace crossing the
+slice as a line, labelled with its name. A fault whose own direction matches the slice's axis
+(e.g. an X/X- fault on an i-slice) is skipped - it lies flush in the slice's own plane rather
+than crossing it as a line:
+
+.. code-block:: python
+
+   coll = SlicePoly2DCollection(["tests/data/SPE1CASE1"], "k", 0)
+   coll.plot(60, "SGAS")
+   coll.plot_faults("tests/data/SPE1CASE1_FAULTS.INC")
+   coll.save_plot("sgas_faults.png")
