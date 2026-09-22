@@ -198,6 +198,23 @@ def _wells_slices(
     "over --wells if both are given.",
 )
 @click.option("--wireframe", is_flag=True, default=False, help="Add the grid outline for context.")
+@click.option(
+    "--fault",
+    "fault_path",
+    default=None,
+    metavar="PATH",
+    help="Path to a .DATA file or an include file with FAULTS keyword(s); draws the fault "
+    "surface(s) on top of the plot.",
+)
+@click.option(
+    "--fault-name",
+    "fault_names",
+    multiple=True,
+    metavar="NAME",
+    help="Only draw this fault (repeatable). Only used with --fault. Without it, every fault "
+    "on the chosen -i/-j/-k slice(s) is drawn, or every fault in the file if no slice was "
+    "given.",
+)
 @SHOW_EDGES_OPTION
 @click.option(
     "--quads",
@@ -330,6 +347,8 @@ def main(
     wells: bool,
     all_wells: bool,
     wireframe: bool,
+    fault_path: str | None,
+    fault_names: tuple[str, ...],
     show_edges: bool,
     quads: bool,
     threshold: str | None,
@@ -397,6 +416,8 @@ def main(
         raise click.UsageError(
             "--calculator needs --keyword; it has no effect with --grid-only."
         )
+    if fault_names and fault_path is None:
+        raise click.UsageError("--fault-name needs --fault.")
     rstep_value = parse_rstep(rstep, animate)
     # --diff has no effect in --grid-only (there is no --keyword to difference), so it is
     # forced off here rather than left to silently do nothing while still showing up in the
@@ -479,6 +500,11 @@ def main(
                 plotter.add_grid(opacity=opacity, show_edges=show_edges, **grid_kwargs)
         if wireframe:
             plotter.add_wireframe()
+
+        if fault_path is not None:
+            plotter.add_faults(
+                fault_path, names=list(fault_names) or None, slices=slices or None
+            )
 
         if view == "2d":
             plotter.view_2d(slices[0][0])

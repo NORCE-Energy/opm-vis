@@ -57,6 +57,24 @@ from opm_vis.utils.grid import slice_dimension_size
     help="Camera preset.",
 )
 @click.option("--no-colorbar", is_flag=True, default=False, help="Hide the colorbar.")
+@click.option(
+    "--fault",
+    "fault_path",
+    default=None,
+    metavar="PATH",
+    help="Path to a .DATA file or an include file with FAULTS keyword(s); draws the fault "
+    "trace(s) crossing the slice as lines, each annotated with its name. A fault whose own "
+    "direction matches the slice's axis (e.g. an X/X- fault on an i-slice) is not drawn: it "
+    "lies flush in the slice's own plane rather than crossing it as a line.",
+)
+@click.option(
+    "--fault-name",
+    "fault_names",
+    multiple=True,
+    metavar="NAME",
+    help="Only draw this fault (repeatable). Only used with --fault. Without it, every fault "
+    "crossing the slice is drawn.",
+)
 @SHOW_EDGES_OPTION
 @handle_errors
 # pylint: disable=too-many-arguments,too-many-locals
@@ -81,6 +99,8 @@ def main(
     clim: tuple[float, float] | None,
     view: str,
     no_colorbar: bool,
+    fault_path: str | None,
+    fault_names: tuple[str, ...],
     show_edges: bool,
 ) -> None:
     """
@@ -112,6 +132,8 @@ def main(
         raise click.UsageError(
             "--calculator needs --keyword; it has no effect with --grid-only."
         )
+    if fault_names and fault_path is None:
+        raise click.UsageError("--fault-name needs --fault.")
     slice_dim, slice_index = slices[0]
     rstep_value = parse_rstep(rstep, animate)
     # --diff has no effect in --grid-only (there is no --keyword to difference); see the
@@ -137,6 +159,9 @@ def main(
         coll = SlicePoly2DCollection(
             resolved_paths, slice_dim, slice_index, calc_count=calc_count, surface=surface
         )
+
+    if fault_path is not None:
+        coll.plot_faults(fault_path, names=list(fault_names) or None)
 
     calc_end = None
     if calc_kind is not None:

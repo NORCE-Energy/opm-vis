@@ -23,6 +23,26 @@ Basic slice with wells
    plotter.view_3d()
    plotter.show()
 
+Fault surfaces
+-------------------------
+
+:meth:`~opm_vis.pvplot.GridPlotter.add_faults` reads a ``FAULTS`` keyword from a ``.DATA`` file
+or an arbitrary include file and draws the fault surface(s) as flat quads, each labelled with its
+name. ``names`` restricts to specific faults; ``slices`` restricts to whichever faults intersect
+one or more ``(dim, index)`` slices, the same slices passed to ``add_slice``:
+
+.. code-block:: python
+
+   from opm_vis.pvplot import GridPlotter
+
+   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter.add_slice("k", 0)
+   plotter.add_faults("tests/data/SPE1CASE1_FAULTS.INC", slices=[("k", 0)])
+
+   plotter.set_scalars("SGAS", rstep=60)
+   plotter.view_2d("k")
+   plotter.show()
+
 Whole grid instead of a slice
 ------------------------------
 
@@ -335,3 +355,16 @@ themselves, not to ``plot``/``animate``:
    coll = SlicePoly2DCollection(["tests/data/SPE1CASE1"], "k", 0, surface=True)
    coll.plot(60, "PRESSURE", calc_kind="surface")
    coll.save_plot("pressure_top.png")
+
+:meth:`~opm_vis.plot.collections._SlicePolyCollection.plot_faults` reads a ``FAULTS`` keyword
+from a ``.DATA`` file or an arbitrary include file and draws every fault trace crossing the
+slice as a line, labelled with its name. A fault whose own direction matches the slice's axis
+(e.g. an X/X- fault on an i-slice) is skipped - it lies flush in the slice's own plane rather
+than crossing it as a line:
+
+.. code-block:: python
+
+   coll = SlicePoly2DCollection(["tests/data/SPE1CASE1"], "k", 0)
+   coll.plot(60, "SGAS")
+   coll.plot_faults("tests/data/SPE1CASE1_FAULTS.INC")
+   coll.save_plot("sgas_faults.png")

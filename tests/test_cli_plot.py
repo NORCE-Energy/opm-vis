@@ -620,3 +620,118 @@ def test_unknown_keyword_is_a_clean_error(case1, runner, tmp_path):
 
     assert result.exit_code != 0
     assert "Traceback" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# --fault / --fault-name
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fault_file(tmp_path):
+    """FAULT1 at i=4 (0-based) spanning every j/k in SPE1CASE1's 10x10x3 grid."""
+    path = tmp_path / "FAULTS.DATA"
+    path.write_text(
+        """
+FAULTS
+  'FAULT1'  5 5 1 10 1 3 'I' /
+/
+"""
+    )
+    return str(path)
+
+
+def test_fault_draws_the_fault_trace(case1, fault_file, runner, tmp_path):
+    output = tmp_path / "sgas.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60",
+            "--fault", fault_file, "-s", str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_fault_works_with_3d_view(case1, fault_file, runner, tmp_path):
+    output = tmp_path / "sgas.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "--view", "3d",
+            "--fault", fault_file, "-s", str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_fault_works_with_grid_only(case1, fault_file, runner, tmp_path):
+    output = tmp_path / "grid.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1, "--grid-only", "-k", "1",
+            "--fault", fault_file, "-s", str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_fault_name_restricts_to_the_given_fault(case1, fault_file, runner, tmp_path):
+    output = tmp_path / "sgas.png"
+
+    result = runner.invoke(
+        main,
+        [
+            case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60",
+            "--fault", fault_file, "--fault-name", "FAULT1", "-s", str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.exists()
+
+
+def test_fault_name_unknown_fault_is_a_clean_error(case1, fault_file, runner, tmp_path):
+    result = runner.invoke(
+        main,
+        [
+            case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60",
+            "--fault", fault_file, "--fault-name", "NOPE", "-s", str(tmp_path / "x.png"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Traceback" not in result.output
+
+
+def test_fault_name_without_fault_is_rejected(case1, runner):
+    result = runner.invoke(
+        main,
+        [case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60", "--fault-name", "FAULT1"],
+    )
+
+    assert result.exit_code != 0
+    assert "--fault-name needs --fault" in result.output
+
+
+def test_fault_missing_file_is_a_clean_error(case1, runner, tmp_path):
+    result = runner.invoke(
+        main,
+        [
+            case1, "--keyword", "SGAS", "-k", "1", "--rstep", "60",
+            "--fault", str(tmp_path / "NOPE.DATA"), "-s", str(tmp_path / "x.png"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Traceback" not in result.output
