@@ -22,12 +22,8 @@ class FaultFace:
     """
     One IJK box making up part of a fault, i.e. one record of the FAULTS keyword
 
-    Attributes
-    ----------
-    i1, i2, j1, j2, k1, k2 : int
-        0-based, inclusive cell index range the box covers
-    face : str
-        Direction the fault face points in: 'X', 'X-', 'Y', 'Y-', 'Z', or 'Z-'
+    i1/i2, j1/j2, k1/k2 are the 0-based, inclusive cell index range the box covers; face is the
+    direction the fault face points in: 'X', 'X-', 'Y', 'Y-', 'Z', or 'Z-'.
     """
 
     i1: int
