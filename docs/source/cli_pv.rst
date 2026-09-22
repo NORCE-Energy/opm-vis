@@ -9,8 +9,8 @@ indexing.
 Each option group below has its own page with a description and a runnable example of every
 option in it: :doc:`cli_pv_input`, :doc:`cli_pv_grid_only`, :doc:`cli_pv_slicing`,
 :doc:`cli_pv_rstep_animation`, :doc:`cli_pv_diff`, :doc:`cli_pv_calculator`, :doc:`cli_pv_view`,
-:doc:`cli_pv_wells`, :doc:`cli_pv_appearance`, :doc:`cli_pv_threshold`, :doc:`cli_pv_clip`,
-:doc:`cli_pv_glyphs`, :doc:`cli_pv_output`.
+:doc:`cli_pv_wells`, :doc:`cli_pv_fault`, :doc:`cli_pv_appearance`, :doc:`cli_pv_threshold`,
+:doc:`cli_pv_clip`, :doc:`cli_pv_glyphs`, :doc:`cli_pv_output`.
 
 Option reference
 ----------------
@@ -31,6 +31,7 @@ Option reference
    cli_pv_calculator
    cli_pv_view
    cli_pv_wells
+   cli_pv_fault
    cli_pv_appearance
    cli_pv_threshold
    cli_pv_clip
