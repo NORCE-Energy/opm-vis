@@ -28,6 +28,18 @@ Colour limits ``MIN MAX``. Defaults to the data range of the report step(s) show
 
    opm-vis-mpl -f tests/data/SPE1CASE1 -K SGAS -k 1 -r 60 --clim 0.0 0.8
 
+``--log-scale``
+-----------------
+
+Maps colours logarithmically, with decade ticks on the colorbar - useful for values spanning
+orders of magnitude, such as permeability. A log scale can only colour positive values: cells
+that are zero or negative are left blank, with a warning saying how many, and a plot with no
+positive value at all is an error. With ``--clim`` the lower limit must be above 0.
+
+.. code-block:: bash
+
+   opm-vis-mpl -f tests/data/SPE1CASE1 -K PERMX -i 5 --log-scale
+
 ``--no-colorbar``
 --------------------
 

@@ -9,6 +9,7 @@ import pytest
 matplotlib.use("Agg")  # headless: never try to open a GUI window while saving
 
 from matplotlib.collections import LineCollection  # noqa: E402
+from matplotlib.colors import LogNorm  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 from mpl_toolkits.mplot3d import Axes3D  # noqa: E402
 from mpl_toolkits.mplot3d.art3d import Line3DCollection  # noqa: E402
@@ -379,3 +380,68 @@ def test_animate_checks_well_names_up_front(case1):
 
     with pytest.raises(KeyError, match="NOPE"):
         coll.animate("SGAS", rstep_list=[0, 60], well_names=["NOPE"])
+
+
+# ---------------------------------------------------------------------------
+# log_scale
+# ---------------------------------------------------------------------------
+
+
+def _slice_collection(coll):
+    return next(c for c in coll.ax_.collections if hasattr(c, "get_array"))
+
+
+def test_plot_log_scale_uses_a_log_norm_with_a_positive_lower_limit(case1):
+    coll = SlicePoly2DCollection([case1], "i", 5)
+    coll.plot(None, "PERMX", log_scale=True)
+
+    norm = _slice_collection(coll).norm
+    assert isinstance(norm, LogNorm)
+    # PERMX is 500/50/200 mD by layer; the linear path would have started its range at 0
+    assert (norm.vmin, norm.vmax) == (50.0, 500.0)
+
+
+def test_plot_without_log_scale_keeps_the_linear_norm(case1):
+    coll = SlicePoly2DCollection([case1], "i", 5)
+    coll.plot(None, "PERMX")
+
+    assert not isinstance(_slice_collection(coll).norm, LogNorm)
+
+
+def test_plot_log_scale_honours_an_explicit_clim(case1):
+    coll = SlicePoly2DCollection([case1], "i", 5)
+    coll.plot(None, "PERMX", log_scale=True, clim=(10, 1000))
+
+    norm = _slice_collection(coll).norm
+    assert (norm.vmin, norm.vmax) == (10.0, 1000.0)
+
+
+def test_plot_log_scale_shares_limits_across_slices(case1):
+    coll = SlicePoly3DCollection([case1], [("k", 0), ("k", 1)])
+    coll.plot(None, "PERMX", log_scale=True)
+
+    norms = [c.norm for c in coll.ax_.collections if hasattr(c, "get_array")]
+    assert len(norms) == 2 and norms[0] is not norms[1]
+    assert {(n.vmin, n.vmax) for n in norms} == {(50.0, 500.0)}
+
+
+def test_plot_log_scale_with_no_positive_value_raises(case1):
+    coll = SlicePoly2DCollection([case1], "k", 0)
+
+    with pytest.raises(ValueError, match="needs positive values"):
+        coll.plot(0, "SGAS", log_scale=True)  # SGAS is 0 everywhere at report step 0
+
+
+def test_plot_log_scale_warns_about_values_it_cannot_colour(case1):
+    coll = SlicePoly2DCollection([case1], "k", 0)
+
+    with pytest.warns(UserWarning, match=r"\d+ cell value\(s\) are zero or negative"):
+        coll.plot(60, "PRESSURE", log_scale=True, diff_rstep=0)
+
+
+@pytest.mark.parametrize(("log_scale", "scale"), [(True, "log"), (False, "linear")])
+def test_animate_colorbar_follows_log_scale(case1, log_scale, scale):
+    coll = SlicePoly2DCollection([case1], "i", 5)
+    coll.animate("PERMX", rstep_list=[0, 60], log_scale=log_scale)
+
+    assert coll.fig.axes[-1].get_yscale() == scale

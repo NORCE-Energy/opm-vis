@@ -91,6 +91,90 @@ def _km_axis_label(name: str, span: float) -> str:
     return f"{name} [km]" if abs(span) > _KM_AXIS_SPAN_M else f"{name} [m]"
 
 
+def _arrays(polycs: Sequence[PolyCollection | Poly3DCollection]) -> list[np.ndarray]:
+    """
+    The values every collection has been given
+
+    Parameters
+    ----------
+    polycs : Sequence[PolyCollection | Poly3DCollection]
+        Collections that SlicePoly.generate has already set an array on
+
+    Returns
+    -------
+    list[np.ndarray]
+        Each collection's array, in order
+    """
+    arrays = [polyc.get_array() for polyc in polycs]
+    assert all(array is not None for array in arrays)
+    return cast("list[np.ndarray]", arrays)
+
+
+def _check_log_data(arrays: Sequence[np.ndarray]) -> None:
+    """
+    Check that data can be coloured on a log scale, warning about the cells that cannot
+
+    Parameters
+    ----------
+    arrays : Sequence[np.ndarray]
+        The values of every collection about to be coloured
+
+    Raises
+    ------
+    ValueError
+        If no value is positive, so nothing could be coloured at all
+
+    Warns
+    -----
+    UserWarning
+        If some values are zero or negative: a log scale cannot colour them, so Matplotlib
+        leaves those cells blank
+    """
+    values = np.concatenate([np.ravel(array) for array in arrays])
+    values = values[np.isfinite(values)]
+    if not (values > 0).any():
+        raise ValueError(
+            "--log-scale needs positive values, but none of the plotted values are above 0."
+        )
+
+    n_nonpositive = int((values <= 0).sum())
+    if n_nonpositive:
+        warnings.warn(
+            f"{n_nonpositive} cell value(s) are zero or negative and are left uncoloured on "
+            "a log scale."
+        )
+
+
+def _color_limits(arrays: Sequence[np.ndarray], *, log: bool) -> tuple[float, float]:
+    """
+    Smallest and largest value to colour, shared by every collection
+
+    Parameters
+    ----------
+    arrays : Sequence[np.ndarray]
+        The values of every collection to share colour limits
+    log : bool
+        Whether colours are mapped logarithmically, which needs a positive lower limit
+
+    Returns
+    -------
+    tuple[float, float]
+        (minimum, maximum). On a linear scale both are also bounded by 0, i.e. the range
+        always includes 0 as it always has here; on a log scale the minimum is the smallest
+        positive value instead.
+    """
+    if log:
+        values = np.concatenate([np.ravel(array) for array in arrays])
+        values = values[np.isfinite(values) & (values > 0)]
+        return float(values.min()), float(values.max())
+
+    low, high = 0.0, 0.0
+    for array in arrays:
+        low = np.minimum(low, array.min())
+        high = np.maximum(high, array.max())
+    return low, high
+
+
 def _km_tick_formatter(value: float, _pos: int) -> str:
     """
     Format one tick value in km, for FuncFormatter
@@ -506,6 +590,7 @@ class _SlicePolyCollection:
         colorbar_label: str | None = None,
         title: bool = True,
         well_names: Sequence[str] | None = None,
+        log_scale: bool = False,
         **kwargs,
     ) -> None:
         """
@@ -549,6 +634,10 @@ class _SlicePolyCollection:
         well_names : Sequence[str] | None, optional
             Only plot wells with these names, by default None, which plots every well on the
             slices
+        log_scale : bool, optional
+            Map colours logarithmically, by default False. Needs positive values: zero and
+            negative cells are left uncoloured, with a warning, and ValueError is raised if no
+            value is positive. A log colour scale also needs a positive lower clim.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -556,6 +645,10 @@ class _SlicePolyCollection:
         -----
         Use show or save_plot to show plot on screen or save to file.
         """
+        if log_scale:
+            # A string norm gives every collection its own LogNorm, and combines with clim
+            kwargs["norm"] = "log"
+
         # If pre-generated polyc data have been inputted, we just add the correct one(s) for the
         # current report step
         if polyc_dict is not None:
@@ -578,16 +671,14 @@ class _SlicePolyCollection:
                 for slc in self.slice_coll
             ]
 
+        if log_scale and polyc_dict is None:
+            # (animate() checks its data once up front, over every report step)
+            _check_log_data(_arrays(polyc_rstep))
+
         # Set equal color range if there are more than one slice.
         if "clim" not in kwargs and equal_clim is True and len(polyc_rstep) > 1:
             # First we need min/max across all slices
-            min_polyc = 0
-            max_polyc = 0
-            for polyc in polyc_rstep:
-                polyc_array = polyc.get_array()
-                assert polyc_array is not None
-                min_polyc = np.minimum(min_polyc, polyc_array.min())
-                max_polyc = np.maximum(max_polyc, polyc_array.max())
+            min_polyc, max_polyc = _color_limits(_arrays(polyc_rstep), log=log_scale)
 
             # Second, we set clim
             for polyc in polyc_rstep:
@@ -697,6 +788,7 @@ class _SlicePolyCollection:
         colorbar_label: str | None = None,
         title: bool = True,
         well_names: Sequence[str] | None = None,
+        log_scale: bool = False,
         **kwargs,
     ) -> None:
         """
@@ -737,6 +829,10 @@ class _SlicePolyCollection:
         well_names : Sequence[str] | None, optional
             Only plot wells with these names, by default None, which plots every well on the
             slices
+        log_scale : bool, optional
+            Map colours logarithmically, by default False. Needs positive values: zero and
+            negative cells are left uncoloured, with a warning, and ValueError is raised if no
+            value is positive. A log colour scale also needs a positive lower clim.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -766,6 +862,9 @@ class _SlicePolyCollection:
 
         # Save keyword, for save_gif's filename; see _keyword_tag
         self.keyword = self._keyword_tag(keyword, diff_rstep, diff_kind, calc_kind)
+
+        if log_scale:
+            kwargs["norm"] = "log"
 
         # Generate slices for all report dates to be able to set one colorbar for the whole
         # animation
@@ -861,16 +960,16 @@ class _SlicePolyCollection:
                 for slc in self.slice_coll
             ]
 
+        log_scale = kwargs.get("norm") == "log"
+        arrays = _arrays([polyc for rstep in rsteps for polyc in polyc_dict[rstep]])
+        if log_scale:
+            _check_log_data(arrays)
+
         # If clim have not been set in kwargs, we must loop over all polyc and set clim to min/max
         # for all data
         if "clim" not in kwargs:
-            # First loop round to get min/max for all slices in all report steps
-            min_polyc = 0
-            max_polyc = 0
-            for rstep in rsteps:
-                for polyc in polyc_dict[rstep]:
-                    min_polyc = np.minimum(min_polyc, polyc.get_array().min())
-                    max_polyc = np.maximum(max_polyc, polyc.get_array().max())
+            # First get min/max for all slices in all report steps
+            min_polyc, max_polyc = _color_limits(arrays, log=log_scale)
 
             # Second loop round to set uniform clim for all slices in all report steps
             for rstep in rsteps:

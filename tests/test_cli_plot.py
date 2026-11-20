@@ -1175,3 +1175,30 @@ def test_unknown_well_name_is_a_clean_error(case1_dir, runner, tmp_path):
     assert result.exit_code != 0
     assert "Unknown well name(s): NOPE. Wells in the case: INJ, PROD." in result.output
     assert "Traceback" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# --log-scale
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("extra", [[], ["-r", "0:2", "--animate"]])
+def test_log_scale_writes_output_file(case1_dir, runner, tmp_path, extra):
+    result = runner.invoke(
+        main,
+        ["-f", case1_dir, "-K", "PERMX", "-i", "5", *extra, "--log-scale", "-sf", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert any(tmp_path.iterdir())
+
+
+def test_log_scale_with_only_zeros_is_a_clean_error(case1_dir, runner, tmp_path):
+    result = runner.invoke(
+        main,
+        ["-f", case1_dir, "-K", "SGAS", "-k", "1", "-r", "0", "--log-scale", "-sf", str(tmp_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "--log-scale needs positive values" in result.output
+    assert "Traceback" not in result.output

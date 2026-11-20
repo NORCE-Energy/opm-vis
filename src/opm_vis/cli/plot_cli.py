@@ -74,6 +74,7 @@ _ANIMATION_FOLDER = "mpl-gifs"
     show_default=True,
     help="Camera preset.",
 )
+@click.option("--log-scale", is_flag=True, default=False, help="Map colours logarithmically.")
 @click.option("--no-colorbar", is_flag=True, default=False, help="Hide the colorbar.")
 @COLORBAR_LABEL_OPTION
 @click.option("--no-title", is_flag=True, default=False, help="Hide the report-date title.")
@@ -134,6 +135,7 @@ def main(
     cmap: str,
     clim: tuple[float, float] | None,
     view: str,
+    log_scale: bool,
     no_colorbar: bool,
     colorbar_label: str | None,
     no_title: bool,
@@ -257,6 +259,7 @@ def main(
             colorbar_label=colorbar_label,
             title=not no_title,
             well_names=list(well_names) or None,
+            log_scale=log_scale,
             **poly_kwargs,
         )
 
@@ -324,6 +327,7 @@ def main(
         colorbar_label=colorbar_label,
         title=not no_title,
         well_names=list(well_names) or None,
+        log_scale=log_scale,
         diff_rstep=resolved_diff_rstep,
         diff_kind=diff_kind,
         calc_kind=calc_kind,
