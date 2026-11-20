@@ -17,20 +17,20 @@ Usage guide and API reference: https://norce-energy.github.io/opm-vis/
 Plot a keyword on a grid slice without writing any Python:
 
 ```bash
-opm-vis-pv tests/data/SPE1CASE1 -K SGAS -k 1 -r 60 --save sgas_k1.png
+opm-vis-pv -f tests/data/SPE1CASE1 -K SGAS -k 1 -r 60 --save
 ```
 
 Plot summary vectors (time series) from the case's `.SMSPEC`/`.UNSMRY` files, one line per
 vector or one subplot each:
 
 ```bash
-opm-vis-sum tests/data/SPE1CASE1 -K FOPR -K 'WBHP:*' --subplots --save rates.png
+opm-vis-sum -f tests/data/SPE1CASE1 -K FOPR -K 'WBHP:*' --subplots --save
 ```
 
 List the case's report steps with their dates and the time since the simulation started:
 
 ```bash
-opm-vis-rdates tests/data/SPE1CASE1
+opm-vis-rdates -f tests/data/SPE1CASE1
 ```
 
 ## API
@@ -40,7 +40,7 @@ The same plot, driven from Python with `opm_vis.pvplot`:
 ```python
 from opm_vis.pvplot import GridPlotter
 
-plotter = GridPlotter(["tests/data/SPE1CASE1"])
+plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"])
 plotter.add_slice("k", 0)
 plotter.set_scalars("SGAS", rstep=60)
 plotter.show()

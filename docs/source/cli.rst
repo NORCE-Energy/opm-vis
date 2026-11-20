@@ -1,9 +1,12 @@
 Command line
 ============
 
-Four entry points work on a case without writing any Python. They all take the same
-filename-prefix ``PATHS`` convention as the Python API: the first path is the main run, any
-further paths are restart runs, and the working directory is searched if none is given.
+Four entry points work on a case without writing any Python. They all find the case the same
+way: pass its folder with ``-f``/``--folder``, or leave it out to use the current folder. Every
+case found in the folder - every name with an ``.EGRID``, ``.INIT``, ``.UNRST``, ``.X0000``,
+``.SMSPEC`` or ``.UNSMRY`` file - is read as one run: the main run followed by its restarts,
+ordered by the report step (or else the summary time) each one starts at. ``-f`` is
+repeatable, for restarts kept in folders of their own.
 
 :doc:`cli_pv` (PyVista backend) supports the full option set, including multiple slices, wells,
 glyphs and 3D views. :doc:`cli_mpl` (Matplotlib backend) is the alternative tool, less developed

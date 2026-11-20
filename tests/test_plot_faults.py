@@ -13,7 +13,7 @@ from opm_vis.utils.fault import FaultFace
 
 @pytest.fixture(scope="module")
 def egrid(data_dir):
-    return EGrid(str(data_dir / "SPE1CASE1.EGRID"))
+    return EGrid(str(data_dir / "SPE1CASE1" / "SPE1CASE1.EGRID"))
 
 
 # ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ supported with it.
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 --grid-only --view 3d --save grid.png
+   opm-vis-pv -f tests/data/SPE1CASE1 --grid-only --view 3d --save
 
 ``--grid-color``
 ------------------
@@ -20,11 +20,11 @@ fill colour. Only used with ``--grid-only``.
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 --grid-only --grid-color lightgrey --view 3d --save grid.png
+   opm-vis-pv -f tests/data/SPE1CASE1 --grid-only --grid-color lightgrey --view 3d --save
 
 Combined with ``--show-edges`` (see :doc:`cli_pv_appearance`) to also draw cell outlines on top:
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 --grid-only --grid-color lightgrey --show-edges \
-       --view 3d --save grid.png
+   opm-vis-pv -f tests/data/SPE1CASE1 --grid-only --grid-color lightgrey --show-edges \
+       --view 3d --save

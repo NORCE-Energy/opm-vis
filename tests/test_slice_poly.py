@@ -11,7 +11,7 @@ from opm_vis.plot.slice_poly import SlicePoly2D
 
 @pytest.fixture(scope="module")
 def real_egrid(data_dir):
-    return EGrid(str(data_dir / "SPE1CASE1.EGRID"))
+    return EGrid(str(data_dir / "SPE1CASE1" / "SPE1CASE1.EGRID"))
 
 
 @pytest.fixture

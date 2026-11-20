@@ -1,0 +1,18 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"name": "Licence A"},
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[500, 500], [9500, 500], [9500, 4500], [500, 4500], [500, 500]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {"name": "Seismic line"},
+      "geometry": {"type": "LineString", "coordinates": [[0, 10000, 8330], [10000, 0, 8420]]}
+    }
+  ]
+}

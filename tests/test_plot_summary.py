@@ -45,8 +45,8 @@ def compare_paths(tmp_path_factory, data_dir):
     second.mkdir()
 
     for ext in (".SMSPEC", ".UNSMRY"):
-        shutil.copy(data_dir / f"SPE1CASE2{ext}", first / f"CASE{ext}")
-        shutil.copy(data_dir / f"SPE1CASE2_RESTART_60{ext}", second / f"CASE{ext}")
+        shutil.copy(data_dir / "SPE1CASE2" / f"SPE1CASE2{ext}", first / f"CASE{ext}")
+        shutil.copy(data_dir / "SPE1CASE2" / f"SPE1CASE2_RESTART_60{ext}", second / f"CASE{ext}")
 
     return [str(first / "CASE"), str(second / "CASE")]
 
@@ -589,7 +589,7 @@ def test_save_plot_generates_a_name_next_to_the_case(data_dir, tmp_path):
     # The generated name is built from the input prefix, so it lands beside the case rather than
     # in the working directory - hence a copy of the case in tmp_path, not a chdir into it
     for ext in (".SMSPEC", ".UNSMRY"):
-        shutil.copy(data_dir / f"SPE1CASE1{ext}", tmp_path / f"SPE1CASE1{ext}")
+        shutil.copy(data_dir / "SPE1CASE1" / f"SPE1CASE1{ext}", tmp_path / f"SPE1CASE1{ext}")
 
     plot = SummaryPlot([str(tmp_path / "SPE1CASE1")])
     plot.plot(["FOPR", "WOPR:PROD"])

@@ -9,9 +9,9 @@ while ``days`` and ``years`` use the time since the simulation started.
 
 .. code-block:: bash
 
-   opm-vis-sum tests/data/SPE1CASE1 -K FOPR
-   opm-vis-sum tests/data/SPE1CASE1 -K FOPR --x-axis days
-   opm-vis-sum tests/data/SPE1CASE1 -K FOPR --x-axis years
+   opm-vis-sum -f tests/data/SPE1CASE1 -K FOPR
+   opm-vis-sum -f tests/data/SPE1CASE1 -K FOPR --x-axis days
+   opm-vis-sum -f tests/data/SPE1CASE1 -K FOPR --x-axis years
 
 Elapsed time is measured from the deck's ``START``, not from the first reported timestep, so the
 values are the ``TIME`` and ``YEARS`` vectors themselves. A year is 365.25 days, the same
@@ -29,7 +29,7 @@ Uses a logarithmic y axis, on every subplot.
 
 .. code-block:: bash
 
-   opm-vis-sum tests/data/SPE1CASE1 -K WGPR:PROD --log-y
+   opm-vis-sum -f tests/data/SPE1CASE1 -K WGPR:PROD --log-y
 
 Matplotlib drops non-positive values on a logarithmic axis, so a rate that is zero until its
 well opens simply starts later. A vector that is never positive cannot be drawn at all, and
@@ -44,8 +44,8 @@ on ``days`` and ``years``.
 
 .. code-block:: bash
 
-   opm-vis-sum tests/data/SPE1CASE1 -K FOPR --xlim 2016-01-01 2020-01-01
-   opm-vis-sum tests/data/SPE1CASE1 -K FOPR --x-axis days --xlim 0 1000
+   opm-vis-sum -f tests/data/SPE1CASE1 -K FOPR --xlim 2016-01-01 2020-01-01
+   opm-vis-sum -f tests/data/SPE1CASE1 -K FOPR --x-axis days --xlim 0 1000
 
 Giving a number on a date axis, or a date on a numeric one, is an error naming the form that
 axis expects. ``MIN`` must be less than ``MAX``.
@@ -57,7 +57,7 @@ Y axis limits, as ``MIN MAX``, always numbers. Defaults to the range of the data
 
 .. code-block:: bash
 
-   opm-vis-sum tests/data/SPE1CASE1 -K FOPR --ylim 0 25000
+   opm-vis-sum -f tests/data/SPE1CASE1 -K FOPR --ylim 0 25000
 
 Applied to every subplot, which with ``--subplots`` means vectors measuring different things
 share one y range. That is rarely what is wanted, so limits and ``--subplots`` are usually worth

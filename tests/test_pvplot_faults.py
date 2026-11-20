@@ -16,7 +16,7 @@ from opm_vis.utils.fault import FaultFace  # noqa: E402
 def egrid(data_dir):
     from opm.io.ecl import EGrid
 
-    return EGrid(str(data_dir / "SPE1CASE1.EGRID"))
+    return EGrid(str(data_dir / "SPE1CASE1" / "SPE1CASE1.EGRID"))
 
 
 # ---------------------------------------------------------------------------

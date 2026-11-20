@@ -10,9 +10,9 @@ where ``END`` is included.
 
 .. code-block:: bash
 
-   opm-vis-rdates tests/data/SPE1CASE1 -r 60
-   opm-vis-rdates tests/data/SPE1CASE1 -r 0:120
-   opm-vis-rdates tests/data/SPE1CASE1 -r 0:120:30
+   opm-vis-rdates -f tests/data/SPE1CASE1 -r 60
+   opm-vis-rdates -f tests/data/SPE1CASE1 -r 0:120
+   opm-vis-rdates -f tests/data/SPE1CASE1 -r 0:120:30
 
 Report steps missing from the case are skipped, so a range does not have to line up with the
 case's own output frequency. A single report step the case does not have is an error instead,

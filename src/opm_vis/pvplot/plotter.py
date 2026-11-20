@@ -1,6 +1,7 @@
 """ Interactive PyVista plotter for OPM simulation results """
 from __future__ import annotations
 
+import copy
 import time
 import warnings
 from collections.abc import Sequence
@@ -12,15 +13,18 @@ import numpy as np
 import pyvista as pv
 from numpy.typing import NDArray
 
+from opm_vis.pvplot.camera import Camera, ShownView, camera_from_vtk
 from opm_vis.pvplot.data import CaseData
 from opm_vis.pvplot.faults import fault_surfaces
 from opm_vis.pvplot.labels import axis_titles, glyph_bar_title, scalar_bar_title, unit
 from opm_vis.pvplot.mesh import ACTIVE_INDEX, GridMesh
+from opm_vis.pvplot.polygons import polygon_lines
 from opm_vis.pvplot.wells import well_paths
 from opm_vis.utils.calc import apply_slice_calc, resolve_calc_range
 from opm_vis.utils.diff import compute_diff
 from opm_vis.utils.fault import FaultReader
 from opm_vis.utils.grid import slice_dimension_size, slice_range_layer_grid
+from opm_vis.utils.polygons import read_polygons, warn_outside
 from opm_vis.utils.units import Label
 
 # Camera setup per slice dimension for view_2d. GridMesh already negates z to point up (see
@@ -71,11 +75,15 @@ _WELLS_OPEN = "pvplot-wells-open"
 _WELLS_SHUT = "pvplot-wells-shut"
 _WELL_LABELS = "pvplot-well-labels"
 _FAULT_LABELS = "pvplot-fault-labels"
+_CAMERA_TEXT = "pvplot-camera"
 
 # Cell array a vector's components are gathered into before glyphing. Reused across calls
 # rather than named after the keywords, since a glyph actor's source mesh may be shared (the
 # full grid) with other actors that should not see a per-keyword array appear on it.
 _GLYPH_VECTORS = "GLYPH_VECTORS"
+
+# Font size of the date title and of well, fault and polygon labels, before font_scale
+_LABEL_FONT_SIZE = 10
 
 
 @dataclass
@@ -116,6 +124,32 @@ class _GlyphSpec:
     every_n: int
 
 
+
+def _scaled_font_theme(font_scale: float) -> pv.themes.Theme:
+    """
+    Copy of PyVista's global theme with its font sizes scaled
+
+    Parameters
+    ----------
+    font_scale : float
+        Factor to scale the theme's font size, title size and label size by
+
+    Returns
+    -------
+    pv.themes.Theme
+        The copy, so the global theme other plotters use is left untouched
+    """
+    # A deep copy: Theme.load_theme shares the font settings object with the theme it loads
+    # from, so scaling a load_theme copy would scale the global theme too
+    theme = copy.deepcopy(pv.global_theme)
+    font = theme.font
+    font.size = max(1, round(font.size * font_scale))
+    if font.title_size is not None:
+        font.title_size = max(1, round(font.title_size * font_scale))
+    if font.label_size is not None:
+        font.label_size = max(1, round(font.label_size * font_scale))
+    return theme
+
 class GridPlotter:
     """
     Plot simulation results on the corner-point grid with PyVista.
@@ -139,6 +173,7 @@ class GridPlotter:
         window_size: tuple[int, int] | None = None,
         z_scale: float = 1.0,
         weld: bool = True,
+        font_scale: float = 1.0,
     ) -> None:
         """
         Initialize by setting up the render window and instantiating helper classes
@@ -147,7 +182,7 @@ class GridPlotter:
         ----------
         paths : list[str]
             List of paths to OPM files. First entry considered to be the main folder; rest of
-            entries are folders with restart runs. Each entry is a filename prefix.
+            entries are restart runs. Each entry is a case path prefix, e.g. "run/CASE".
         off_screen : bool, optional
             Render without opening a window, by default False. Needed for screenshots and
             animations on a machine with no display.
@@ -158,9 +193,13 @@ class GridPlotter:
             thick, so a value above 1 is usually needed to see layering.
         weld : bool, optional
             Merge coincident grid corner points, by default True. See GridMesh.
+        font_scale : float, optional
+            Scale every text size by this factor, by default 1.0: the scalar bars and axes
+            (PyVista theme sizes) as well as the date title and well, fault and polygon labels
         """
         # Internalize input
         self.paths = paths
+        self._label_font_size = max(1, round(_LABEL_FONT_SIZE * font_scale))
 
         # Instantiate help classes
         self.case = CaseData(paths)
@@ -173,6 +212,7 @@ class GridPlotter:
         self.plotter = pv.Plotter(
             off_screen=off_screen,
             window_size=list(window_size) if window_size is not None else None,
+            theme=_scaled_font_theme(font_scale),
         )
         if z_scale != 1.0:
             # pv.Plotter.set_scale is wrapped with functools.wraps(Renderer.set_scale), which
@@ -402,7 +442,94 @@ class GridPlotter:
                 self._label_anchor_points(surfaces.label_points),
                 surfaces.label_names,
                 name=_FAULT_LABELS,
-                font_size=10,
+                font_size=self._label_font_size,
+                shape=None,
+                always_visible=True,
+                show_points=False,
+            )
+
+        return registered
+
+    def add_polygons(
+        self,
+        paths: str | Path | Sequence[str | Path],
+        *,
+        outlines: bool = True,
+        labels: bool | Sequence[str | None] = True,
+        name: str = "polygons",
+        **kwargs,
+    ) -> str | None:
+        """
+        Add polygons (outlines or 3D polylines) read from files
+
+        Parameters
+        ----------
+        paths : str | Path | Sequence[str | Path]
+            Polygon file(s): NumPy .npy/.npz, text (.txt, .csv, .dat, .xyz) or GeoJSON; see
+            opm_vis.utils.polygons.read_polygons. Points are in the same coordinates the grid
+            is drawn in, with z as depth, positive down.
+        outlines : bool, optional
+            Draw x,y-only outlines, flat at the top of the grid, by default True. Turn off where
+            they would only be seen edge-on, e.g. a 2D view of an i- or j-slice.
+        labels : bool | Sequence[str | None], optional
+            Annotate each polygon with its name, by default True. False draws no labels. A
+            sequence gives one label per file instead, as read_polygons' labels: "" leaves that
+            file unlabelled, None keeps its polygons' own names.
+        name : str, optional
+            Name to register the polygons under, by default "polygons"
+        kwargs : optional
+            Optional arguments passed to pyvista.Plotter.add_mesh; "color" defaults to
+            "red" and "line_width" to 3.0
+
+        Returns
+        -------
+        str | None
+            Name the polygons were registered under, or None if nothing was drawn - a warning
+            is issued in that case, as for add_faults
+
+        Raises
+        ------
+        FileNotFoundError, ValueError
+            If a file is missing, or not a readable polygon file; see read_polygons
+
+        Notes
+        -----
+        x,y,z polygons are drawn where their points are. x,y-only outlines are drawn flat at
+        the top of the whole grid, not draped over its shape. A polygon lying entirely outside
+        the grid's own extent - e.g. a file in km for a grid in m - is warned about.
+        """
+        polygons = read_polygons(
+            paths, labels=None if isinstance(labels, bool) else list(labels)
+        )
+        bounds = self.grid.mesh.bounds
+        lines = polygon_lines(polygons, bounds[5], outlines=outlines)
+        warn_outside(
+            lines.drawn,
+            lines.tracks,
+            np.array([bounds[0], bounds[2], bounds[4]]),
+            np.array([bounds[1], bounds[3], bounds[5]]),
+        )
+
+        if lines.skipped_outlines:
+            warnings.warn(
+                f"{lines.skipped_outlines} x,y-only polygon(s) not drawn: an outline has no "
+                "depth to place it on this view."
+            )
+        if lines.mesh is None:
+            warnings.warn("No polygons to draw.")
+            return None
+
+        kwargs.setdefault("color", "red")
+        kwargs.setdefault("line_width", 3.0)
+        registered = self._add(lines.mesh, name, carries_scalars=False, **kwargs)
+
+        if labels is not False and lines.label_names:
+            self.plotter.add_point_labels(
+                self._label_anchor_points(lines.label_points),
+                lines.label_names,
+                name=f"{registered}-labels",
+                font_size=self._label_font_size,
+                text_color=kwargs["color"],
                 shape=None,
                 always_visible=True,
                 show_points=False,
@@ -413,7 +540,7 @@ class GridPlotter:
     def add_threshold(
         self,
         keyword: str,
-        rstep: int,
+        rstep: int | None,
         value: float | tuple[float, float],
         *,
         invert: bool = False,
@@ -427,8 +554,9 @@ class GridPlotter:
         ----------
         keyword : str
             OPM keyword to threshold on
-        rstep : int
-            Report step to take the values from
+        rstep : int | None
+            Report step to take the values from, or None for an .INIT keyword in a case with
+            no restart files
         value : float | tuple[float, float]
             Lower bound, or a (lower, upper) range
         invert : bool, optional
@@ -536,6 +664,7 @@ class GridPlotter:
         rstep: int,
         *,
         slices: Sequence[tuple[str, int]] | None = None,
+        names: Sequence[str] | None = None,
         labels: bool = True,
         open_color: str = "black",
         shut_color: str = "red",
@@ -552,6 +681,10 @@ class GridPlotter:
         slices : Sequence[tuple[str, int]] | None, optional
             Only draw wells with a completion on at least one of these (dim, index) i-, j- or
             k-slices, by default None, which draws every well in the grid
+        names : Sequence[str] | None, optional
+            Only draw wells with these names, by default None, which draws every well (subject
+            to slices). Combines with slices: a named well is drawn only if it also passes
+            that filter.
         labels : bool, optional
             Annotate each well with its name, by default True
         open_color : str, optional
@@ -570,11 +703,15 @@ class GridPlotter:
         truncation opm_vis.plot does. Calling this again for another report step replaces what
         is already there, which is what lets an animation follow wells opening and shutting.
         """
+        if names is not None:
+            self.case.wells.check_names(names)
+
         paths = well_paths(
             self.grid.egrid,
             self.case.wells,
             rstep,
             slices=slices,
+            names=names,
             apply_mapaxes=self.grid.apply_mapaxes,
         )
 
@@ -603,7 +740,7 @@ class GridPlotter:
                 self._label_anchor_points(paths.label_points),
                 paths.label_names,
                 name=_WELL_LABELS,
-                font_size=10,
+                font_size=self._label_font_size,
                 shape=None,
                 always_visible=True,
                 show_points=False,
@@ -769,7 +906,7 @@ class GridPlotter:
     def set_scalars(
         self,
         keyword: str,
-        rstep: int,
+        rstep: int | None,
         *,
         clim: tuple[float, float] | None = None,
         cmap: str = "viridis",
@@ -781,6 +918,7 @@ class GridPlotter:
         slice_ind: int | None = None,
         calc_kind: str | None = None,
         calc_count: int | None = None,
+        scalar_bar_title: str | None = None,
     ) -> None:
         """
         Colour everything that has been added by one keyword at one report step
@@ -789,8 +927,9 @@ class GridPlotter:
         ----------
         keyword : str
             OPM keyword to colour by
-        rstep : int
-            Report step
+        rstep : int | None
+            Report step, or None to show an .INIT keyword for a case with no restart files.
+            Then there is no date to title with, so set_title needs an explicit text
         clim : tuple[float, float] | None, optional
             Colour limits, by default None, which takes the range of this report step's data.
             Pass global_clim(...) to keep the colours comparable across report steps.
@@ -820,6 +959,9 @@ class GridPlotter:
             Limit calc_kind's layer range to this many further layers after slice_ind, which is
             always included itself, by default None (continue to the grid's last layer). Only
             used when calc_kind is given.
+        scalar_bar_title : str | None, optional
+            Scalar bar title instead of the generated keyword-and-unit one, by default None.
+            Text between $ signs is rendered as math by VTK's MathText, e.g. "$k_x$ [mD]".
 
         Notes
         -----
@@ -854,6 +996,8 @@ class GridPlotter:
 
         if diff_rstep is None:
             data = self.case.read(keyword, rstep)
+        elif rstep is None:
+            raise ValueError("No report step to take the difference from diff_rstep at!")
         else:
             data = self.case.diff(keyword, rstep, ref_rstep=diff_rstep, kind=diff_kind)
 
@@ -864,10 +1008,14 @@ class GridPlotter:
             layer_grid = slice_range_layer_grid(self.grid.egrid, slice_dim, start, end)
             data = apply_slice_calc(data, layer_grid, kind=calc_kind)
 
-        scalar_range = (
-            clim
-            if clim is not None
-            else self.global_clim(
+        if clim is not None:
+            scalar_range = clim
+        elif rstep is None:
+            # With no report step there is only the one (static) set of values, so its own
+            # range is the whole range global_clim would otherwise compute over report steps
+            scalar_range = (float(np.nanmin(data)), float(np.nanmax(data)))
+        else:
+            scalar_range = self.global_clim(
                 keyword,
                 [rstep],
                 diff_rstep=diff_rstep,
@@ -877,7 +1025,6 @@ class GridPlotter:
                 calc_kind=calc_kind,
                 calc_count=calc_count,
             )
-        )
 
         for entry in targets:
             entry.mesh.cell_data[keyword] = data[entry.mesh.cell_data[ACTIVE_INDEX]]
@@ -906,6 +1053,7 @@ class GridPlotter:
                 keyword,
                 diff_kind=diff_kind if diff_rstep is not None else None,
                 calc_kind=calc_kind,
+                title=scalar_bar_title,
             )
 
         # Record what is currently shown, for the scalar bar and title
@@ -936,6 +1084,7 @@ class GridPlotter:
         *,
         diff_kind: str | None = None,
         calc_kind: str | None = None,
+        title: str | None = None,
     ) -> None:
         """
         Show a scalar bar for the keyword, replacing any bar for a different one
@@ -953,8 +1102,14 @@ class GridPlotter:
         calc_kind : str | None, optional
             Passed straight through to labels.scalar_bar_title; see set_scalars, by default
             None
+        title : str | None, optional
+            Title to use instead of the generated one, by default None; see set_scalars'
+            scalar_bar_title
         """
-        title = scalar_bar_title(self.label, keyword, diff_kind=diff_kind, calc_kind=calc_kind)
+        if title is None:
+            title = scalar_bar_title(
+                self.label, keyword, diff_kind=diff_kind, calc_kind=calc_kind
+            )
 
         # Only the report step usually changes, and the bar already reads correctly then
         if title == self._scalar_bar_title:
@@ -1423,7 +1578,9 @@ class GridPlotter:
                 )
             text = self.case.report.report_date(self.rstep).strftime("%d.%m.%Y")
 
-        self.plotter.add_text(text, name=_TITLE_NAME, position="upper_edge", font_size=10)
+        self.plotter.add_text(
+            text, name=_TITLE_NAME, position="upper_edge", font_size=self._label_font_size
+        )
         self.title = text
 
     def actor_names(self) -> list[str]:
@@ -1437,16 +1594,103 @@ class GridPlotter:
         """
         return list(self._actors)
 
-    def show(self, **kwargs) -> None:
+    def camera(self) -> Camera:
+        """
+        The current camera, e.g. to reproduce this view later with set_camera
+
+        Returns
+        -------
+        Camera
+            Its position, focal point and view-up, plus its parallel scale (zoom) if the view
+            uses parallel projection, as view_2d does
+        """
+        cam = self.plotter.camera
+        return camera_from_vtk(
+            cam.GetPosition(),
+            cam.GetFocalPoint(),
+            cam.GetViewUp(),
+            cam.GetParallelScale() if cam.GetParallelProjection() else None,
+        )
+
+    def set_camera(self, camera: Camera | str) -> None:
+        """
+        Place the camera exactly, e.g. as camera() or a printed --camera value gave it
+
+        Parameters
+        ----------
+        camera : Camera | str
+            The camera, or its text form "X,Y,Z/FX,FY,FZ/UX,UY,UZ[/SCALE]" (see
+            Camera.from_text)
+
+        Raises
+        ------
+        ValueError
+            If camera is text that is not a valid camera
+
+        Notes
+        -----
+        Call this after view_2d/view_3d, which pick the projection: a camera with a parallel
+        scale switches to parallel projection, while one without keeps whichever projection
+        is in use. The values are in the scene's own coordinates, so they only reproduce a view
+        found with the same z_scale.
+        """
+        if isinstance(camera, str):
+            camera = Camera.from_text(camera)
+
+        cam = self.plotter.camera
+        cam.SetPosition(camera.position)
+        cam.SetFocalPoint(camera.focal_point)
+        cam.SetViewUp(camera.view_up)
+        if camera.parallel_scale is not None:
+            self.plotter.enable_parallel_projection()  # pyright: ignore[reportCallIssue]
+            cam.SetParallelScale(camera.parallel_scale)
+        self.plotter.reset_camera_clipping_range()
+
+    def show(self, *, camera_overlay: bool = False, **kwargs) -> ShownView | None:
         """
         Show the render window
 
         Parameters
         ----------
+        camera_overlay : bool, optional
+            Show the camera's current values in the lower left corner while the window is
+            open, updated whenever the view stops moving, by default False
         kwargs : optional
             Optional arguments passed to pyvista.Plotter.show
+
+        Returns
+        -------
+        ShownView | None
+            With camera_overlay, the camera and window size as they were when the window was
+            closed, e.g. to print as --camera/--window-size; otherwise None
         """
-        self.plotter.show(**kwargs)
+        if not camera_overlay:
+            self.plotter.show(**kwargs)
+            return None
+
+        final = {"camera": self.camera()}
+        window_size = tuple(self.plotter.window_size)
+
+        def update(*_args: Any) -> None:
+            final["camera"] = self.camera()
+            self.plotter.add_text(
+                f"--camera {final['camera'].to_text()}",
+                name=_CAMERA_TEXT,
+                position="lower_left",
+                font_size=self._label_font_size,
+            )
+            self.plotter.render()
+
+        def before_close(_plotter: pv.Plotter) -> None:
+            nonlocal window_size
+            final["camera"] = self.camera()
+            window_size = tuple(self.plotter.window_size)
+
+        update()
+        if self.plotter.iren is not None:
+            self.plotter.iren.add_observer("EndInteractionEvent", update)
+        self.plotter.show(before_close_callback=before_close, **kwargs)
+        return ShownView(final["camera"], (int(window_size[0]), int(window_size[1])))
 
     def screenshot(
         self, filename: str | Path | None = None, **kwargs
@@ -1478,6 +1722,7 @@ class GridPlotter:
         clim: tuple[float, float] | None = None,
         wells: bool = False,
         wells_slices: Sequence[tuple[str, int]] | None = None,
+        wells_names: Sequence[str] | None = None,
         vectors: bool = False,
         title: bool = True,
         diff_rstep: int | None = None,
@@ -1513,6 +1758,9 @@ class GridPlotter:
             Restrict wells to those with a completion on at least one of these (dim, index)
             slices, by default None, which draws every well in the grid. Only used when wells
             is True.
+        wells_names : Sequence[str] | None, optional
+            Only draw wells with these names, by default None, which draws every well. Only
+            used when wells is True; see add_wells.
         vectors : bool, optional
             Update every glyph actor each frame, by default False. Requires add_glyphs to have
             been called first; its scale factor is left untouched, so pass factor or
@@ -1553,6 +1801,10 @@ class GridPlotter:
                 "Nothing to animate! Call add_slice or add_grid before animate."
             )
 
+        # Checked up front, so a mistyped name does not leave a half-written file behind
+        if wells and wells_names is not None:
+            self.case.wells.check_names(wells_names)
+
         if rsteps is None:
             rsteps = self.case.report.report_steps()
         if clim is None:
@@ -1570,6 +1822,7 @@ class GridPlotter:
         frame_kwargs = {
             "wells": wells,
             "wells_slices": wells_slices,
+            "wells_names": wells_names,
             "vectors": vectors,
             "title": title,
             "diff_rstep": diff_rstep,
@@ -1594,6 +1847,7 @@ class GridPlotter:
         *,
         wells: bool,
         wells_slices: Sequence[tuple[str, int]] | None,
+        wells_names: Sequence[str] | None,
         vectors: bool,
         title: bool,
         **kwargs,
@@ -1614,6 +1868,8 @@ class GridPlotter:
         wells_slices : Sequence[tuple[str, int]] | None
             Restrict wells to those with a completion on at least one of these slices; see
             animate()
+        wells_names : Sequence[str] | None
+            Restrict wells to those with these names; see animate()
         vectors : bool
             Update every glyph actor at this report step
         title : bool
@@ -1629,7 +1885,7 @@ class GridPlotter:
         """
         self.set_scalars(keyword, rstep, clim=clim, **kwargs)
         if wells:
-            self.add_wells(rstep, slices=wells_slices)
+            self.add_wells(rstep, slices=wells_slices, names=wells_names)
         if vectors:
             self.set_vectors(rstep)
         if title:

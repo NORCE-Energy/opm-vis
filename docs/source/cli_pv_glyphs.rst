@@ -9,7 +9,13 @@ a displacement vector, alongside ``--keyword``'s scalar colouring.
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/TPSA_LAGGED -K DISPZ -k 1 -r 15 --glyphs DISPX DISPY DISPZ
+   opm-vis-pv -f tests/data/TPSA_LAGGED -K DISPZ -k 1 -r 15 --glyphs DISPX DISPY DISPZ
+
+A single ``BASE`` is expanded to ``BASEX BASEY BASEZ``, so this is the same as above:
+
+.. code-block:: bash
+
+   opm-vis-pv -f tests/data/TPSA_LAGGED -K DISPZ -k 1 -r 15 --glyphs DISP
 
 ``--glyph-scale`` / ``--no-glyph-scale``
 -------------------------------------------
@@ -18,7 +24,7 @@ Scales each arrow by its own vector's magnitude (default), or draws every arrow 
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/TPSA_LAGGED -K DISPZ -k 1 -r 15 --glyphs DISPX DISPY DISPZ \
+   opm-vis-pv -f tests/data/TPSA_LAGGED -K DISPZ -k 1 -r 15 --glyphs DISPX DISPY DISPZ \
        --no-glyph-scale
 
 ``--glyph-every-n``
@@ -29,7 +35,7 @@ Default: 1.
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/TPSA_LAGGED -K DISPZ -k 1 -r 15 --glyphs DISPX DISPY DISPZ \
+   opm-vis-pv -f tests/data/TPSA_LAGGED -K DISPZ -k 1 -r 15 --glyphs DISPX DISPY DISPZ \
        --glyph-every-n 4
 
 ``--glyph-factor``
@@ -41,7 +47,7 @@ arrow length stays comparable.
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/TPSA_LAGGED -K DISPZ -k 1 -r 15 --glyphs DISPX DISPY DISPZ \
+   opm-vis-pv -f tests/data/TPSA_LAGGED -K DISPZ -k 1 -r 15 --glyphs DISPX DISPY DISPZ \
        --glyph-factor 50
 
 ``--glyph-color``
@@ -52,5 +58,5 @@ An explicit colour overrides magnitude colouring.
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/TPSA_LAGGED -K DISPZ -k 1 -r 15 --glyphs DISPX DISPY DISPZ \
+   opm-vis-pv -f tests/data/TPSA_LAGGED -K DISPZ -k 1 -r 15 --glyphs DISPX DISPY DISPZ \
        --glyph-color black

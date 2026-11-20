@@ -1,7 +1,6 @@
 """opm-vis-mpl: plot a keyword on a grid slice with the alternative Matplotlib backend"""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import click
@@ -10,36 +9,53 @@ from opm_vis.cli.common import (
     CALCULATOR_OPTIONS,
     CLIM_OPTION,
     CMAP_OPTION,
+    COLORBAR_LABEL_OPTION,
     COMMAND_SETTINGS,
     DIFF_OPTIONS,
     GRID_ONLY_OPTIONS,
     KEYWORD_OPTION,
-    PATHS_ARGUMENT,
+    FAULT_LABELS_OPTION,
+    FOLDER_OPTION,
+    FONT_SCALE_OPTION,
+    POLYGON_OPTIONS,
     RSTEP_OR_ANIMATE_OPTIONS,
+    SAVE_NAME_OPTION,
     SAVE_OPTION,
     SHOW_EDGES_OPTION,
     SLICE_OPTIONS,
+    WELL_NAME_OPTION,
     add_options,
+    check_colorbar_label,
+    check_figsize,
     default_output_name,
     grid_color_kwargs,
     handle_errors,
-    is_static_keyword,
+    matplotlib_font_scale,
     parse_rstep,
-    require_dynamic_keyword_error,
+    polygon_labels_arg,
     resolve_animate_rsteps,
     resolve_calculator,
     resolve_diff_rstep,
     resolve_keyword,
+    resolve_keyword_rstep,
     resolve_paths,
     resolve_slices,
+    save_folder_option,
+    save_path,
+    wants_save,
 )
 from opm_vis.plot.collections import SlicePoly2DCollection, SlicePoly3DCollection
 from opm_vis.utils.calc import resolve_calc_range
 from opm_vis.utils.grid import slice_dimension_size
 
 
+# Default --save-folder names, inside the first -f/--folder
+_FIGURE_FOLDER = "mpl-figs"
+_ANIMATION_FOLDER = "mpl-gifs"
+
+
 @click.command(**COMMAND_SETTINGS)
-@PATHS_ARGUMENT
+@FOLDER_OPTION
 @KEYWORD_OPTION
 @add_options(GRID_ONLY_OPTIONS)
 @add_options(SLICE_OPTIONS)
@@ -47,6 +63,8 @@ from opm_vis.utils.grid import slice_dimension_size
 @add_options(DIFF_OPTIONS)
 @add_options(CALCULATOR_OPTIONS)
 @SAVE_OPTION
+@SAVE_NAME_OPTION
+@save_folder_option(_FIGURE_FOLDER, _ANIMATION_FOLDER)
 @CMAP_OPTION
 @CLIM_OPTION
 @click.option(
@@ -56,7 +74,19 @@ from opm_vis.utils.grid import slice_dimension_size
     show_default=True,
     help="Camera preset.",
 )
+@click.option("--log-scale", is_flag=True, default=False, help="Map colours logarithmically.")
 @click.option("--no-colorbar", is_flag=True, default=False, help="Hide the colorbar.")
+@COLORBAR_LABEL_OPTION
+@click.option("--no-title", is_flag=True, default=False, help="Hide the report-date title.")
+@click.option(
+    "--figsize",
+    type=(float, float),
+    default=None,
+    metavar="WIDTH HEIGHT",
+    help="Figure size in inches. Defaults to a size following the slice's own proportions "
+    "with --view 2d (clamped, so a thin cross-section still gets a usable height), and to "
+    "Matplotlib's own figure size with --view 3d.",
+)
 @click.option(
     "--fault",
     "fault_path",
@@ -75,11 +105,16 @@ from opm_vis.utils.grid import slice_dimension_size
     help="Only draw this fault (repeatable). Only used with --fault. Without it, every fault "
     "crossing the slice is drawn.",
 )
+@FAULT_LABELS_OPTION
+@WELL_NAME_OPTION
+@add_options(POLYGON_OPTIONS)
 @SHOW_EDGES_OPTION
+@FONT_SCALE_OPTION
 @handle_errors
+@matplotlib_font_scale
 # pylint: disable=too-many-arguments,too-many-locals
 def main(
-    paths: tuple[str, ...],
+    folders: tuple[str, ...],
     keyword: str | None,
     grid_only: bool,
     grid_color: str | None,
@@ -94,21 +129,35 @@ def main(
     diff_kind: str,
     calc_kind: str | None,
     calc_count: int | None,
-    save: str | None,
+    save: bool,
+    save_folder: str | None,
+    save_name: str | None,
     cmap: str,
     clim: tuple[float, float] | None,
     view: str,
+    log_scale: bool,
     no_colorbar: bool,
+    colorbar_label: str | None,
+    no_title: bool,
+    figsize: tuple[float, float] | None,
     fault_path: str | None,
     fault_names: tuple[str, ...],
+    fault_labels: bool,
+    well_names: tuple[str, ...],
+    polygon_paths: tuple[str, ...],
+    polygon_color: str,
+    polygon_linewidth: float | None,
+    polygon_labels: tuple[str, ...],
+    show_polygon_labels: bool,
     show_edges: bool,
+    font_scale: float,
 ) -> None:
     """
     Plot --keyword on one grid slice with the Matplotlib backend, or animate it over report
     steps with --animate.
 
-    PATHS are filename prefixes: the first is the main run, any further ones are restart runs.
-    Defaults to searching the working directory (./) if not given.
+    The case is found in -f/--folder, by default the current folder. Several cases found
+    there are read as one run: the main run followed by its restarts.
 
     This is the alternative backend, with fewer options and less development effort than
     opm-vis-pv (PyVista). See the documentation for the full option reference with examples.
@@ -134,6 +183,10 @@ def main(
         )
     if fault_names and fault_path is None:
         raise click.UsageError("--fault-name needs --fault.")
+    check_colorbar_label(colorbar_label, no_colorbar=no_colorbar, grid_only=grid_only)
+    polygon_labels_value = polygon_labels_arg(
+        polygon_paths, polygon_labels, show_polygon_labels
+    )
     slice_dim, slice_index = slices[0]
     rstep_value = parse_rstep(rstep, animate)
     # --diff has no effect in --grid-only (there is no --keyword to difference); see the
@@ -149,19 +202,40 @@ def main(
     if clim is not None:
         poly_kwargs["clim"] = clim
 
-    resolved_paths = resolve_paths(paths)
+    check_figsize(figsize)
+
+    resolved_paths = resolve_paths(folders)
     surface = calc_kind == "surface"
     if view == "3d":
         coll = SlicePoly3DCollection(
-            resolved_paths, [(slice_dim, slice_index)], calc_count=calc_count, surface=surface
+            resolved_paths,
+            [(slice_dim, slice_index)],
+            calc_count=calc_count,
+            surface=surface,
+            figsize=figsize,
         )
     else:
         coll = SlicePoly2DCollection(
-            resolved_paths, slice_dim, slice_index, calc_count=calc_count, surface=surface
+            resolved_paths,
+            slice_dim,
+            slice_index,
+            calc_count=calc_count,
+            surface=surface,
+            figsize=figsize,
         )
 
     if fault_path is not None:
-        coll.plot_faults(fault_path, names=list(fault_names) or None)
+        coll.plot_faults(fault_path, names=list(fault_names) or None, labels=fault_labels)
+    if polygon_paths:
+        line_kwargs: dict[str, Any] = {}
+        if polygon_linewidth is not None:
+            line_kwargs["linewidth"] = polygon_linewidth
+        coll.plot_polygons(
+            list(polygon_paths),
+            labels=polygon_labels_value,
+            color=polygon_color,
+            **line_kwargs,
+        )
 
     calc_end = None
     if calc_kind is not None:
@@ -182,24 +256,32 @@ def main(
             diff_kind=diff_kind,
             calc_kind=calc_kind,
             calc_count=calc_count,
+            colorbar_label=colorbar_label,
+            title=not no_title,
+            well_names=list(well_names) or None,
+            log_scale=log_scale,
             **poly_kwargs,
         )
 
-        if save is None:
+        if not wants_save(save, save_folder, save_name):
             coll.show()
         else:
             coll.save_gif(
-                Path(save)
-                if save
-                else default_output_name(
-                    keyword,
-                    slices,
-                    rsteps=steps,
-                    ext="gif",
-                    diff_rstep=resolved_diff_rstep,
-                    diff_kind=diff_kind,
-                    calc_kind=calc_kind,
-                    calc_end=calc_end,
+                save_path(
+                    save_folder,
+                    default_output_name(
+                        keyword,
+                        slices,
+                        rsteps=steps,
+                        ext="gif",
+                        diff_rstep=resolved_diff_rstep,
+                        diff_kind=diff_kind,
+                        calc_kind=calc_kind,
+                        calc_end=calc_end,
+                    ),
+                    folders=folders,
+                    default=_ANIMATION_FOLDER,
+                    save_name=save_name,
                 ),
                 fps=fps,
             )
@@ -210,11 +292,17 @@ def main(
         # pick, so plot_grid()/save_grid_plot() need none either.
         coll.plot_grid(**grid_color_kwargs(grid_color), **edge_kwargs)
 
-        if save is None:
+        if not wants_save(save, save_folder, save_name):
             coll.show()
         else:
             coll.save_grid_plot(
-                Path(save) if save else default_output_name("GRID", slices, ext="png")
+                save_path(
+                    save_folder,
+                    default_output_name("GRID", slices, ext="png"),
+                    folders=folders,
+                    default=_FIGURE_FOLDER,
+                    save_name=save_name,
+                )
             )
         return
 
@@ -225,18 +313,21 @@ def main(
     # guarantees a keyword here
     assert keyword is not None
 
-    if rstep_value is None:
-        probe_rstep = coll.report.report_steps()[0]
-        if not is_static_keyword(coll.slice_coll[0].restart, keyword, probe_rstep):
-            raise require_dynamic_keyword_error(keyword)
-        actual_rstep = probe_rstep
-    else:
-        actual_rstep = rstep_value
+    first_slice = coll.slice_coll[0]
+    actual_rstep = resolve_keyword_rstep(
+        keyword, rstep_value, coll.report.report_steps(), first_slice.restart, first_slice.static
+    )
+    if actual_rstep is None and resolved_diff_rstep is not None:
+        raise click.UsageError("--diff needs restart data, but this case has no report steps.")
 
     coll.plot(
         actual_rstep,
         keyword,
         colorbar=not no_colorbar,
+        colorbar_label=colorbar_label,
+        title=not no_title,
+        well_names=list(well_names) or None,
+        log_scale=log_scale,
         diff_rstep=resolved_diff_rstep,
         diff_kind=diff_kind,
         calc_kind=calc_kind,
@@ -244,21 +335,25 @@ def main(
         **poly_kwargs,
     )
 
-    if save is None:
+    if not wants_save(save, save_folder, save_name):
         coll.show()
     else:
         coll.save_plot(
-            Path(save)
-            if save
-            else default_output_name(
-                keyword,
-                slices,
-                rstep=actual_rstep,
-                ext="png",
-                diff_rstep=resolved_diff_rstep,
-                diff_kind=diff_kind,
-                calc_kind=calc_kind,
-                calc_end=calc_end,
+            save_path(
+                save_folder,
+                default_output_name(
+                    keyword,
+                    slices,
+                    rstep=actual_rstep,
+                    ext="png",
+                    diff_rstep=resolved_diff_rstep,
+                    diff_kind=diff_kind,
+                    calc_kind=calc_kind,
+                    calc_end=calc_end,
+                ),
+                folders=folders,
+                default=_FIGURE_FOLDER,
+                save_name=save_name,
             )
         )
 

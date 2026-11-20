@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from glob import glob
 from typing import cast
 
 import numpy as np
@@ -12,6 +11,7 @@ from numpy.typing import NDArray
 from opm.io.ecl import EGrid
 
 from opm_vis.utils.calc import resolve_calc_range
+from opm_vis.utils.cases import case_files
 from opm_vis.utils.grid import GridSlice3D, slice_active_indices, slice_range_first_active_indices
 from opm_vis.utils.mapaxes import has_mapaxes
 
@@ -60,13 +60,13 @@ class GridMesh:
         Parameters
         ----------
         path : str
-            Path to .EGRID file. This is a filename prefix, not a directory.
+            Case path prefix of the .EGRID file, e.g. "run/CASE" for run/CASE.EGRID
         weld : bool, optional
             Merge coincident corner points shared between neighbouring cells, by default
             True. See the weld_points note in _build.
         """
         # Instantiate EGrid class
-        egrid_files = glob(path + "*.EGRID")
+        egrid_files = case_files(path, ".EGRID")
         if egrid_files:
             if len(egrid_files) > 1:
                 warnings.warn(

@@ -12,7 +12,7 @@ Basic slice with wells
 
    from opm_vis.pvplot import GridPlotter
 
-   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"], z_scale=15.0)
 
    plotter.add_slice("k", 0)          # map view of the top layer
    plotter.add_slice("j", 5)          # a cross-section through it
@@ -35,11 +35,32 @@ one or more ``(dim, index)`` slices, the same slices passed to ``add_slice``:
 
    from opm_vis.pvplot import GridPlotter
 
-   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"], z_scale=15.0)
    plotter.add_slice("k", 0)
-   plotter.add_faults("tests/data/SPE1CASE1_FAULTS.INC", slices=[("k", 0)])
+   plotter.add_faults("tests/data/SPE1CASE1/SPE1CASE1_FAULTS.INC", slices=[("k", 0)])
 
    plotter.set_scalars("SGAS", rstep=60)
+   plotter.view_2d("k")
+   plotter.show()
+
+Polygons
+-------------------------
+
+:meth:`~opm_vis.pvplot.GridPlotter.add_polygons` draws polygons read from NumPy, text or
+GeoJSON files (see :func:`~opm_vis.utils.polygons.read_polygons`), each labelled with its name.
+Points with a depth are drawn where they are; ``x y`` outlines flat at the top of the grid.
+``labels=False`` drops the labels, and a list of one label per file renames them (``""`` for
+none):
+
+.. code-block:: python
+
+   from opm_vis.pvplot import GridPlotter
+
+   plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"], z_scale=15.0)
+   plotter.add_slice("k", 0)
+   plotter.add_polygons("tests/data/SPE1CASE1/SPE1CASE1_POLYGONS.geojson", color="white")
+
+   plotter.set_scalars("PERMX", rstep=None)
    plotter.view_2d("k")
    plotter.show()
 
@@ -53,7 +74,7 @@ Everything else - colouring, wells, glyphs - works the same as on a slice:
 
    from opm_vis.pvplot import GridPlotter
 
-   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"], z_scale=15.0)
    plotter.add_grid()
 
    plotter.set_scalars("SGAS", rstep=60)
@@ -73,7 +94,7 @@ since another report step, instead of its own values. ``diff_kind`` is one of ``
 
    from opm_vis.pvplot import GridPlotter
 
-   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"], z_scale=15.0)
    plotter.add_slice("k", 0)
 
    plotter.set_scalars("PRESSURE", rstep=60, diff_rstep=0, diff_kind="relative")
@@ -95,7 +116,7 @@ it (``slice_ind`` is always included itself) - instead of colouring by the slice
 
    from opm_vis.pvplot import GridPlotter
 
-   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"], z_scale=15.0)
    plotter.add_slice("k", 0)
 
    plotter.set_scalars("PRESSURE", rstep=60, slice_dim="k", slice_ind=0, calc_kind="mean")
@@ -120,7 +141,7 @@ only ``set_scalars``:
 
    from opm_vis.pvplot import GridPlotter
 
-   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"], z_scale=15.0)
    plotter.add_slice("k", 0, surface=True)
 
    plotter.set_scalars("PRESSURE", rstep=60, slice_dim="k", slice_ind=0, calc_kind="surface")
@@ -138,7 +159,7 @@ dense grid by drawing only 1 arrow out of every N cells, without changing arrow 
 
    from opm_vis.pvplot import GridPlotter
 
-   plotter = GridPlotter(["tests/data/TPSA_LAGGED"])
+   plotter = GridPlotter(["tests/data/TPSA_LAGGED/TPSA_LAGGED"])
    plotter.add_slice("k", 0)
    plotter.add_glyphs("DISPX", "DISPY", "DISPZ", 15, slice_dim="k", slice_ind=0, every_n=4)
 
@@ -157,7 +178,7 @@ screen, so stepping through report steps costs one file read, not a rebuild:
 
    from opm_vis.pvplot import GridPlotter
 
-   plotter = GridPlotter(["tests/data/SPE1CASE1"], z_scale=15.0)
+   plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"], z_scale=15.0)
    plotter.add_slice("k", 0)
 
    clim = plotter.global_clim("PRESSURE")
@@ -178,7 +199,7 @@ afterwards:
 
    from opm_vis.pvplot import GridPlotter
 
-   plotter = GridPlotter(["tests/data/SPE1CASE1"])
+   plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"])
    plotter.add_threshold("SGAS", 120, 0.4)      # just the gas plume, at report step 120
    plotter.add_clip("x", crinkle=True)          # cut the grid open, keeping cells whole
 
@@ -198,7 +219,7 @@ clipping on it:
 
    from opm_vis.pvplot import GridPlotter
 
-   plotter = GridPlotter(["tests/data/SPE1CASE1"], off_screen=True)
+   plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"], off_screen=True)
    plotter.add_slice("k", 0, quads=True)
 
    plotter.set_scalars("SGAS", rstep=60)
@@ -212,7 +233,7 @@ Saving a screenshot or animation
 
    from opm_vis.pvplot import GridPlotter
 
-   plotter = GridPlotter(["tests/data/SPE1CASE1"], off_screen=True)
+   plotter = GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"], off_screen=True)
    plotter.add_slice("k", 0)
 
    plotter.set_scalars("SGAS", rstep=60)
@@ -225,6 +246,25 @@ Use ``off_screen=True`` on a machine with no display, as above; ``GridPlotter`` 
 context manager (``with GridPlotter(...) as plotter:``), which closes the render window on
 exit.
 
+:meth:`~opm_vis.pvplot.GridPlotter.camera` returns the current camera, and
+:meth:`~opm_vis.pvplot.GridPlotter.set_camera` puts it back, from a
+:class:`~opm_vis.pvplot.camera.Camera` or its text form. ``show(camera_overlay=True)`` shows the
+camera in the window while it is open and returns the camera and window size it was closed
+with, so a view found interactively can be saved exactly:
+
+.. code-block:: python
+
+   shown = plotter.show(camera_overlay=True)
+   print(shown.cli_options())  # --camera X,Y,Z/FX,FY,FZ/UX,UY,UZ[/SCALE] --window-size W H
+
+   with GridPlotter(["tests/data/SPE1CASE1/SPE1CASE1"], off_screen=True,
+                    window_size=shown.window_size) as again:
+       again.add_slice("k", 0)
+       again.set_scalars("SGAS", rstep=60)
+       again.view_2d("k")
+       again.set_camera(shown.camera)
+       again.screenshot("sgas.png")
+
 Reading data directly
 ------------------------
 
@@ -236,7 +276,7 @@ plotter, e.g. to pull values into NumPy for your own analysis:
 
    from opm_vis.pvplot import CaseData
 
-   case = CaseData(["tests/data/SPE1CASE1"])
+   case = CaseData(["tests/data/SPE1CASE1/SPE1CASE1"])
    sgas = case.read("SGAS", 60)                     # one value per active cell
    prange = case.value_range("PRESSURE", [0, 60])   # taken from the data, never clamped to zero
 
@@ -251,7 +291,7 @@ the ``opm-vis-rdates`` command prints:
 
    from opm_vis.utils.restart import Report
 
-   report = Report(["tests/data/SPE1CASE1"])
+   report = Report(["tests/data/SPE1CASE1/SPE1CASE1"])
 
    print(report)                      # aligned table: report step, date, days, years
    report.report_steps()              # [0, 1, ..., 120]
@@ -285,7 +325,7 @@ Summary vectors
 
    from opm_vis.utils.summary import SummaryReader
 
-   summary = SummaryReader(["tests/data/SPE1CASE1"])
+   summary = SummaryReader(["tests/data/SPE1CASE1/SPE1CASE1"])
 
    summary.available_keywords()       # ['BGSAT:1,1,1', ..., 'FOPR', 'TIME', 'WBHP:PROD', ...]
    summary.read("FOPR")               # one value per timestep
@@ -302,7 +342,7 @@ command makes. Several vectors share one axes by default, or get one subplot eac
 
    from opm_vis.plot.plot_summary import SummaryPlot
 
-   plot = SummaryPlot(["tests/data/SPE1CASE1"])
+   plot = SummaryPlot(["tests/data/SPE1CASE1/SPE1CASE1"])
    plot.plot(["FOPR", "FGOR"], x_axis="years", subplots=True)
    plot.save_plot("rates.png")
 
@@ -322,7 +362,7 @@ leaves that cell blank.
 
 .. code-block:: python
 
-   plot = SummaryPlot(["tests/data/SPE1CASE1"])
+   plot = SummaryPlot(["tests/data/SPE1CASE1/SPE1CASE1"])
    print(plot.export_csv(["FOPR", "FGOR"]))
    # date,FOPR,FGOR
    # 2015-01-02T00:00:00,20000,1.27
@@ -338,7 +378,7 @@ thresholding or clipping, but covers the same basic slice-and-colour workflow:
 
    from opm_vis.plot.collections import SlicePoly2DCollection
 
-   coll = SlicePoly2DCollection(["tests/data/SPE1CASE1"], "k", 0)
+   coll = SlicePoly2DCollection(["tests/data/SPE1CASE1/SPE1CASE1"], "k", 0)
    coll.plot(60, "SGAS", cmap="viridis")
    coll.save_plot("sgas.png")
 
@@ -352,7 +392,7 @@ themselves, not to ``plot``/``animate``:
 
 .. code-block:: python
 
-   coll = SlicePoly2DCollection(["tests/data/SPE1CASE1"], "k", 0, surface=True)
+   coll = SlicePoly2DCollection(["tests/data/SPE1CASE1/SPE1CASE1"], "k", 0, surface=True)
    coll.plot(60, "PRESSURE", calc_kind="surface")
    coll.save_plot("pressure_top.png")
 
@@ -364,7 +404,18 @@ than crossing it as a line:
 
 .. code-block:: python
 
-   coll = SlicePoly2DCollection(["tests/data/SPE1CASE1"], "k", 0)
+   coll = SlicePoly2DCollection(["tests/data/SPE1CASE1/SPE1CASE1"], "k", 0)
    coll.plot(60, "SGAS")
-   coll.plot_faults("tests/data/SPE1CASE1_FAULTS.INC")
+   coll.plot_faults("tests/data/SPE1CASE1/SPE1CASE1_FAULTS.INC")
    coll.save_plot("sgas_faults.png")
+
+:meth:`~opm_vis.plot.collections._SlicePolyCollection.plot_polygons` does the same for polygon
+files; on an i- or j-slice, polygons with a depth are projected onto the slice and ``x y``
+outlines are skipped:
+
+.. code-block:: python
+
+   coll = SlicePoly2DCollection(["tests/data/SPE1CASE1/SPE1CASE1"], "k", 0)
+   coll.plot(None, "PERMX")
+   coll.plot_polygons("tests/data/SPE1CASE1/SPE1CASE1_POLYGONS.geojson")
+   coll.save_plot("permx_polygons.png")

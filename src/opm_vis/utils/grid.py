@@ -1,7 +1,6 @@
 """ Grid methods for xyz plots """
 import warnings
 from abc import ABC, abstractmethod
-from glob import glob
 from typing import Any
 
 import numpy as np
@@ -9,6 +8,7 @@ from numpy.typing import NDArray
 from opm.io.ecl import EGrid
 
 from opm_vis.utils.calc import resolve_calc_range
+from opm_vis.utils.cases import case_files
 from opm_vis.utils.mapaxes import has_mapaxes
 
 # Global indices for slice quadrilateral
@@ -263,7 +263,7 @@ class _GridSlice(ABC):
         self.cent = np.empty(0)
 
         # Instantiate Egrid class
-        egrid_files = glob(path + "*.EGRID")
+        egrid_files = case_files(path, ".EGRID")
         if egrid_files:
             if len(egrid_files) > 1:
                 warnings.warn(

@@ -1,11 +1,14 @@
 """ Shared fixtures locating the datasets in tests/data """
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-# Test datasets live next to this file. Note that "path" arguments throughout opm_vis are
-# filename prefixes rather than directories - every reader does glob(path + "*.EXT") - so the
-# case fixtures below deliberately return a prefix with no extension.
+# Test datasets live next to this file, one folder per case (SPE1CASE2 shares its folder with
+# its restart run SPE1CASE2_RESTART_60). The library's "path" arguments are case path prefixes
+# rather than directories - every reader looks for path + ".EXT" - so the case fixtures below
+# return a prefix with no extension. The CLIs take the folder instead (-f/--folder), which the
+# *_dir fixtures return.
 _DATA_DIR = Path(__file__).parent / "data"
 
 
@@ -30,7 +33,7 @@ def case1() -> str:
     Returns
     -------
     str
-        Path prefix, as the glob() in every opm_vis reader expects
+        Case path prefix, as every opm_vis reader expects
 
     Notes
     -----
@@ -38,7 +41,7 @@ def case1() -> str:
     with 121 report steps (0-120) and two vertical wells (PROD, INJ). It has no inactive cells,
     no NaN corner points and no faults.
     """
-    return str(_DATA_DIR / "SPE1CASE1")
+    return str(_DATA_DIR / "SPE1CASE1" / "SPE1CASE1")
 
 
 @pytest.fixture(scope="session")
@@ -49,7 +52,7 @@ def mapaxes_case() -> str:
     Returns
     -------
     str
-        Path prefix, as the glob() in every opm_vis reader expects
+        Case path prefix, as every opm_vis reader expects
 
     Notes
     -----
@@ -58,7 +61,7 @@ def mapaxes_case() -> str:
     at (527495.5, 6771119.0). Useful only for exercising the MAPAXES transform itself, not for
     anything that reads simulation results.
     """
-    return str(_DATA_DIR / "MAPAXES")
+    return str(_DATA_DIR / "MAPAXES" / "MAPAXES")
 
 
 @pytest.fixture(scope="session")
@@ -69,7 +72,7 @@ def tpsa_lagged() -> str:
     Returns
     -------
     str
-        Path prefix, as the glob() in every opm_vis reader expects
+        Case path prefix, as every opm_vis reader expects
 
     Notes
     -----
@@ -78,7 +81,69 @@ def tpsa_lagged() -> str:
     layer. Unlike SPE1CASE1 it carries geomechanics output - DISPX, DISPY, DISPZ among
     others - which is what makes it useful for exercising vector glyphs.
     """
+    return str(_DATA_DIR / "TPSA_LAGGED" / "TPSA_LAGGED")
+
+
+@pytest.fixture(scope="session")
+def case1_dir() -> str:
+    """
+    Folder of the SPE1CASE1 dataset, as -f/--folder takes it
+
+    Returns
+    -------
+    str
+        Path to tests/data/SPE1CASE1
+    """
+    return str(_DATA_DIR / "SPE1CASE1")
+
+
+@pytest.fixture(scope="session")
+def case2_dir() -> str:
+    """
+    Folder of the SPE1CASE2 dataset together with its restart run, as -f/--folder takes it
+
+    Returns
+    -------
+    str
+        Path to tests/data/SPE1CASE2
+
+    Notes
+    -----
+    Holds SPE1CASE2 (report steps 0-60) and SPE1CASE2_RESTART_60, which restarts it from
+    report step 60 and carries on to 120.
+    """
+    return str(_DATA_DIR / "SPE1CASE2")
+
+
+@pytest.fixture(scope="session")
+def tpsa_lagged_dir() -> str:
+    """
+    Folder of the TPSA_LAGGED dataset, as -f/--folder takes it
+
+    Returns
+    -------
+    str
+        Path to tests/data/TPSA_LAGGED
+    """
     return str(_DATA_DIR / "TPSA_LAGGED")
+
+
+@pytest.fixture
+def polygon_files(tmp_path) -> dict[str, str]:
+    """
+    Polygon files inside SPE1CASE1's 10000 ft square grid, 8325-8425 ft deep
+
+    Returns
+    -------
+    dict[str, str]
+        "outline": an x,y-only square (.npy); "line": a 2-point x,y,z line at 8350 ft (.npz,
+        key "deep")
+    """
+    outline = tmp_path / "outline.npy"
+    line = tmp_path / "line.npz"
+    np.save(outline, np.array([[1000, 1000], [9000, 1000], [9000, 9000], [1000, 9000]]))
+    np.savez(line, deep=np.array([[500, 500, 8350], [9500, 9500, 8350]]))
+    return {"outline": str(outline), "line": str(line)}
 
 
 @pytest.fixture(scope="session")

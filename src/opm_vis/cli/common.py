@@ -11,19 +11,30 @@ from typing import Any, Literal, overload
 import click
 
 from opm_vis.utils.calc import CALC_KINDS
+from opm_vis.utils.cases import find_cases
 
 # Show the help page both on -h/--help and when the command is run with nothing at all: with
-# PATHS defaulting to the working directory and --rstep optional for static keywords, a bare
+# --folder defaulting to the working directory and --rstep optional for static keywords, a bare
 # invocation has no other useful thing to do.
 COMMAND_SETTINGS = {
     "context_settings": {"help_option_names": ["-h", "--help"]},
     "no_args_is_help": True,
 }
 
-# Paths are filename prefixes, not directories: the first entry is the main run, any further
-# entries are restart runs. See README.md and every reader in opm_vis.utils/opm_vis.pvplot.
-# Optional: resolve_paths() below searches the working directory when none are given.
-PATHS_ARGUMENT = click.argument("paths", nargs=-1, required=False)
+# Folders are searched for cases by resolve_paths() below, which falls back to the working
+# directory when none are given. Every case found is part of one run: the main run followed by
+# its restarts, see opm_vis.utils.cases.
+FOLDER_OPTION = click.option(
+    "-f",
+    "--folder",
+    "folders",
+    multiple=True,
+    type=click.Path(exists=True, file_okay=False),
+    metavar="DIR",
+    help="Folder with the case's output files (repeatable). Every case found in the given "
+    "folders is read as one run: the main run followed by its restarts, ordered by where "
+    "each starts. Default: the current folder.",
+)
 
 KEYWORD_OPTION = click.option(
     "-K",
@@ -75,14 +86,253 @@ SLICE_OPTIONS = [
 SAVE_OPTION = click.option(
     "--save",
     "-s",
-    is_flag=False,
-    flag_value="",
+    is_flag=True,
+    default=False,
+    help="Save to a file instead of opening an interactive window. The file name is generated "
+    "from what is being plotted, in --save-folder.",
+)
+
+
+
+
+def _check_save_name(_ctx: click.Context, _param: click.Parameter, value: str | None) -> str | None:
+    """
+    Reject a --save-name that is empty or holds a folder, which --save-folder picks instead
+    """
+    if value is None:
+        return None
+    if not value.strip():
+        raise click.BadParameter("must not be empty.")
+    if "/" in value or "\\" in value:
+        raise click.BadParameter(
+            f"is a file name, without a folder; got '{value}'. Use --save-folder for the folder."
+        )
+    return value
+
+
+# Given on its own, --save-name implies --save, the same way --save-folder does
+SAVE_NAME_OPTION = click.option(
+    "--save-name",
+    "-sn",
+    "save_name",
     default=None,
-    metavar="[PATH]",
-    help=(
-        "Save to file instead of opening an interactive window. If PATH is omitted, a name is "
-        "generated from what is being plotted."
+    metavar="NAME",
+    callback=_check_save_name,
+    help="File name to save to, without its suffix, which is added to match the format (e.g. "
+    ".png). Implies --save. The folder is --save-folder's. Default: a name generated from "
+    "what is being plotted.",
+)
+
+
+def save_folder_option(figure_folder: str, animation_folder: str | None = None) -> Callable:
+    """
+    Build the --save-folder option, whose default folder names differ per program
+
+    Parameters
+    ----------
+    figure_folder : str
+        Default folder name for still images, e.g. "pv-figs"
+    animation_folder : str | None, optional
+        Default folder name for animations, e.g. "pv-gifs", by default None for a program
+        that does not animate
+
+    Returns
+    -------
+    Callable
+        The click.option decorator
+
+    Notes
+    -----
+    Given on its own, --save-folder implies --save: naming a folder to save to is a clear
+    enough request to save. click.Path(file_okay=False) rejects an existing file; a missing
+    folder is fine, since save_path() creates it.
+    """
+    defaults = f"{figure_folder}/" + (
+        f" for an image, {animation_folder}/ for an animation" if animation_folder else ""
+    )
+    return click.option(
+        "--save-folder",
+        "-sf",
+        "save_folder",
+        type=click.Path(file_okay=False),
+        default=None,
+        metavar="DIR",
+        help=f"Folder to save to, created if it does not exist. Implies --save. Default: "
+        f"{defaults}, inside the first -f/--folder (the current folder if none is given).",
+    )
+
+
+WELL_NAME_OPTION = click.option(
+    "--well-name",
+    "well_names",
+    multiple=True,
+    metavar="NAME",
+    help="Only draw this well (repeatable). Without it, every well is drawn.",
+)
+
+FAULT_LABELS_OPTION = click.option(
+    "--fault-labels/--no-fault-labels",
+    "fault_labels",
+    default=True,
+    show_default=True,
+    help="Label each fault with its name. Only used with --fault.",
+)
+
+# Polygons in the plot's own coordinates; see opm_vis.utils.polygons.read_polygons
+POLYGON_OPTIONS = [
+    click.option(
+        "--polygon",
+        "polygon_paths",
+        multiple=True,
+        type=click.Path(exists=True, dir_okay=False),
+        metavar="PATH",
+        help="File with polygons to draw (repeatable): NumPy .npy/.npz, text (.txt, .csv, "
+        ".dat, .xyz: x y [z] columns, a blank line between polygons) or GeoJSON. Points are "
+        "in the grid's own coordinates, with z as depth. x,y-only outlines are drawn on "
+        "k-slices, and at the top of the grid in 3D.",
     ),
+    click.option(
+        "--polygon-color",
+        default="red",
+        show_default=True,
+        help="Colour of the --polygon lines and labels.",
+    ),
+    click.option(
+        "--polygon-linewidth",
+        type=click.FloatRange(min=0, min_open=True),
+        default=None,
+        metavar="WIDTH",
+        help="Line thickness of the --polygon lines: pixels in opm-vis-pv (default 3), points "
+        "in opm-vis-mpl (default 2).",
+    ),
+    click.option(
+        "--polygon-label",
+        "polygon_labels",
+        multiple=True,
+        metavar="TEXT",
+        help="Label for the polygons of each --polygon file, given once per file in the same "
+        'order (repeatable). "" leaves that file unlabelled. Default: each polygon\'s own '
+        "name, i.e. its file name, .npz key or GeoJSON name.",
+    ),
+    click.option(
+        "--polygon-labels/--no-polygon-labels",
+        "show_polygon_labels",
+        default=True,
+        show_default=True,
+        help="Label each polygon.",
+    ),
+]
+
+
+def polygon_labels_arg(
+    polygon_paths: Sequence[str], polygon_labels: Sequence[str], show_polygon_labels: bool
+) -> bool | list[str]:
+    """
+    Turn the --polygon label options into add_polygons/plot_polygons' labels argument
+
+    Parameters
+    ----------
+    polygon_paths : Sequence[str]
+        Value of --polygon
+    polygon_labels : Sequence[str]
+        Value of --polygon-label
+    show_polygon_labels : bool
+        Value of --polygon-labels/--no-polygon-labels
+
+    Returns
+    -------
+    bool | list[str]
+        False to draw no labels, the --polygon-label values to relabel each file, or True to
+        keep every polygon's own name
+
+    Raises
+    ------
+    click.UsageError
+        If --polygon-label is given without --polygon, or not once per --polygon
+    """
+    if polygon_labels and not polygon_paths:
+        raise click.UsageError("--polygon-label needs --polygon.")
+    if polygon_labels and len(polygon_labels) != len(polygon_paths):
+        raise click.UsageError(
+            f"--polygon-label was given {len(polygon_labels)} time(s) for {len(polygon_paths)} "
+            '--polygon file(s); give one label per file, "" for none.'
+        )
+    if not show_polygon_labels:
+        return False
+    return list(polygon_labels) if polygon_labels else True
+
+COLORBAR_LABEL_OPTION = click.option(
+    "--colorbar-label",
+    "-clabel",
+    "colorbar_label",
+    default=None,
+    metavar="TEXT",
+    help="Colour bar label instead of the generated keyword and unit. Text between $ signs is "
+    "rendered as math, LaTeX-style: e.g. '$k_x$ [mD]' or '$\\Delta p$ [bar]' (single-quote it "
+    "so the shell leaves the $ alone).",
+)
+
+
+def check_colorbar_label(
+    colorbar_label: str | None, *, no_colorbar: bool, grid_only: bool
+) -> None:
+    """
+    Reject --colorbar-label where there is no colour bar to label
+
+    Parameters
+    ----------
+    colorbar_label : str | None
+        Value of --colorbar-label
+    no_colorbar : bool
+        Value of --no-colorbar
+    grid_only : bool
+        Value of --grid-only, which colours by no keyword and so has no colour bar
+
+    Raises
+    ------
+    click.UsageError
+        If --colorbar-label is given with --no-colorbar or --grid-only, or its math (text
+        between $ signs) is not valid mathtext
+
+    Notes
+    -----
+    Both backends render math with Matplotlib's mathtext (opm-vis-pv through VTK's MathText,
+    which uses it), so laying the label out once here catches a typo in either up front, as a
+    clean error - instead of a traceback when Matplotlib saves the figure, or VTK quietly
+    logging a warning and drawing the label wrong.
+    """
+    if colorbar_label is None:
+        return
+    if no_colorbar:
+        raise click.UsageError("--colorbar-label has no colour bar to label with --no-colorbar.")
+    if grid_only:
+        raise click.UsageError("--colorbar-label has no colour bar to label with --grid-only.")
+
+    if "$" in colorbar_label:
+        # Imported here: only needed for a label with math in it
+        # pylint: disable=import-outside-toplevel
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure
+
+        figure = Figure()
+        FigureCanvasAgg(figure)
+        figure.text(0, 0, colorbar_label)
+        try:
+            figure.canvas.draw()
+        except ValueError as exc:
+            raise click.UsageError(
+                f"--colorbar-label '{colorbar_label}' has invalid math: "
+                f"{str(exc).strip().splitlines()[-1]}"
+            ) from exc
+
+
+FONT_SCALE_OPTION = click.option(
+    "--font-scale",
+    type=click.FloatRange(min=0, min_open=True),
+    default=1.0,
+    show_default=True,
+    metavar="FACTOR",
+    help="Scale every text size by this factor, e.g. 1.5 for 50% bigger text.",
 )
 
 CMAP_OPTION = click.option(
@@ -237,21 +487,138 @@ def add_options(options: Sequence[Callable]) -> Callable:
     return _add_options
 
 
-def resolve_paths(paths: tuple[str, ...]) -> list[str]:
+def wants_save(save: bool, save_folder: str | None, save_name: str | None = None) -> bool:
     """
-    Fall back to searching the working directory when no paths were given
+    Whether to save to a file rather than open an interactive window
 
     Parameters
     ----------
-    paths : tuple[str, ...]
-        Value of the PATHS argument
+    save : bool
+        Value of --save
+    save_folder : str | None
+        Value of --save-folder, which implies --save
+    save_name : str | None, optional
+        Value of --save-name, which implies --save, by default None
+
+    Returns
+    -------
+    bool
+        True if any of them was given
+    """
+    return save or save_folder is not None or save_name is not None
+
+
+def save_path(
+    save_folder: str | None,
+    filename: str,
+    *,
+    folders: Sequence[str],
+    default: str,
+    save_name: str | None = None,
+) -> Path:
+    """
+    Path to save a figure or animation to, creating its folder if needed
+
+    Parameters
+    ----------
+    save_folder : str | None
+        Value of --save-folder, or None for the default folder
+    filename : str
+        File name, e.g. as default_output_name generates it
+    folders : Sequence[str]
+        Value of --folder. The default folder goes inside the first one - the main run's -
+        or inside the current folder if none was given
+    default : str
+        Default folder name, e.g. "pv-figs"
+    save_name : str | None, optional
+        Value of --save-name, used instead of filename's own name, with filename's suffix
+        (e.g. ".png") added unless it already ends with it; by default None, which keeps
+        filename
+
+    Returns
+    -------
+    Path
+        save_folder/filename, or folders[0]/default/filename if save_folder is None - with
+        save_name + filename's suffix as the file name if save_name is given
+
+    Raises
+    ------
+    click.UsageError
+        If the folder exists as a file instead
+    """
+    if save_folder is not None:
+        folder = Path(save_folder)
+    else:
+        folder = Path(folders[0] if folders else ".") / default
+
+    if not folder.is_dir():
+        try:
+            folder.mkdir(parents=True)
+        except FileExistsError as exc:
+            raise click.UsageError(
+                f"Cannot save to {folder}: it exists, but is not a folder."
+            ) from exc
+        click.echo(f"Created folder {folder}")
+
+    if save_name is not None:
+        suffix = Path(filename).suffix
+        # A name already ending in the right suffix (e.g. "sgas.png") is not given a second
+        # one. Case-sensitive, since PyVista only writes lower-case extensions.
+        filename = save_name if save_name.endswith(suffix) else save_name + suffix
+    return folder / filename
+
+
+def resolve_paths(folders: tuple[str, ...]) -> list[str]:
+    """
+    Find the cases in --folder, falling back to the working directory when none were given
+
+    Parameters
+    ----------
+    folders : tuple[str, ...]
+        Value of --folder
 
     Returns
     -------
     list[str]
-        paths itself if non-empty, otherwise ["./"]
+        Case path prefixes of every case in folders, main run first, as find_cases returns
+        them
+
+    Raises
+    ------
+    click.UsageError
+        If no case was found in any of the folders
     """
-    return list(paths) if paths else ["./"]
+    searched = list(folders) if folders else ["."]
+    cases = find_cases(searched)
+    if not cases:
+        raise click.UsageError(
+            f"No simulation case (.EGRID, .INIT, .UNRST, .X, .SMSPEC or .UNSMRY files) found "
+            f"in {', '.join(searched)}. Pass the case's folder with -f/--folder."
+        )
+
+    return cases
+
+
+def resolve_case_groups(folders: tuple[str, ...]) -> list[list[str]]:
+    """
+    Find the cases in each --folder separately, one group per folder
+
+    Parameters
+    ----------
+    folders : tuple[str, ...]
+        Value of --folder
+
+    Returns
+    -------
+    list[list[str]]
+        For each folder, its cases as resolve_paths returns them - one run with its restarts
+
+    Raises
+    ------
+    click.UsageError
+        If a folder has no case
+    """
+    return [resolve_paths((folder,)) for folder in (folders or (".",))]
 
 
 def resolve_diff_rstep(diff: bool, diff_rstep: int) -> int | None:
@@ -450,6 +817,26 @@ def resolve_subplot_layout(
         )
 
     return layout
+
+
+def check_figsize(figsize: tuple[float, float] | None) -> None:
+    """
+    Reject a --figsize that Matplotlib cannot draw
+
+    Parameters
+    ----------
+    figsize : tuple[float, float] | None
+        Value of --figsize
+
+    Raises
+    ------
+    click.UsageError
+        If either dimension is zero or negative
+    """
+    if figsize is not None and (figsize[0] <= 0 or figsize[1] <= 0):
+        raise click.UsageError(
+            f"--figsize WIDTH HEIGHT must both be positive; got {figsize[0]} {figsize[1]}."
+        )
 
 
 def check_curve_option_count(
@@ -710,7 +1097,7 @@ def default_output_name(
     calc_end: int | None = None,
 ) -> str:
     """
-    Build an output filename when --save is given with no path
+    Build the output file name for --save
 
     Parameters
     ----------
@@ -744,8 +1131,8 @@ def default_output_name(
     -------
     str
         e.g. "SGAS_k1_r60.png", "SGAS_k1_j6_r0-120.gif", "SGAS-diff0-absolute_k1_r60.png" with
-        --diff, or "SGAS-mean_k1-3_r60.png" with --calculator aggregating layers 1-3, written to
-        the current directory
+        --diff, or "SGAS-mean_k1-3_r60.png" with --calculator aggregating layers 1-3, saved in
+        --save-folder (see save_path)
 
     Notes
     -----
@@ -793,7 +1180,7 @@ def default_summary_output_name(
     ext: str = "png",
 ) -> str:
     """
-    Build an output filename for opm-vis-sum when --save is given with no path
+    Build the output file name for opm-vis-sum's --save
 
     Parameters
     ----------
@@ -811,7 +1198,8 @@ def default_summary_output_name(
     -------
     str
         e.g. "FOPR_date.png", "WOPR-INJ_WOPR-PROD_years.png", "FOPR_compare_date.png" or
-        "FGOR_FOPR_WBHP-INJ_and19more_date.png", written to the current directory
+        "FGOR_FOPR_WBHP-INJ_and19more_date.png", saved in --save-folder (see
+        save_path)
 
     Notes
     -----
@@ -859,26 +1247,93 @@ def require_dynamic_keyword_error(keyword: str) -> click.UsageError:
     )
 
 
-def is_static_keyword(restart_reader: Any, keyword: str, probe_rstep: int) -> bool:
+def resolve_keyword_rstep(
+    keyword: str,
+    rstep_value: int | None,
+    report_steps: Sequence[int],
+    restart_reader: Any,
+    init_reader: Any,
+) -> int | None:
     """
-    Check whether a keyword only exists in the .INIT file, i.e. never changes over time
+    Resolve the report step to read keyword at when no --animate was given
 
     Parameters
     ----------
+    keyword : str
+        OPM keyword being plotted
+    rstep_value : int | None
+        Parsed value of --rstep
+    report_steps : Sequence[int]
+        Every report step in the case's restart files, empty if it has none
     restart_reader : opm_vis.utils.restart.RestartReader
         Restart reader for the case
-    keyword : str
-        OPM keyword
-    probe_rstep : int
-        Report step to check availability at; any report step gives the same answer for a
-        genuinely static keyword
+    init_reader : opm_vis.utils.static.InitReader
+        .INIT reader for the case
 
     Returns
     -------
-    bool
-        True if the keyword is absent from the restart files at probe_rstep
+    int | None
+        rstep_value itself if given. Otherwise the case's first report step, once confirmed
+        that keyword does not change over time - defaulting silently would hide a keyword
+        that actually needs an explicit --rstep. None if the case has no report steps at all
+        (only .EGRID/.INIT, e.g. a dry run) and keyword is in its .INIT file, which the
+        readers take as "read the .INIT copy"
+
+    Raises
+    ------
+    click.UsageError
+        If rstep_value is None and keyword changes over time, or if the case has no report
+        steps and keyword is not in its .INIT file
     """
-    return keyword not in restart_reader.available_keywords(probe_rstep)
+    if rstep_value is not None:
+        return rstep_value
+
+    if not report_steps:
+        if keyword in init_reader.available_keywords():
+            return None
+        raise click.UsageError(
+            f"{keyword} is not in the .INIT file, and this case has no restart files (.UNRST "
+            "or .X) to read it from. Only .INIT keywords such as PERMX or DEPTH can be "
+            "plotted for a case that has not been run."
+        )
+
+    probe_rstep = report_steps[0]
+    if keyword in restart_reader.available_keywords(probe_rstep):
+        raise require_dynamic_keyword_error(keyword)
+    return probe_rstep
+
+
+def matplotlib_font_scale(func: Callable) -> Callable:
+    """
+    Run a Matplotlib command callback with its text scaled by --font-scale
+
+    Parameters
+    ----------
+    func : Callable
+        Command callback taking a font_scale argument (see FONT_SCALE_OPTION)
+
+    Returns
+    -------
+    Callable
+        Wrapped callback, run inside a Matplotlib rc_context with font.size scaled
+
+    Notes
+    -----
+    Matplotlib sizes titles, axis labels, ticks, colorbars, legends and annotations relative to
+    font.size by default, so scaling that one setting scales every text element together. The
+    rc_context restores it afterwards, so it never leaks into another plot in the same process.
+    """
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        # Imported here: opm-vis-pv shares this module but does not otherwise need Matplotlib
+        import matplotlib as mpl  # pylint: disable=import-outside-toplevel
+
+        scaled = {"font.size": mpl.rcParams["font.size"] * kwargs["font_scale"]}
+        with mpl.rc_context(scaled):
+            return func(*args, **kwargs)
+
+    return wrapper
 
 
 def handle_errors(func: Callable) -> Callable:

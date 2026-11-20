@@ -18,7 +18,7 @@ from opm_vis.utils.restart import Wells  # noqa: E402
 def egrid(data_dir):
     from opm.io.ecl import EGrid
 
-    return EGrid(str(data_dir / "SPE1CASE1.EGRID"))
+    return EGrid(str(data_dir / "SPE1CASE1" / "SPE1CASE1.EGRID"))
 
 
 @pytest.fixture(scope="module")
@@ -115,6 +115,19 @@ def test_slices_on_an_i_or_j_slice_matches_the_well_head(egrid, wells):
     paths = well_paths(egrid, wells, 60, slices=[("j", 9)])
 
     assert paths.label_names == ["PROD"]
+
+
+def test_names_restricts_to_the_named_wells(egrid, wells):
+    assert well_paths(egrid, wells, 60, names=["PROD"]).label_names == ["PROD"]
+    assert sorted(well_paths(egrid, wells, 60, names=["PROD", "INJ"]).label_names) == [
+        "INJ",
+        "PROD",
+    ]
+
+
+def test_names_combines_with_slices(egrid, wells):
+    # INJ is completed at k=0 only, so naming PROD on a k=0 slice leaves nothing
+    assert well_paths(egrid, wells, 60, slices=[("k", 0)], names=["PROD"]).is_empty()
 
 
 def test_slices_excluding_every_well_gives_an_empty_result(egrid, wells):
@@ -225,3 +238,14 @@ def test_apply_mapaxes_true_translates_coordinates():
 
     assert paths.open_wells is not None
     np.testing.assert_allclose(paths.open_wells.points[:, :2], [[1000.0, 2000.0]] * 2)
+
+
+def test_wells_lists_every_well_name_sorted(wells):
+    assert wells.names() == ["INJ", "PROD"]
+
+
+def test_check_names_accepts_known_wells_and_names_the_unknown_ones(wells):
+    wells.check_names(["INJ"])
+
+    with pytest.raises(KeyError, match=r"Unknown well name\(s\): NOPE, X.*INJ, PROD"):
+        wells.check_names(["INJ", "NOPE", "X"])

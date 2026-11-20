@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 import warnings
 from collections.abc import Sequence
 from functools import partial
@@ -23,7 +24,8 @@ from opm_vis.plot.slice_poly import SlicePoly2D, SlicePoly3D
 from opm_vis.utils.calc import calc_label
 from opm_vis.utils.diff import diff_label
 from opm_vis.utils.fault import FaultReader
-from opm_vis.utils.restart import Report
+from opm_vis.utils.polygons import read_polygons, warn_outside
+from opm_vis.utils.restart import Report, Wells
 from opm_vis.utils.units import Label
 
 # An axis is switched from metres to km once its own span exceeds this, to keep tick labels
@@ -31,6 +33,43 @@ from opm_vis.utils.units import Label
 # own unit convention (see set_labels below), so unlike opm_vis.pvplot this needs no check of
 # what unit the case is actually in.
 _KM_AXIS_SPAN_M = 1000.0
+
+# Default 2D figure size (see default_slice_figsize): the axes follow the slice's own
+# width:height ratio at a roughly constant area, clamped so a cross-section - often 100:1 wide
+# - still gets a usable height and a narrow map view is not squeezed into a sliver. The
+# margins leave room for the title, axis labels and colorbar around the axes.
+_SLICE_AXES_AREA_IN2 = 24.0
+_MIN_SLICE_ASPECT = 0.5
+_MAX_SLICE_ASPECT = 2.5
+_SLICE_MARGIN_WIDTH_IN = 1.8
+_SLICE_MARGIN_HEIGHT_IN = 1.2
+
+
+def default_slice_figsize(width: float, height: float) -> tuple[float, float]:
+    """
+    Figure size for a 2D slice, when none was asked for
+
+    Parameters
+    ----------
+    width : float
+        Slice's extent along the horizontal plot axis
+    height : float
+        Slice's extent along the vertical plot axis
+
+    Returns
+    -------
+    tuple[float, float]
+        Width and height in inches: an axes of _SLICE_AXES_AREA_IN2 square inches whose
+        width:height ratio is the slice's own, clamped to [_MIN_SLICE_ASPECT,
+        _MAX_SLICE_ASPECT], plus margins for the labels and colorbar
+    """
+    aspect = width / height if width > 0 and height > 0 else 1.0
+    aspect = min(max(aspect, _MIN_SLICE_ASPECT), _MAX_SLICE_ASPECT)
+
+    return (
+        round(math.sqrt(_SLICE_AXES_AREA_IN2 * aspect) + _SLICE_MARGIN_WIDTH_IN, 2),
+        round(math.sqrt(_SLICE_AXES_AREA_IN2 / aspect) + _SLICE_MARGIN_HEIGHT_IN, 2),
+    )
 
 
 def _km_axis_label(name: str, span: float) -> str:
@@ -50,6 +89,90 @@ def _km_axis_label(name: str, span: float) -> str:
         e.g. "E(x) [m]", or "E(x) [km]" once span is wide enough
     """
     return f"{name} [km]" if abs(span) > _KM_AXIS_SPAN_M else f"{name} [m]"
+
+
+def _arrays(polycs: Sequence[PolyCollection | Poly3DCollection]) -> list[np.ndarray]:
+    """
+    The values every collection has been given
+
+    Parameters
+    ----------
+    polycs : Sequence[PolyCollection | Poly3DCollection]
+        Collections that SlicePoly.generate has already set an array on
+
+    Returns
+    -------
+    list[np.ndarray]
+        Each collection's array, in order
+    """
+    arrays = [polyc.get_array() for polyc in polycs]
+    assert all(array is not None for array in arrays)
+    return cast("list[np.ndarray]", arrays)
+
+
+def _check_log_data(arrays: Sequence[np.ndarray]) -> None:
+    """
+    Check that data can be coloured on a log scale, warning about the cells that cannot
+
+    Parameters
+    ----------
+    arrays : Sequence[np.ndarray]
+        The values of every collection about to be coloured
+
+    Raises
+    ------
+    ValueError
+        If no value is positive, so nothing could be coloured at all
+
+    Warns
+    -----
+    UserWarning
+        If some values are zero or negative: a log scale cannot colour them, so Matplotlib
+        leaves those cells blank
+    """
+    values = np.concatenate([np.ravel(array) for array in arrays])
+    values = values[np.isfinite(values)]
+    if not (values > 0).any():
+        raise ValueError(
+            "--log-scale needs positive values, but none of the plotted values are above 0."
+        )
+
+    n_nonpositive = int((values <= 0).sum())
+    if n_nonpositive:
+        warnings.warn(
+            f"{n_nonpositive} cell value(s) are zero or negative and are left uncoloured on "
+            "a log scale."
+        )
+
+
+def _color_limits(arrays: Sequence[np.ndarray], *, log: bool) -> tuple[float, float]:
+    """
+    Smallest and largest value to colour, shared by every collection
+
+    Parameters
+    ----------
+    arrays : Sequence[np.ndarray]
+        The values of every collection to share colour limits
+    log : bool
+        Whether colours are mapped logarithmically, which needs a positive lower limit
+
+    Returns
+    -------
+    tuple[float, float]
+        (minimum, maximum). On a linear scale both are also bounded by 0, i.e. the range
+        always includes 0 as it always has here; on a log scale the minimum is the smallest
+        positive value instead.
+    """
+    if log:
+        values = np.concatenate([np.ravel(array) for array in arrays])
+        values = values[np.isfinite(values) & (values > 0)]
+        return float(values.min()), float(values.max())
+
+    low, high = 0.0, 0.0
+    for array in arrays:
+        low = np.minimum(low, array.min())
+        high = np.maximum(high, array.max())
+    return low, high
 
 
 def _km_tick_formatter(value: float, _pos: int) -> str:
@@ -177,7 +300,26 @@ class _SlicePolyCollection:
         # Add polygon collection to matplotlib axes
         self.ax_.add_collection(polyc)
 
-    def plot_wells(self, rstep: int) -> None:
+    def _check_well_names(self, names: Sequence[str]) -> None:
+        """
+        Check that names are all wells in the case
+
+        Parameters
+        ----------
+        names : Sequence[str]
+            Well names to check
+
+        Raises
+        ------
+        KeyError
+            If a name is not a well in the case; the message lists the ones that are
+        """
+        # Every slice holds the same Wells object's worth of names, with the wells not on the
+        # slice emptied rather than removed. SlicePoly.wells is typed as the empty list it
+        # starts as, but is a Wells by the time a slice is built.
+        cast(Wells, self.slice_coll[0].wells).check_names(names)
+
+    def plot_wells(self, rstep: int, names: Sequence[str] | None = None) -> None:
         """
         Plot wells in slices (if any) for a report step
 
@@ -185,11 +327,24 @@ class _SlicePolyCollection:
         ----------
         rstep : int
             Report step
+        names : Sequence[str] | None, optional
+            Only plot wells with these names, by default None, which plots every well on the
+            slices
+
+        Raises
+        ------
+        KeyError
+            If a name in names is not a well in the case
         """
+        if names is not None:
+            self._check_well_names(names)
+
         # Loop over slices
         for slc in self.slice_coll:
             # Loop over all wells in slice and plot
             for name, well in slc.wells[rstep].items():
+                if names is not None and name not in names:
+                    continue
                 if well:
                     # Cell center coordinates of well
                     wcent = np.array(
@@ -307,10 +462,121 @@ class _SlicePolyCollection:
                     for (x, y, z), name in zip(edges.label_points, edges.label_names):
                         ax_3d.text(x, y, z, name, color=kwargs["color"])
 
+    def plot_polygons(
+        self,
+        paths: str | Path | Sequence[str | Path],
+        *,
+        labels: bool | Sequence[str | None] = True,
+        **kwargs,
+    ) -> None:
+        """
+        Plot polygons (outlines or 3D polylines) read from files
+
+        Parameters
+        ----------
+        paths : str | Path | Sequence[str | Path]
+            Polygon file(s): NumPy .npy/.npz, text (.txt, .csv, .dat, .xyz) or GeoJSON; see
+            opm_vis.utils.polygons.read_polygons. Points are in the same coordinates the grid
+            is drawn in, with z as depth, positive down.
+        labels : bool | Sequence[str | None], optional
+            Annotate each polygon with its name, by default True. False draws no labels. A
+            sequence gives one label per file instead, as read_polygons' labels: "" leaves that
+            file unlabelled, None keeps its polygons' own names.
+        kwargs : optional
+            Optional arguments passed to LineCollection/Line3DCollection; "color" defaults to
+            "red" and "linewidth" to 2.0 unless overridden.
+
+        Raises
+        ------
+        FileNotFoundError, ValueError
+            If a file is missing, or not a readable polygon file; see read_polygons
+
+        Notes
+        -----
+        On a 2D k-slice (map view) every polygon is drawn by its x,y. On a 2D i- or j-slice,
+        x,y,z polygons are projected onto the slice's plane, and x,y-only outlines - which have
+        no depth to place them at - are left out with a warning. In 3D, x,y,z polygons are drawn
+        where they are, and x,y-only outlines flat at the top of the plotted slices. A polygon
+        lying entirely outside the plotted slice(s) - e.g. a file in km for a grid in m - is
+        warned about.
+        """
+        kwargs.setdefault("color", "red")
+        kwargs.setdefault("linewidth", 2.0)
+
+        polygons = read_polygons(
+            paths, labels=None if isinstance(labels, bool) else list(labels)
+        )
+        first = self.slice_coll[0]
+
+        if isinstance(first, SlicePoly2D):
+            axes = [0, 1] if first.slice_dim == "k" else first.slice_axis
+            drawn = [
+                polygon for polygon in polygons if first.slice_dim == "k" or polygon.has_depth
+            ]
+            if len(drawn) < len(polygons):
+                warnings.warn(
+                    f"{len(polygons) - len(drawn)} x,y-only polygon(s) not drawn: an outline "
+                    f"has no depth to place it on this {first.slice_dim}-slice."
+                )
+            points = [polygon.points[:, axes] for polygon in drawn]
+            anchors = [polygon.label_point()[axes] for polygon in drawn]
+        else:
+            # Depth is positive down here, so the top of the plotted slices is their minimum
+            top = min(slc.cell_corners_min()[2] for slc in self.slice_coll)
+            drawn = polygons
+            points = [
+                polygon.points
+                if polygon.has_depth
+                else np.column_stack([polygon.points, np.full(len(polygon.points), top)])
+                for polygon in drawn
+            ]
+            anchors = [
+                polygon.label_point()
+                if polygon.has_depth
+                else np.append(polygon.label_point(), top)
+                for polygon in drawn
+            ]
+
+        if not drawn:
+            warnings.warn("No polygons to draw.")
+            return
+
+        warn_outside(
+            drawn,
+            points,
+            np.min([slc.cell_corners_min() for slc in self.slice_coll], axis=0),
+            np.max([slc.cell_corners_max() for slc in self.slice_coll], axis=0),
+        )
+
+        if isinstance(first, SlicePoly2D):
+            self.ax_.add_collection(LineCollection(points, **kwargs))
+        else:
+            # self.ax_ is declared as the plain 2D Axes for _SlicePolyCollection's own 2D use,
+            # but is actually an Axes3D here - see SlicePoly3DCollection.
+            cast(Axes3D, self.ax_).add_collection3d(Line3DCollection(points, **kwargs))
+
+        if labels is False:
+            return
+
+        # A name shared by several polygons (e.g. a GeoJSON polygon and its holes) once
+        labelled: set[str] = set()
+        for polygon, anchor in zip(drawn, anchors):
+            if not polygon.name or polygon.name in labelled:
+                continue
+            labelled.add(polygon.name)
+            if isinstance(first, SlicePoly2D):
+                self.ax_.annotate(
+                    polygon.name, (anchor[0], anchor[1]), color=kwargs["color"], ha="center"
+                )
+            else:
+                cast(Axes3D, self.ax_).text(
+                    anchor[0], anchor[1], anchor[2], polygon.name, color=kwargs["color"]
+                )
+
     # pylint: disable=too-many-arguments
     def plot(
         self,
-        rstep: int,
+        rstep: int | None,
         keyword: str,
         colorbar: bool = True,
         equal_clim: bool = True,
@@ -321,6 +587,10 @@ class _SlicePolyCollection:
         diff_kind: str = "plain",
         calc_kind: str | None = None,
         calc_count: int | None = None,
+        colorbar_label: str | None = None,
+        title: bool = True,
+        well_names: Sequence[str] | None = None,
+        log_scale: bool = False,
         **kwargs,
     ) -> None:
         """
@@ -328,8 +598,9 @@ class _SlicePolyCollection:
 
         Parameters
         ----------
-        rstep : int
-            Report step
+        rstep : int | None
+            Report step, or None to show an .INIT keyword for a case with no restart files,
+            which leaves out the wells and the report-date title
         keyword : str
             OPM keyword to plot
         colorbar : bool
@@ -354,6 +625,19 @@ class _SlicePolyCollection:
             Limit calc_kind's layer range to this many further layers after each slice's own
             index, which is always included itself, by default None (continue to the grid's
             last layer). Only used when calc_kind is given.
+        colorbar_label : str | None, optional
+            Colorbar label instead of the generated keyword-and-unit one, by default None.
+            Text between $ signs is rendered as math by Matplotlib's mathtext, e.g.
+            "$k_x$ [mD]".
+        title : bool, optional
+            Put the report date in the figure title, by default True
+        well_names : Sequence[str] | None, optional
+            Only plot wells with these names, by default None, which plots every well on the
+            slices
+        log_scale : bool, optional
+            Map colours logarithmically, by default False. Needs positive values: zero and
+            negative cells are left uncoloured, with a warning, and ValueError is raised if no
+            value is positive. A log colour scale also needs a positive lower clim.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -361,9 +645,15 @@ class _SlicePolyCollection:
         -----
         Use show or save_plot to show plot on screen or save to file.
         """
+        if log_scale:
+            # A string norm gives every collection its own LogNorm, and combines with clim
+            kwargs["norm"] = "log"
+
         # If pre-generated polyc data have been inputted, we just add the correct one(s) for the
         # current report step
         if polyc_dict is not None:
+            # Only animate() passes polyc_dict, and it always plots real report steps
+            assert rstep is not None
             polyc_rstep = polyc_dict[rstep]
 
         # Else, generate data for each slice and add to axes collection
@@ -381,16 +671,14 @@ class _SlicePolyCollection:
                 for slc in self.slice_coll
             ]
 
+        if log_scale and polyc_dict is None:
+            # (animate() checks its data once up front, over every report step)
+            _check_log_data(_arrays(polyc_rstep))
+
         # Set equal color range if there are more than one slice.
         if "clim" not in kwargs and equal_clim is True and len(polyc_rstep) > 1:
             # First we need min/max across all slices
-            min_polyc = 0
-            max_polyc = 0
-            for polyc in polyc_rstep:
-                polyc_array = polyc.get_array()
-                assert polyc_array is not None
-                min_polyc = np.minimum(min_polyc, polyc_array.min())
-                max_polyc = np.maximum(max_polyc, polyc_array.max())
+            min_polyc, max_polyc = _color_limits(_arrays(polyc_rstep), log=log_scale)
 
             # Second, we set clim
             for polyc in polyc_rstep:
@@ -400,18 +688,18 @@ class _SlicePolyCollection:
         for polyc in polyc_rstep:
             self.add_collection(polyc)
 
-        # Plot wells
-        self.plot_wells(rstep)
-
-        # Add report date to plot list
-        rdate = self.report.report_date(rstep)
-        self.rdates.append(rdate)
-
         # Save keyword, for save_plot's filename; see _keyword_tag
         self.keyword = self._keyword_tag(keyword, diff_rstep, diff_kind, calc_kind)
 
-        # Set title
-        self.set_title(rdate)
+        # Wells and the date title both come from the restart files, which a case with no
+        # report steps does not have
+        if rstep is not None:
+            self.plot_wells(rstep, well_names)
+
+            rdate = self.report.report_date(rstep)
+            self.rdates.append(rdate)
+            if title:
+                self.set_title(rdate)
 
         # Set colorbar
         if colorbar is True:
@@ -424,7 +712,9 @@ class _SlicePolyCollection:
                 )
 
             # Following above warning, we only need to use the first slice
-            clabel = self._colorbar_label(keyword, diff_rstep, diff_kind, calc_kind)
+            clabel = colorbar_label or self._colorbar_label(
+                keyword, diff_rstep, diff_kind, calc_kind
+            )
             self.fig.colorbar(polyc_rstep[0], ax=self.ax_, label=clabel)
 
     def _colorbar_label(
@@ -462,7 +752,12 @@ class _SlicePolyCollection:
 
         if diff_rstep is not None and diff_kind == "relative":
             return f"{name} [%]"
-        return name + " [" + self.label(keyword) + "]"
+        try:
+            unit = self.label(keyword)
+        except KeyError:
+            # keyword has no tabulated unit label; not worth failing the plot over
+            return name
+        return f"{name} [{unit}]"
 
     def plot_grid(self, **kwargs) -> None:
         """
@@ -490,6 +785,10 @@ class _SlicePolyCollection:
         diff_kind: str = "plain",
         calc_kind: str | None = None,
         calc_count: int | None = None,
+        colorbar_label: str | None = None,
+        title: bool = True,
+        well_names: Sequence[str] | None = None,
+        log_scale: bool = False,
         **kwargs,
     ) -> None:
         """
@@ -521,6 +820,19 @@ class _SlicePolyCollection:
             Limit calc_kind's layer range to this many further layers after each slice's own
             index, which is always included itself, by default None (continue to the grid's
             last layer). Only used when calc_kind is given.
+        colorbar_label : str | None, optional
+            Colorbar label instead of the generated keyword-and-unit one, by default None.
+            Text between $ signs is rendered as math by Matplotlib's mathtext, e.g.
+            "$k_x$ [mD]".
+        title : bool, optional
+            Put the report date in the figure title, by default True
+        well_names : Sequence[str] | None, optional
+            Only plot wells with these names, by default None, which plots every well on the
+            slices
+        log_scale : bool, optional
+            Map colours logarithmically, by default False. Needs positive values: zero and
+            negative cells are left uncoloured, with a warning, and ValueError is raised if no
+            value is positive. A log colour scale also needs a positive lower clim.
         kwargs: optional
             Optional arguments passed to Poly3DCollection/PolyCollection
 
@@ -530,6 +842,10 @@ class _SlicePolyCollection:
         named for what it writes, not this method: this backend can only ever animate to a
         GIF, unlike opm_vis.pvplot's GridPlotter.animate which can also write a movie file.
         """
+        # Frames are only drawn when the animation is shown or saved, so check the names now
+        if well_names is not None:
+            self._check_well_names(well_names)
+
         # Which report steps and dates to include in the animation
         if rstep_list is not None:
             anim_rsteps = list(rstep_list)
@@ -547,6 +863,9 @@ class _SlicePolyCollection:
         # Save keyword, for save_gif's filename; see _keyword_tag
         self.keyword = self._keyword_tag(keyword, diff_rstep, diff_kind, calc_kind)
 
+        if log_scale:
+            kwargs["norm"] = "log"
+
         # Generate slices for all report dates to be able to set one colorbar for the whole
         # animation
         polyc_dict = self._data_for_animation(
@@ -560,7 +879,9 @@ class _SlicePolyCollection:
         )
 
         # Set colorbar for the whole animation
-        clabel = self._colorbar_label(keyword, diff_rstep, diff_kind, calc_kind)
+        clabel = colorbar_label or self._colorbar_label(
+            keyword, diff_rstep, diff_kind, calc_kind
+        )
         self.fig.colorbar(polyc_dict[anim_rsteps[0]][0], ax=self.ax_, label=clabel)
 
         # Setup plot function to fit with FuncAnimation. diff_rstep/diff_kind/calc_kind/
@@ -573,6 +894,8 @@ class _SlicePolyCollection:
             colorbar=False,
             equal_clim=False,
             polyc_dict=polyc_dict,
+            title=title,
+            well_names=well_names,
             **kwargs,
         )
 
@@ -637,16 +960,16 @@ class _SlicePolyCollection:
                 for slc in self.slice_coll
             ]
 
+        log_scale = kwargs.get("norm") == "log"
+        arrays = _arrays([polyc for rstep in rsteps for polyc in polyc_dict[rstep]])
+        if log_scale:
+            _check_log_data(arrays)
+
         # If clim have not been set in kwargs, we must loop over all polyc and set clim to min/max
         # for all data
         if "clim" not in kwargs:
-            # First loop round to get min/max for all slices in all report steps
-            min_polyc = 0
-            max_polyc = 0
-            for rstep in rsteps:
-                for polyc in polyc_dict[rstep]:
-                    min_polyc = np.minimum(min_polyc, polyc.get_array().min())
-                    max_polyc = np.maximum(max_polyc, polyc.get_array().max())
+            # First get min/max for all slices in all report steps
+            min_polyc, max_polyc = _color_limits(arrays, log=log_scale)
 
             # Second loop round to set uniform clim for all slices in all report steps
             for rstep in rsteps:
@@ -678,16 +1001,16 @@ class _SlicePolyCollection:
             raise RuntimeError("No plot to save! Run plot() method first.")
 
         if filename is None:
-            # Report date of plot
-            rdate_str = self.rdates[-1].strftime("%d-%m-%Y")
+            # Report date of plot; a static keyword in a case with no restart files has none
+            rdate_tag = f"_{self.rdates[-1].strftime('%d-%m-%Y')}" if self.rdates else ""
 
             filename = (
-                f"{self.paths[0]}{self.keyword}_{rdate_str}_{self._slice_info()}."
+                f"{self.paths[0]}{self.keyword}{rdate_tag}_{self._slice_info()}."
                 f"{file_format}"
             )
 
         # Save file
-        self.fig.savefig(filename)
+        self.fig.savefig(filename, bbox_inches="tight")
         plt.close("all")
 
     def save_grid_plot(
@@ -709,7 +1032,7 @@ class _SlicePolyCollection:
             filename = f"{self.paths[0]}GRID_{self._slice_info()}.{file_format}"
 
         # Save file
-        self.fig.savefig(filename)
+        self.fig.savefig(filename, bbox_inches="tight")
         plt.close("all")
 
     def save_gif(self, filename: str | Path | None = None, fps: int = 3) -> None:
@@ -800,6 +1123,7 @@ class SlicePoly3DCollection(_SlicePolyCollection):
         slice_info: list[tuple[str, int]],
         calc_count: int | None = None,
         surface: bool = False,
+        figsize: tuple[float, float] | None = None,
     ) -> None:
         """
         Initialize class by setting up figure/axes.
@@ -818,6 +1142,8 @@ class SlicePoly3DCollection(_SlicePolyCollection):
         surface : bool, optional
             --calculator surface, by default False. See SlicePoly3D/_GridSlice for what this
             changes about a slice's own geometry/active cells.
+        figsize : tuple[float, float] | None, optional
+            Figure size in inches, by default None, which keeps Matplotlib's own default
         """
         # Generate collection of slices
         slice_coll = [
@@ -825,9 +1151,13 @@ class SlicePoly3DCollection(_SlicePolyCollection):
         ]
 
         # Setup matplotlib figure
-        fig = plt.figure()
+        fig = plt.figure(figsize=figsize)
         ax_ = fig.add_subplot(projection="3d")
         ax_.view_init(elev=30, azim=60)
+        # Matplotlib's own 3D depth sorting works per artist rather than per pixel, and puts a
+        # slice in front of the wells, faults and polygons lying on or in it. Drawing in plain
+        # zorder instead keeps those line overlays (zorder 2) on top of the slices (zorder 1).
+        cast(Axes3D, ax_).computed_zorder = False
 
         # Init parent class
         super().__init__(paths, fig, ax_, slice_coll)
@@ -895,6 +1225,7 @@ class SlicePoly2DCollection(_SlicePolyCollection):
         slice_ind: int,
         calc_count: int | None = None,
         surface: bool = False,
+        figsize: tuple[float, float] | None = None,
     ) -> None:
         """
         Initialize class by setting up figure/axes.
@@ -914,12 +1245,18 @@ class SlicePoly2DCollection(_SlicePolyCollection):
         surface : bool, optional
             --calculator surface, by default False. See SlicePoly2D/_GridSlice for what this
             changes about the slice's own geometry/active cells.
+        figsize : tuple[float, float] | None, optional
+            Figure size in inches, by default None, which sizes the figure to the slice's own
+            proportions (see default_slice_figsize)
         """
         # Generate 2D slice and put in a list to conform with parent class methods
         slice_coll = [SlicePoly2D(paths, slice_dim, slice_ind, calc_count, surface)]
 
         # Setup matplotlib figure
-        fig = plt.figure()
+        if figsize is None:
+            extent = slice_coll[0].cell_corners_max() - slice_coll[0].cell_corners_min()
+            figsize = default_slice_figsize(extent[0], extent[1])
+        fig = plt.figure(figsize=figsize)
         ax_ = fig.add_subplot()
 
         # Init parent class

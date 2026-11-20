@@ -8,7 +8,7 @@ Plots the difference from ``--diff-rstep`` instead of ``--keyword``'s own values
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d
+   opm-vis-pv -f tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d
 
 ``--diff-rstep``
 -------------------
@@ -17,7 +17,7 @@ Report step to difference against. Default: 0. Only used with ``--diff``.
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d --diff-rstep 30
+   opm-vis-pv -f tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d --diff-rstep 30
 
 ``--diff-kind``
 ------------------
@@ -27,11 +27,11 @@ magnitude) or ``relative`` (percent change from the reference). Only used with `
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d --diff-kind relative
+   opm-vis-pv -f tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d --diff-kind relative
 
 ``--diff``/``-d`` also works with ``--animate``, differencing every animated frame against the
 same fixed ``--diff-rstep``:
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 -K SGAS -k 1 --animate -d --save sgas_diff.gif
+   opm-vis-pv -f tests/data/SPE1CASE1 -K SGAS -k 1 --animate -d --save

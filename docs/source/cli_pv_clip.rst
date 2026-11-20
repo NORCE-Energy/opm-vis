@@ -10,7 +10,7 @@ Cuts the whole grid with a plane normal to this axis (``x``, ``-x``, ``y``, ``-y
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 -K SGAS -r 120 --clip x --view 3d --save clip.png
+   opm-vis-pv -f tests/data/SPE1CASE1 -K SGAS -r 120 --clip x --view 3d --save
 
 ``--clip-origin``
 --------------------
@@ -20,7 +20,7 @@ with ``--clip``.
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 -K SGAS -r 120 --clip x --clip-origin 2317 4600 8325 --view 3d
+   opm-vis-pv -f tests/data/SPE1CASE1 -K SGAS -r 120 --clip x --clip-origin 2317 4600 8325 --view 3d
 
 ``--clip-invert`` / ``--no-clip-invert``
 -------------------------------------------
@@ -30,7 +30,7 @@ Only used with ``--clip``.
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 -K SGAS -r 120 --clip x --no-clip-invert --view 3d
+   opm-vis-pv -f tests/data/SPE1CASE1 -K SGAS -r 120 --clip x --no-clip-invert --view 3d
 
 ``--clip-crinkle``
 ---------------------
@@ -40,4 +40,4 @@ Keeps whole cells at the ``--clip`` boundary instead of cutting through them. On
 
 .. code-block:: bash
 
-   opm-vis-pv tests/data/SPE1CASE1 -K SGAS -r 120 --clip x --clip-crinkle --view 3d
+   opm-vis-pv -f tests/data/SPE1CASE1 -K SGAS -r 120 --clip x --clip-crinkle --view 3d

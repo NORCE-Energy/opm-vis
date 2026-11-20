@@ -342,7 +342,7 @@ class SummaryPlot:
 
     def __init__(
         self,
-        paths: list[str],
+        paths: Sequence[str | Sequence[str]],
         *,
         compare: bool = False,
         figsize: tuple[float, float] | None = None,
@@ -352,9 +352,10 @@ class SummaryPlot:
 
         Parameters
         ----------
-        paths : list[str]
-            Paths with .SMSPEC files, as filename prefixes. Without compare, the first is the
-            main run and the rest are its restart runs; with compare, each is a case of its own.
+        paths : Sequence[str | Sequence[str]]
+            Case path prefixes with .SMSPEC files, e.g. "run/CASE". Without compare, the first
+            is the main run and the rest are its restart runs; with compare, each entry is a
+            case of its own - a single prefix, or a list of a main run and its restarts.
         compare : bool, optional
             Whether to read each path as a separate case, by default False
         figsize : tuple[float, float] | None, optional
@@ -374,14 +375,17 @@ class SummaryPlot:
         if not paths:
             raise ValueError("No paths given; nothing to plot!")
 
-        self.paths = paths
+        cases = [[path] if isinstance(path, str) else list(path) for path in paths]
+        self.paths = cases
         self.figsize = figsize
 
-        # The one place the PATHS convention forks: by default a single reader stitches the
+        # The one place the paths convention forks: by default a single reader stitches the
         # whole restart chain into one series, exactly as every other opm_vis program treats
-        # PATHS, while compare makes each path a case in its own right.
+        # paths, while compare makes each entry a case (with its own restarts) in its own right.
         self.readers = (
-            [SummaryReader([path]) for path in paths] if compare else [SummaryReader(paths)]
+            [SummaryReader(case) for case in cases]
+            if compare
+            else [SummaryReader([path for case in cases for path in case])]
         )
 
         # SummaryReader only warns when a path holds no .SMSPEC, which is right for a restart
@@ -389,9 +393,11 @@ class SummaryPlot:
         # case silently absent from a comparison. Name it here, while the path it came from is
         # still known.
         if compare:
-            for path, reader in zip(paths, self.readers):
+            for case, reader in zip(cases, self.readers):
                 if not reader.smry:
-                    raise ValueError(f"No .SMSPEC file was found in {path}; cannot plot it!")
+                    raise ValueError(
+                        f"No .SMSPEC file was found in {', '.join(case)}; cannot plot it!"
+                    )
         elif not self.readers[0].smry:
             raise ValueError("No .SMSPEC file was found; cannot plot summary data!")
 
@@ -956,9 +962,9 @@ class SummaryPlot:
             raise RuntimeError("No plot to save! Run plot() method first.")
 
         if filename is None:
-            filename = f"{self.paths[0]}{self._keyword_tag()}.{file_format}"
+            filename = f"{self.paths[0][0]}{self._keyword_tag()}.{file_format}"
 
-        self.fig.savefig(filename)
+        self.fig.savefig(filename, bbox_inches="tight")
         plt.close("all")
 
     def _keyword_tag(self) -> str:

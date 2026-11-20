@@ -68,7 +68,7 @@ class _SlicePoly(_GridSlice, ABC):
     def generate(
         self,
         keyword: str,
-        rstep: int,
+        rstep: int | None,
         *,
         diff_rstep: int | None = None,
         diff_kind: str = "plain",
@@ -83,8 +83,8 @@ class _SlicePoly(_GridSlice, ABC):
         ----------
         keyword : str
             OPM keyword
-        rstep : int
-            Report step
+        rstep : int | None
+            Report step, or None to read from the .INIT file alone
         diff_rstep : int | None, optional
             Use the difference from this report step instead of keyword's own values, by
             default None (the values themselves)
@@ -145,7 +145,7 @@ class _SlicePoly(_GridSlice, ABC):
     def _read_calc(
         self,
         keyword: str,
-        rstep: int,
+        rstep: int | None,
         kind: str,
         count: int | None,
         *,
@@ -160,8 +160,8 @@ class _SlicePoly(_GridSlice, ABC):
         ----------
         keyword : str
             OPM keyword
-        rstep : int
-            Report step
+        rstep : int | None
+            Report step, or None to read from the .INIT file alone
         kind : str
             One of opm_vis.utils.calc.CALC_KINDS
         count : int | None
@@ -203,7 +203,7 @@ class _SlicePoly(_GridSlice, ABC):
         aggregated_full = apply_slice_calc(lookup, layer_grid, kind)
         return aggregated_full[self.act]
 
-    def _read_keyword(self, keyword: str, rstep: int, act_ind: list[int]):
+    def _read_keyword(self, keyword: str, rstep: int | None, act_ind: list[int]):
         """
         Read one keyword at one report step, restart files taking priority over .INIT
 
@@ -211,8 +211,8 @@ class _SlicePoly(_GridSlice, ABC):
         ----------
         keyword : str
             OPM keyword
-        rstep : int
-            Report step
+        rstep : int | None
+            Report step, or None to read from the .INIT file alone
         act_ind : list[int]
             Active indices to read, as returned by active_indices()
 
@@ -221,13 +221,9 @@ class _SlicePoly(_GridSlice, ABC):
         ndarray
             One value per entry in act_ind
         """
-        if keyword in self.restart.available_keywords(rstep):
+        if rstep is not None and keyword in self.restart.available_keywords(rstep):
             return self.restart.read(keyword, rstep, act_ind)
-        if keyword in [
-            key
-            for key in self.static.available_keywords()
-            if key not in self.restart.available_keywords(rstep)
-        ]:
+        if keyword in self.static.available_keywords():
             return self.static.read(keyword, act_ind)
 
         raise KeyError(f"{keyword} not in restart files or .INIT file!")

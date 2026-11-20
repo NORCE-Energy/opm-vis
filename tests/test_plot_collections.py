@@ -9,6 +9,7 @@ import pytest
 matplotlib.use("Agg")  # headless: never try to open a GUI window while saving
 
 from matplotlib.collections import LineCollection  # noqa: E402
+from matplotlib.colors import LogNorm  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 from mpl_toolkits.mplot3d import Axes3D  # noqa: E402
 from mpl_toolkits.mplot3d.art3d import Line3DCollection  # noqa: E402
@@ -18,6 +19,7 @@ from opm_vis.plot.collections import (  # noqa: E402
     SlicePoly3DCollection,
     _km_axis_label,
     _km_tick_formatter,
+    default_slice_figsize,
 )
 
 # The case1 and tpsa_lagged fixtures come from conftest.py.
@@ -85,6 +87,42 @@ def test_2d_slice_stays_in_metres_under_a_narrow_span(tpsa_lagged):
     assert coll.ax_.get_ylabel() == "N(y) [m]"
     assert not isinstance(coll.ax_.xaxis.get_major_formatter(), FuncFormatter)
     assert not isinstance(coll.ax_.yaxis.get_major_formatter(), FuncFormatter)
+
+
+def test_default_slice_figsize_follows_a_square_slice():
+    width, height = default_slice_figsize(100.0, 100.0)
+
+    # Square axes; the extra width is the margin for the colorbar and y label
+    assert width - 1.8 == pytest.approx(height - 1.2, abs=0.01)
+
+
+def test_default_slice_figsize_clamps_a_thin_cross_section():
+    # SPE1CASE1's cross-sections are 10000 ft wide but only 100 ft deep
+    assert default_slice_figsize(10000.0, 100.0) == default_slice_figsize(2.5, 1.0)
+    assert default_slice_figsize(1.0, 10000.0) == default_slice_figsize(1.0, 2.0)
+
+
+def test_default_slice_figsize_survives_a_degenerate_slice():
+    assert default_slice_figsize(0.0, 100.0) == default_slice_figsize(1.0, 1.0)
+
+
+def test_2d_cross_section_gets_a_wide_figure(case1):
+    coll = SlicePoly2DCollection([case1], "i", 5)
+
+    width, height = coll.fig.get_size_inches()
+    assert width > 2 * height
+
+
+def test_2d_figsize_overrides_the_default(case1):
+    coll = SlicePoly2DCollection([case1], "k", 0, figsize=(5.0, 3.0))
+
+    assert tuple(coll.fig.get_size_inches()) == (5.0, 3.0)
+
+
+def test_3d_figsize_overrides_the_default(case1):
+    coll = SlicePoly3DCollection([case1], [("k", 0)], figsize=(5.0, 3.0))
+
+    assert tuple(coll.fig.get_size_inches()) == (5.0, 3.0)
 
 
 # ---------------------------------------------------------------------------
@@ -205,3 +243,205 @@ def test_3d_plot_faults_adds_a_line3d_collection(case1, fault_file):
 
     assert any(isinstance(c, Line3DCollection) for c in ax_3d.collections)
     assert sorted(t.get_text() for t in ax_3d.texts) == ["FAULT1", "FAULT2"]
+
+
+# ---------------------------------------------------------------------------
+# plot_polygons
+# ---------------------------------------------------------------------------
+
+
+def _line_collections(ax):
+    return [c for c in ax.collections if isinstance(c, LineCollection)]
+
+
+def test_plot_polygons_on_a_k_slice_draws_every_polygon_by_its_x_y(case1, polygon_files):
+    coll = SlicePoly2DCollection([case1], "k", 0)
+    coll.plot_polygons([polygon_files["outline"], polygon_files["line"]])
+
+    (lines,) = _line_collections(coll.ax_)
+    assert len(lines.get_segments()) == 2
+    assert {t.get_text() for t in coll.ax_.texts} == {"outline", "deep"}
+
+
+def test_plot_polygons_on_an_i_slice_projects_x_y_z_and_skips_outlines(case1, polygon_files):
+    coll = SlicePoly2DCollection([case1], "i", 5)
+    with pytest.warns(UserWarning, match="1 x,y-only polygon"):
+        coll.plot_polygons([polygon_files["outline"], polygon_files["line"]])
+
+    (lines,) = _line_collections(coll.ax_)
+    (segment,) = lines.get_segments()
+    # An i-slice plots (y, depth)
+    assert np.allclose(segment, [[500, 8350], [9500, 8350]])
+
+
+def test_plot_polygons_in_3d_puts_outlines_at_the_top_of_the_slices(case1, polygon_files):
+    coll = SlicePoly3DCollection([case1], [("k", 1)])
+    coll.plot_polygons(polygon_files["outline"])
+
+    (lines,) = [c for c in coll.ax_.collections if isinstance(c, Line3DCollection)]
+    top = coll.slice_coll[0].cell_corners_min()[2]
+    assert np.allclose(lines._segments3d[0][:, 2], top)  # pylint: disable=protected-access
+
+
+def test_plot_polygons_labels_can_be_replaced_or_turned_off(case1, polygon_files):
+    paths = [polygon_files["outline"], polygon_files["line"]]
+
+    relabelled = SlicePoly2DCollection([case1], "k", 0)
+    relabelled.plot_polygons(paths, labels=["Licence", ""])
+    unlabelled = SlicePoly2DCollection([case1], "k", 0)
+    unlabelled.plot_polygons(paths, labels=False)
+
+    assert [t.get_text() for t in relabelled.ax_.texts] == ["Licence"]
+    assert not unlabelled.ax_.texts
+
+
+def test_plot_polygons_warns_about_a_polygon_outside_the_slice(case1, tmp_path):
+    path = tmp_path / "km.npy"
+    # Far outside SPE1CASE1, which spans 0-10000 ft
+    np.save(path, np.array([[1.0, 1.0], [9.0, 1.0], [9.0, 9.0]]) + 100000)
+    coll = SlicePoly2DCollection([case1], "k", 0)
+
+    with pytest.warns(UserWarning, match=r"outside the plotted grid.*km \(km\.npy\)"):
+        coll.plot_polygons(str(path))
+
+
+def test_plot_colorbar_label_replaces_the_generated_one(case1):
+    coll = SlicePoly2DCollection([case1], "k", 0)
+    coll.plot(None, "PERMX", colorbar_label="$k_x$ [mD]")
+
+    colorbar_axes = coll.fig.axes[-1]
+    assert colorbar_axes.get_ylabel() == "$k_x$ [mD]"
+
+
+def test_plot_polygons_linewidth_defaults_to_2_and_can_be_changed(case1, polygon_files):
+    default = SlicePoly2DCollection([case1], "k", 0)
+    default.plot_polygons(polygon_files["line"])
+    thick = SlicePoly2DCollection([case1], "k", 0)
+    thick.plot_polygons(polygon_files["line"], linewidth=6.0)
+
+    assert _line_collections(default.ax_)[0].get_linewidth()[0] == 2.0
+    assert _line_collections(thick.ax_)[0].get_linewidth()[0] == 6.0
+
+
+def test_plot_title_can_be_turned_off(case1):
+    with_title = SlicePoly2DCollection([case1], "k", 0)
+    with_title.plot(60, "SGAS")
+    without_title = SlicePoly2DCollection([case1], "k", 0)
+    without_title.plot(60, "SGAS", title=False)
+
+    assert with_title.fig._suptitle.get_text() == "31.12.2019"  # pylint: disable=protected-access
+    assert without_title.fig._suptitle is None  # pylint: disable=protected-access
+
+
+def test_animate_title_can_be_turned_off(case1):
+    coll = SlicePoly2DCollection([case1], "k", 0)
+    coll.animate("SGAS", rstep_list=[0, 60], title=False)
+    coll.anim._init_draw()  # pylint: disable=protected-access
+    coll.anim._draw_frame(60)  # pylint: disable=protected-access
+
+    assert coll.fig._suptitle is None  # pylint: disable=protected-access
+
+
+def _well_texts(ax):
+    return sorted(t.get_text() for t in ax.texts)
+
+
+def test_plot_well_names_restricts_the_wells_drawn(case1):
+    # INJ is completed at k=0 only, PROD at k=2 only; an i- or j-slice through both would be
+    # needed to see both, so each is checked on its own layer
+    inj = SlicePoly2DCollection([case1], "k", 0)
+    inj.plot(60, "SGAS")
+    prod = SlicePoly2DCollection([case1], "k", 2)
+    prod.plot(60, "SGAS")
+    only_prod_named = SlicePoly2DCollection([case1], "k", 0)
+    only_prod_named.plot(60, "SGAS", well_names=["PROD"])
+
+    assert _well_texts(inj.ax_) == ["INJ"]
+    assert _well_texts(prod.ax_) == ["PROD"]
+    assert _well_texts(only_prod_named.ax_) == []
+
+
+def test_plot_well_names_keeps_a_named_well(case1):
+    coll = SlicePoly2DCollection([case1], "k", 0)
+    coll.plot(60, "SGAS", well_names=["INJ"])
+
+    assert _well_texts(coll.ax_) == ["INJ"]
+
+
+def test_plot_unknown_well_name_raises(case1):
+    coll = SlicePoly2DCollection([case1], "k", 0)
+
+    with pytest.raises(KeyError, match="NOPE"):
+        coll.plot(60, "SGAS", well_names=["NOPE"])
+
+
+def test_animate_checks_well_names_up_front(case1):
+    coll = SlicePoly2DCollection([case1], "k", 0)
+
+    with pytest.raises(KeyError, match="NOPE"):
+        coll.animate("SGAS", rstep_list=[0, 60], well_names=["NOPE"])
+
+
+# ---------------------------------------------------------------------------
+# log_scale
+# ---------------------------------------------------------------------------
+
+
+def _slice_collection(coll):
+    return next(c for c in coll.ax_.collections if hasattr(c, "get_array"))
+
+
+def test_plot_log_scale_uses_a_log_norm_with_a_positive_lower_limit(case1):
+    coll = SlicePoly2DCollection([case1], "i", 5)
+    coll.plot(None, "PERMX", log_scale=True)
+
+    norm = _slice_collection(coll).norm
+    assert isinstance(norm, LogNorm)
+    # PERMX is 500/50/200 mD by layer; the linear path would have started its range at 0
+    assert (norm.vmin, norm.vmax) == (50.0, 500.0)
+
+
+def test_plot_without_log_scale_keeps_the_linear_norm(case1):
+    coll = SlicePoly2DCollection([case1], "i", 5)
+    coll.plot(None, "PERMX")
+
+    assert not isinstance(_slice_collection(coll).norm, LogNorm)
+
+
+def test_plot_log_scale_honours_an_explicit_clim(case1):
+    coll = SlicePoly2DCollection([case1], "i", 5)
+    coll.plot(None, "PERMX", log_scale=True, clim=(10, 1000))
+
+    norm = _slice_collection(coll).norm
+    assert (norm.vmin, norm.vmax) == (10.0, 1000.0)
+
+
+def test_plot_log_scale_shares_limits_across_slices(case1):
+    coll = SlicePoly3DCollection([case1], [("k", 0), ("k", 1)])
+    coll.plot(None, "PERMX", log_scale=True)
+
+    norms = [c.norm for c in coll.ax_.collections if hasattr(c, "get_array")]
+    assert len(norms) == 2 and norms[0] is not norms[1]
+    assert {(n.vmin, n.vmax) for n in norms} == {(50.0, 500.0)}
+
+
+def test_plot_log_scale_with_no_positive_value_raises(case1):
+    coll = SlicePoly2DCollection([case1], "k", 0)
+
+    with pytest.raises(ValueError, match="needs positive values"):
+        coll.plot(0, "SGAS", log_scale=True)  # SGAS is 0 everywhere at report step 0
+
+
+def test_plot_log_scale_warns_about_values_it_cannot_colour(case1):
+    coll = SlicePoly2DCollection([case1], "k", 0)
+
+    with pytest.warns(UserWarning, match=r"\d+ cell value\(s\) are zero or negative"):
+        coll.plot(60, "PRESSURE", log_scale=True, diff_rstep=0)
+
+
+@pytest.mark.parametrize(("log_scale", "scale"), [(True, "log"), (False, "linear")])
+def test_animate_colorbar_follows_log_scale(case1, log_scale, scale):
+    coll = SlicePoly2DCollection([case1], "i", 5)
+    coll.animate("PERMX", rstep_list=[0, 60], log_scale=log_scale)
+
+    assert coll.fig.axes[-1].get_yscale() == scale

@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import datetime as dt
 import warnings
-from glob import glob
+from collections.abc import Iterable
 from typing import Any, Iterator
 
 import numpy as np
 from numpy.typing import NDArray
-from opm.io.ecl import ERst
+from opm.io.ecl import EclFile, ERst
 
+from opm_vis.utils.cases import case_files
 from opm_vis.utils.timeline import DAYS_PER_YEAR
 from opm_vis.utils.timeline import format_timeline as _format_timeline
 from opm_vis.utils.timeline import timeline_entries as _timeline_entries
@@ -38,6 +39,10 @@ _IGNORE = frozenset(
     }
 )
 
+# XWEL items with well rates: oil, water, gas and reservoir voidage. Injection is stored as
+# negative production rates, so these cover both producers and injectors.
+_XWEL_RATES = [0, 1, 2, 4]
+
 
 # pylint: disable=too-few-public-methods
 class _RestartFiles:
@@ -55,14 +60,18 @@ class _RestartFiles:
             List of paths with restart files. Main folder is in paths[0]; rest of entries, if any,
             are folders with simulator restart runs.
         """
+        # Kept for RestartReader.unit_convention()'s .INIT fallback, which needs the main run's
+        # own path prefix (paths[0]) to look for a .INIT file once no restart data exists yet.
+        self._paths = paths
+
         # Instantiate OPM restart class. Need to search paths for .UNRST or .X files
         self.rst = []
         for path in paths:
             # Init. restart file list for current search path
             restart_files = []
 
-            unrst_files = glob(path + "*.UNRST")
-            x_files = glob(path + "*.X*")
+            unrst_files = case_files(path, ".UNRST")
+            x_files = case_files(path, ".X")
 
             # Are there UNRST and X files in same folder? We load the UNRST file and issue warning
             if unrst_files and x_files:
@@ -194,8 +203,70 @@ class RestartReader(_RestartFiles):
         return self.rst[erst_idx][("INTEHEAD", rstep)][item]
 
     def unit_convention(self) -> str:
-        """Return unit convention used in run"""
-        return ["metric", "field", "lab", "pvt-m"][self.intehead(2, 0) - 1]
+        """
+        Return the unit convention used in the run
+
+        Returns
+        -------
+        str
+            One of 'metric', 'field', 'lab' or 'pvt-m'
+
+        Raises
+        ------
+        ValueError
+            If item 2 of INTEHEAD could not be found in either the restart files or the main
+            run's .INIT file
+
+        Notes
+        -----
+        Falls back to the main run's .INIT file when report step 0 has no restart data - e.g. a
+        dry run that has only been initialized, with no .UNRST/.X files yet. INTEHEAD's own
+        unit-convention item does not change between the two, and a case that got far enough to
+        write a .INIT file always has one, well before it has any restart data.
+        """
+        try:
+            item = self.intehead(2, 0)
+        except ValueError:
+            item = self._intehead_from_init(2)
+        return ["metric", "field", "lab", "pvt-m"][item - 1]
+
+    def _intehead_from_init(self, item: int) -> int:
+        """
+        Fallback for unit_convention(): read one INTEHEAD item from the main run's .INIT file
+
+        Parameters
+        ----------
+        item : int
+            Requested item in INTEHEAD
+
+        Returns
+        -------
+        int
+            Information from header
+
+        Raises
+        ------
+        ValueError
+            If no .INIT file was found for the main run
+
+        Notes
+        -----
+        Reads through the raw EclFile interface rather than opm.util.EModel (used elsewhere for
+        .INIT data, e.g. opm_vis.utils.static.InitReader): EModel is scoped to per-active-cell
+        arrays and does not expose header arrays like INTEHEAD at all.
+        """
+        init_files = case_files(self._paths[0], ".INIT")
+        if not init_files:
+            raise ValueError(
+                f"INTEHEAD item {item} not found in restart file(s), and no .INIT file was "
+                f"found in {self._paths[0]} to fall back to!"
+            )
+        if len(init_files) > 1:
+            warnings.warn(
+                f"Multiple .INIT files in {self._paths[0]}. Importing {init_files[0]}."
+            )
+
+        return EclFile(init_files[0])["INTEHEAD"][item]
 
 
 class Report(_RestartFiles):
@@ -438,6 +509,9 @@ class Wells(_RestartFiles):
         # Call parent class __init__
         super().__init__(paths)
 
+        # Filled on first use by names()
+        self._names: list[str] | None = None
+
         # Organize well information for all report dates
         self._well_info_all_report_steps()
 
@@ -493,6 +567,14 @@ class Wells(_RestartFiles):
                 iwel = np.reshape(erst[("IWEL", rstep)], (nwells, niwelz))
                 icon = np.reshape(erst[("ICON", rstep)], (nwells, ncwmax, niconz))
 
+                # Well-level surface/reservoir rates from XWEL, for alternative well status check
+                if "XWEL" in available_keys:
+                    nxwelz = intehead[26]
+                    xwel = np.reshape(erst[("XWEL", rstep)], (nwells, nxwelz))
+                    flowing = np.any(xwel[:, _XWEL_RATES] != 0, axis=1)
+                else:
+                    flowing = np.zeros(nwells, dtype=bool)
+
                 # Loop over wells and organize info in list as follows
                 # well_info = [i, j, k0, k1, ..., kend, status]
                 # NOTE: Suited for vertical wells at the moment: i, j are well head indices. Status
@@ -508,12 +590,49 @@ class Wells(_RestartFiles):
                         (icon[i, icon[i, :, 3] > 0, 3] - 1).tolist()
                     )
 
-                    # Well status (open/shut = True/False).
+                    # Well status (open/shut = True/False). OPM only sets IWEL status to open if a
+                    # connection has a nonzero oil, water or gas rate, which misses e.g. solvent
+                    # injectors, so a nonzero well rate in XWEL also counts as open.
                     # OBS: convert to Python bool instead of numpy.bool_
-                    self._well_info[ind][name].extend([bool(iwel[i, 10] > 0)])
+                    self._well_info[ind][name].extend([bool(iwel[i, 10] > 0 or flowing[i])])
 
                 # Increase internal well_info index counter
                 ind += 1
+
+    def names(self) -> list[str]:
+        """
+        Names of every well at any report step
+
+        Returns
+        -------
+        list[str]
+            Sorted, without repeats. Includes wells that are only present at some report steps,
+            e.g. ones drilled later in the run
+        """
+        if self._names is None:
+            self._names = sorted({name for info in self._well_info for name in info})
+        return self._names
+
+    def check_names(self, names: Iterable[str]) -> None:
+        """
+        Check that names are all wells in the case
+
+        Parameters
+        ----------
+        names : Iterable[str]
+            Well names to check
+
+        Raises
+        ------
+        KeyError
+            If a name is not a well at any report step; the message lists the ones that are
+        """
+        unknown = [name for name in names if name not in self.names()]
+        if unknown:
+            raise KeyError(
+                f"Unknown well name(s): {', '.join(unknown)}. Wells in the case: "
+                f"{', '.join(self.names()) or 'none'}."
+            )
 
     def __getitem__(self, rstep: int) -> dict[str, list[Any]]:
         """

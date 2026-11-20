@@ -3,15 +3,16 @@ opm-vis-mpl
 
 The alternative Matplotlib backend's command-line tool, drawing each cell as a flat quad instead
 of real geometry. It is less developed than :doc:`cli_pv` and covers a smaller subset: one slice
-at a time, no wells, no glyphs, no thresholding or clipping, and no whole-grid view. See
-:doc:`cli` for the shared ``PATHS`` convention and 1-based ``-i``/``-j``/``-k`` indexing.
+at a time, wells only where they are completed on that slice, no glyphs, no thresholding or
+clipping, and no whole-grid view. See
+:doc:`cli` for the shared ``-f``/``--folder`` convention and 1-based ``-i``/``-j``/``-k`` indexing.
 
 Each option group below has its own page with a description and a runnable example of every
 option in it: :doc:`cli_mpl_input`, :doc:`cli_mpl_grid_only`, :doc:`cli_mpl_slicing`,
 :doc:`cli_mpl_rstep_animation`, :doc:`cli_mpl_diff`, :doc:`cli_mpl_calculator`,
-:doc:`cli_mpl_view`, :doc:`cli_mpl_fault`, :doc:`cli_mpl_output`. This backend supports a smaller
-option set than :doc:`cli_pv` - see its option pages for wells, glyphs, thresholding and
-clipping, none of which are available here.
+:doc:`cli_mpl_view`, :doc:`cli_mpl_wells`, :doc:`cli_mpl_fault`, :doc:`cli_mpl_polygons`,
+:doc:`cli_mpl_output`. This backend supports a smaller option set than :doc:`cli_pv` - see its
+option pages for glyphs, thresholding and clipping, none of which are available here.
 
 Option reference
 ----------------
@@ -31,5 +32,7 @@ Option reference
    cli_mpl_diff
    cli_mpl_calculator
    cli_mpl_view
+   cli_mpl_wells
    cli_mpl_fault
+   cli_mpl_polygons
    cli_mpl_output

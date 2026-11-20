@@ -1,12 +1,13 @@
 """ Static parameters from INIT files """
 from __future__ import annotations
 
-from glob import glob
 import warnings
 from typing import Any
 
 from numpy.typing import NDArray
 from opm.util import EModel
+
+from opm_vis.utils.cases import case_files
 
 # Keywords to ignore
 _IGNORE = frozenset({"INTEHEAD", "LOGIHEAD", "DOUBHEAD", "STARTSOL", "ENDSOL"})
@@ -25,11 +26,11 @@ class _InitFile:
         Parameters
         ----------
         path : str
-            Path prefix used to locate the .INIT file (glob pattern `path + "*.INIT"`)
+            Case path prefix of the .INIT file, e.g. "run/CASE" for run/CASE.INIT
         """
         # Check path for .INIT file and instantiate if it exist
         self.init = None
-        init_files = glob(path + "*.INIT")
+        init_files = case_files(path, ".INIT")
         if init_files:
             if len(init_files) > 1:
                 warnings.warn(

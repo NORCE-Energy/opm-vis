@@ -1,40 +1,56 @@
 """opm-vis-pv: plot a keyword on a grid slice with the PyVista backend"""
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import click
+from click.core import ParameterSource
 
 from opm_vis.cli.common import (
     CALCULATOR_OPTIONS,
     CLIM_OPTION,
     CMAP_OPTION,
+    COLORBAR_LABEL_OPTION,
     COMMAND_SETTINGS,
     DIFF_OPTIONS,
     GRID_ONLY_OPTIONS,
     KEYWORD_OPTION,
-    PATHS_ARGUMENT,
+    FAULT_LABELS_OPTION,
+    FOLDER_OPTION,
+    FONT_SCALE_OPTION,
+    POLYGON_OPTIONS,
     RSTEP_OR_ANIMATE_OPTIONS,
+    SAVE_NAME_OPTION,
     SAVE_OPTION,
     SHOW_EDGES_OPTION,
     SLICE_OPTIONS,
+    WELL_NAME_OPTION,
     add_options,
+    check_colorbar_label,
     default_output_name,
     grid_color_kwargs,
     handle_errors,
     parse_rstep,
-    require_dynamic_keyword_error,
+    polygon_labels_arg,
     resolve_animate_rsteps,
     resolve_calculator,
     resolve_diff_rstep,
     resolve_keyword,
+    resolve_keyword_rstep,
     resolve_paths,
     resolve_slices,
+    save_folder_option,
+    save_path,
+    wants_save,
 )
 from opm_vis.pvplot import GridPlotter
+from opm_vis.pvplot.camera import Camera
 from opm_vis.utils.calc import resolve_calc_range
 from opm_vis.utils.grid import slice_dimension_size
+
+# Default --save-folder names, inside the first -f/--folder
+_FIGURE_FOLDER = "pv-figs"
+_ANIMATION_FOLDER = "pv-gifs"
 
 # --glyph-color's default: colour arrows by vector magnitude (add_glyphs' own "scalars" default)
 # rather than a flat colour. Not a real colour name, so it can't collide with one.
@@ -57,6 +73,108 @@ def _glyph_color_kwargs(glyph_color: str) -> dict:
         colour, which add_glyphs treats as overriding magnitude colouring
     """
     return {} if glyph_color.lower() == _GLYPH_MAGNITUDE else {"color": glyph_color}
+
+
+class _OneOrThreeOption(click.Option):
+    """
+    Option taking either one value or three, e.g. --glyphs DISP or --glyphs DISPX DISPY DISPZ
+
+    Click's options take a fixed number of values, so this greedily takes up to two more
+    values after the first one, stopping at the next option. The raw tuple of one to three
+    values is passed on as is, for the option's callback to validate and expand.
+    """
+
+    def add_to_parser(self, parser, ctx: click.Context) -> None:
+        super().add_to_parser(parser, ctx)
+        # pylint: disable=protected-access
+        for opt in self.opts:
+            opts = parser._long_opt if opt in parser._long_opt else parser._short_opt
+            parser_opt = opts[opt]
+            parser_opt.process = self._make_greedy(parser_opt.process)
+
+    @staticmethod
+    def _make_greedy(process):
+        def greedy_process(value, state) -> None:
+            values = [value]
+            while len(values) < 3 and state.rargs and not state.rargs[0].startswith("-"):
+                values.append(state.rargs.pop(0))
+            process(tuple(values), state)
+
+        return greedy_process
+
+
+def _expand_glyphs(
+    _ctx: click.Context, _param: click.Parameter, value: tuple[str, ...] | None
+) -> tuple[str, str, str] | None:
+    """
+    Expand --glyphs into its three vector-component keywords
+
+    Parameters
+    ----------
+    value : tuple[str, ...] | None
+        One to three raw values of --glyphs, or None if it was not given
+
+    Returns
+    -------
+    tuple[str, str, str] | None
+        The three keywords as given, or BASE expanded to BASEX BASEY BASEZ if only
+        one was given; None if --glyphs was not given
+
+    Raises
+    ------
+    click.BadParameter
+        If two values were given
+    """
+    if value is None:
+        return None
+    if len(value) == 1:
+        base = value[0]
+        return (f"{base}X", f"{base}Y", f"{base}Z")
+    if len(value) == 3:
+        return value
+    raise click.BadParameter(
+        f"takes one keyword base (e.g. DISP) or three keywords (e.g. DISPX DISPY DISPZ), "
+        f"got {' '.join(value)}."
+    )
+
+
+def _parse_camera(camera_text: str | None) -> Camera | None:
+    """
+    Parse --camera, rejecting it together with --azimuth/--elevation
+
+    Parameters
+    ----------
+    camera_text : str | None
+        Value of --camera
+
+    Returns
+    -------
+    Camera | None
+        None if --camera was not given
+
+    Raises
+    ------
+    click.UsageError
+        If the value is not a valid camera, or --azimuth/--elevation was also given
+    """
+    if camera_text is None:
+        return None
+
+    ctx = click.get_current_context()
+    given = [
+        f"--{name}"
+        for name in ("azimuth", "elevation")
+        if ctx.get_parameter_source(name) is ParameterSource.COMMANDLINE
+    ]
+    if given:
+        raise click.UsageError(
+            f"--camera places the camera exactly; drop {' and '.join(given)}, or drop --camera."
+        )
+
+    try:
+        return Camera.from_text(camera_text)
+    except ValueError as exc:
+        raise click.UsageError(f"--camera: {exc}") from exc
 
 
 def _parse_threshold(raw: str | None) -> float | tuple[float, float] | None:
@@ -94,7 +212,9 @@ def _parse_threshold(raw: str | None) -> float | tuple[float, float] | None:
     return values[0] if len(values) == 1 else (values[0], values[1])
 
 
-def _resolve_actual_rstep(plotter: GridPlotter, keyword: str, rstep_value: int | None) -> int:
+def _resolve_actual_rstep(
+    plotter: GridPlotter, keyword: str, rstep_value: int | None
+) -> int | None:
     """
     Resolve the report step to read keyword at, requiring one if it changes over time
 
@@ -109,23 +229,14 @@ def _resolve_actual_rstep(plotter: GridPlotter, keyword: str, rstep_value: int |
 
     Returns
     -------
-    int
-        rstep_value itself if given, otherwise the case's first report step - only once
-        confirmed that keyword does not change over time, since defaulting silently would
-        otherwise hide a keyword that actually needs an explicit --rstep
-
-    Raises
-    ------
-    click.UsageError
-        If rstep_value is None and keyword changes over time
+    int | None
+        See resolve_keyword_rstep: None only for an .INIT keyword in a case with no restart
+        files
     """
-    if rstep_value is not None:
-        return rstep_value
-
-    probe_rstep = plotter.case.report.report_steps()[0]
-    if not plotter.case.is_static(keyword, probe_rstep):
-        raise require_dynamic_keyword_error(keyword)
-    return probe_rstep
+    case = plotter.case
+    return resolve_keyword_rstep(
+        keyword, rstep_value, case.report.report_steps(), case.restart, case.static
+    )
 
 
 def _wells_slices(
@@ -152,7 +263,7 @@ def _wells_slices(
 
 
 @click.command(**COMMAND_SETTINGS)
-@PATHS_ARGUMENT
+@FOLDER_OPTION
 @KEYWORD_OPTION
 @add_options(GRID_ONLY_OPTIONS)
 @add_options(SLICE_OPTIONS)
@@ -160,6 +271,8 @@ def _wells_slices(
 @add_options(DIFF_OPTIONS)
 @add_options(CALCULATOR_OPTIONS)
 @SAVE_OPTION
+@SAVE_NAME_OPTION
+@save_folder_option(_FIGURE_FOLDER, _ANIMATION_FOLDER)
 @CMAP_OPTION
 @CLIM_OPTION
 @click.option(
@@ -173,6 +286,16 @@ def _wells_slices(
 @click.option("--azimuth", type=float, default=30.0, show_default=True, help="--view 3d only.")
 @click.option(
     "--elevation", type=float, default=45.0, show_default=True, help="--view 3d only."
+)
+@click.option(
+    "--camera",
+    "camera_text",
+    default=None,
+    metavar="X,Y,Z/FX,FY,FZ/UX,UY,UZ[/SCALE]",
+    help="Place the camera exactly: its position, the point it looks at, its view-up "
+    "direction and, for --view 2d, its zoom. The interactive window shows these values in its "
+    "lower left corner and prints them on closing, ready to paste. Reproduces the same view "
+    "only with the same --z-scale and --window-size. Replaces --azimuth/--elevation.",
 )
 @click.option(
     "--z-scale", type=float, default=5.0, show_default=True, help="Vertical exaggeration."
@@ -215,6 +338,9 @@ def _wells_slices(
     "on the chosen -i/-j/-k slice(s) is drawn, or every fault in the file if no slice was "
     "given.",
 )
+@FAULT_LABELS_OPTION
+@WELL_NAME_OPTION
+@add_options(POLYGON_OPTIONS)
 @SHOW_EDGES_OPTION
 @click.option(
     "--quads",
@@ -273,15 +399,19 @@ def _wells_slices(
 )
 @click.option("--window-size", type=(int, int), default=None, metavar="WIDTH HEIGHT")
 @click.option("--no-colorbar", is_flag=True, default=False, help="Hide the scalar bar.")
+@COLORBAR_LABEL_OPTION
 @click.option("--no-title", is_flag=True, default=False, help="Hide the report-date title.")
 @click.option(
     "--glyphs",
-    type=(str, str, str),
+    cls=_OneOrThreeOption,
+    type=click.UNPROCESSED,
+    callback=_expand_glyphs,
     default=None,
-    metavar="X Y Z",
+    metavar="X Y Z | BASE",
     help=(
         "Add vector glyphs (arrows) on every chosen slice from these three keyword "
-        "components, e.g. DISPX DISPY DISPZ."
+        "components, e.g. DISPX DISPY DISPZ, or one BASE expanded to BASEX BASEY "
+        "BASEZ, e.g. DISP."
     ),
 )
 @click.option(
@@ -317,10 +447,11 @@ def _wells_slices(
         "flat colour. An explicit colour overrides magnitude colouring."
     ),
 )
+@FONT_SCALE_OPTION
 @handle_errors
 # pylint: disable=too-many-arguments,too-many-locals
 def main(
-    paths: tuple[str, ...],
+    folders: tuple[str, ...],
     keyword: str | None,
     grid_only: bool,
     grid_color: str | None,
@@ -335,12 +466,15 @@ def main(
     diff_kind: str,
     calc_kind: str | None,
     calc_count: int | None,
-    save: str | None,
+    save: bool,
+    save_folder: str | None,
+    save_name: str | None,
     cmap: str,
     clim: tuple[float, float] | None,
     view: str,
     azimuth: float,
     elevation: float,
+    camera_text: str | None,
     z_scale: float,
     axes: bool,
     log_scale: bool,
@@ -349,6 +483,13 @@ def main(
     wireframe: bool,
     fault_path: str | None,
     fault_names: tuple[str, ...],
+    fault_labels: bool,
+    well_names: tuple[str, ...],
+    polygon_paths: tuple[str, ...],
+    polygon_color: str,
+    polygon_linewidth: float | None,
+    polygon_labels: tuple[str, ...],
+    show_polygon_labels: bool,
     show_edges: bool,
     quads: bool,
     threshold: str | None,
@@ -360,19 +501,21 @@ def main(
     opacity: float,
     window_size: tuple[int, int] | None,
     no_colorbar: bool,
+    colorbar_label: str | None,
     no_title: bool,
     glyphs: tuple[str, str, str] | None,
     glyph_scale: bool,
     glyph_every_n: int,
     glyph_factor: float | None,
     glyph_color: str,
+    font_scale: float,
 ) -> None:
     """
     Plot --keyword on one or more grid slices with the PyVista backend, or animate it over
     report steps with --animate.
 
-    PATHS are filename prefixes: the first is the main run, any further ones are restart runs.
-    Defaults to searching the working directory (./) if not given.
+    The case is found in -f/--folder, by default the current folder. Several cases found
+    there are read as one run: the main run followed by its restarts.
 
     See the documentation for the full option reference with examples.
     """
@@ -418,6 +561,13 @@ def main(
         )
     if fault_names and fault_path is None:
         raise click.UsageError("--fault-name needs --fault.")
+    if well_names and not (wells or all_wells):
+        raise click.UsageError("--well-name has no wells to select with --no-wells.")
+    check_colorbar_label(colorbar_label, no_colorbar=no_colorbar, grid_only=grid_only)
+    camera = _parse_camera(camera_text)
+    polygon_labels_value = polygon_labels_arg(
+        polygon_paths, polygon_labels, show_polygon_labels
+    )
     rstep_value = parse_rstep(rstep, animate)
     # --diff has no effect in --grid-only (there is no --keyword to difference), so it is
     # forced off here rather than left to silently do nothing while still showing up in the
@@ -429,8 +579,11 @@ def main(
     grid_kwargs = grid_color_kwargs(grid_color)
 
     with GridPlotter(
-        resolve_paths(paths), off_screen=save is not None, window_size=window_size,
+        resolve_paths(folders),
+        off_screen=wants_save(save, save_folder, save_name),
+        window_size=window_size,
         z_scale=z_scale,
+        font_scale=font_scale,
     ) as plotter:
         calc_end = None
         if calc_slice is not None:
@@ -503,13 +656,31 @@ def main(
 
         if fault_path is not None:
             plotter.add_faults(
-                fault_path, names=list(fault_names) or None, slices=slices or None
+                fault_path,
+                names=list(fault_names) or None,
+                slices=slices or None,
+                labels=fault_labels,
+            )
+        if polygon_paths:
+            # A flat x,y outline at the top of the grid is only seen edge-on in a 2D view of an
+            # i- or j-slice, so it is left out there
+            line_kwargs: dict[str, Any] = {}
+            if polygon_linewidth is not None:
+                line_kwargs["line_width"] = polygon_linewidth
+            plotter.add_polygons(
+                list(polygon_paths),
+                outlines=not (view == "2d" and slices[0][0] != "k"),
+                labels=polygon_labels_value,
+                color=polygon_color,
+                **line_kwargs,
             )
 
         if view == "2d":
             plotter.view_2d(slices[0][0])
         else:
             plotter.view_3d(azimuth=azimuth, elevation=elevation)
+        if camera is not None:
+            plotter.set_camera(camera)
 
         if axes:
             plotter.show_axes_grid()
@@ -557,16 +728,22 @@ def main(
                     )
 
             output = None
-            if save is not None:
-                output = Path(save) if save else default_output_name(
-                    f"{keyword}-clip" if clip is not None else keyword,
-                    slices,
-                    rsteps=steps,
-                    ext="gif",
-                    diff_rstep=resolved_diff_rstep,
-                    diff_kind=diff_kind,
-                    calc_kind=calc_kind,
-                    calc_end=calc_end,
+            if wants_save(save, save_folder, save_name):
+                output = save_path(
+                    save_folder,
+                    default_output_name(
+                        f"{keyword}-clip" if clip is not None else keyword,
+                        slices,
+                        rsteps=steps,
+                        ext="gif",
+                        diff_rstep=resolved_diff_rstep,
+                        diff_kind=diff_kind,
+                        calc_kind=calc_kind,
+                        calc_end=calc_end,
+                    ),
+                    folders=folders,
+                    default=_ANIMATION_FOLDER,
+                    save_name=save_name,
                 )
             plotter.animate(
                 keyword,
@@ -576,6 +753,7 @@ def main(
                 clim=clim,
                 wells=wells or all_wells,
                 wells_slices=_wells_slices(all_wells, slices),
+                wells_names=list(well_names) or None,
                 vectors=glyphs is not None,
                 title=not no_title,
                 cmap=cmap,
@@ -586,6 +764,7 @@ def main(
                 slice_ind=calc_slice_ind,
                 calc_kind=calc_kind,
                 calc_count=calc_count,
+                scalar_bar_title=colorbar_label,
             )
             return
 
@@ -593,16 +772,19 @@ def main(
         # with animate=False (see parse_rstep): a bare int or None, never a range
         assert rstep_value is None or isinstance(rstep_value, int)
 
+        actual_rstep: int | None
         if grid_only:
             # A solid-colour grid is time-invariant, so no report step is strictly needed;
             # one is still resolved for --wells/the title, defaulting to the first available.
-            actual_rstep = (
-                rstep_value
-                if rstep_value is not None
-                else plotter.case.report.report_steps()[0]
-            )
+            # A dry run with no restart files has none at all, and then both are skipped.
+            report_steps = plotter.case.report.report_steps()
+            if rstep_value is not None:
+                actual_rstep = rstep_value
+            else:
+                actual_rstep = report_steps[0] if report_steps else None
         elif threshold_value is not None:
-            assert threshold_rstep is not None  # resolved above, before add_threshold
+            # Resolved above, before add_threshold; None for an .INIT keyword in a case with no
+            # restart files
             actual_rstep = threshold_rstep
         else:
             # Not grid_only, so resolve_keyword guarantees a keyword here
@@ -611,8 +793,13 @@ def main(
 
         plotter.rstep = actual_rstep
         if not grid_only:
-            # keyword is required unless grid_only (checked by resolve_keyword)
+            # keyword is required unless grid_only (checked by resolve_keyword). actual_rstep
+            # is None for a case with no restart files, which is fine for an .INIT keyword
             assert keyword is not None
+            if actual_rstep is None and resolved_diff_rstep is not None:
+                raise click.UsageError(
+                    "--diff needs restart data, but this case has no report steps."
+                )
             plotter.set_scalars(
                 keyword,
                 actual_rstep,
@@ -620,6 +807,7 @@ def main(
                 cmap=cmap,
                 log_scale=log_scale,
                 scalar_bar=not no_colorbar,
+                scalar_bar_title=colorbar_label,
                 diff_rstep=resolved_diff_rstep,
                 diff_kind=diff_kind,
                 slice_dim=calc_slice_dim,
@@ -627,9 +815,17 @@ def main(
                 calc_kind=calc_kind,
                 calc_count=calc_count,
             )
-        if wells or all_wells:
-            plotter.add_wells(actual_rstep, slices=_wells_slices(all_wells, slices))
+        if (wells or all_wells) and actual_rstep is not None:
+            plotter.add_wells(
+                actual_rstep,
+                slices=_wells_slices(all_wells, slices),
+                names=list(well_names) or None,
+            )
         if glyphs is not None:
+            if actual_rstep is None:
+                raise click.UsageError(
+                    "--glyphs needs restart data, but this case has no report steps."
+                )
             x_kw, y_kw, z_kw = glyphs
             # See the animate branch above for why slices or [(None, None)]
             for slice_dim, slice_index in slices or [(None, None)]:
@@ -646,26 +842,34 @@ def main(
                     every_n=glyph_every_n,
                     **_glyph_color_kwargs(glyph_color),
                 )
-        if not no_title:
+        if not no_title and actual_rstep is not None:
             plotter.set_title()
 
-        if save is None:
-            plotter.show()
+        if not wants_save(save, save_folder, save_name):
+            shown = plotter.show(camera_overlay=True)
+            if shown is not None:
+                click.echo(f"View: {shown.cli_options()}")
         else:
             keyword_tag = keyword or "GRID"
             if threshold_value is not None:
                 keyword_tag += "-threshold"
             if clip is not None:
                 keyword_tag += "-clip"
-            output = Path(save) if save else default_output_name(
-                keyword_tag,
-                slices,
-                rstep=actual_rstep,
-                ext="png",
-                diff_rstep=resolved_diff_rstep,
-                diff_kind=diff_kind,
-                calc_kind=calc_kind,
-                calc_end=calc_end,
+            output = save_path(
+                save_folder,
+                default_output_name(
+                    keyword_tag,
+                    slices,
+                    rstep=actual_rstep,
+                    ext="png",
+                    diff_rstep=resolved_diff_rstep,
+                    diff_kind=diff_kind,
+                    calc_kind=calc_kind,
+                    calc_end=calc_end,
+                ),
+                folders=folders,
+                default=_FIGURE_FOLDER,
+                save_name=save_name,
             )
             plotter.screenshot(output)
 

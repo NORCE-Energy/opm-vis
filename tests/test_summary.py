@@ -31,8 +31,8 @@ def restart_paths(tmp_path_factory, data_dir):
     restart_dir.mkdir()
 
     for ext in (".SMSPEC", ".UNSMRY"):
-        shutil.copy(data_dir / f"SPE1CASE2{ext}", main_dir / f"CASE{ext}")
-        shutil.copy(data_dir / f"SPE1CASE2_RESTART_60{ext}", restart_dir / f"CASE{ext}")
+        shutil.copy(data_dir / "SPE1CASE2" / f"SPE1CASE2{ext}", main_dir / f"CASE{ext}")
+        shutil.copy(data_dir / "SPE1CASE2" / f"SPE1CASE2_RESTART_60{ext}", restart_dir / f"CASE{ext}")
 
     return [str(main_dir / "CASE"), str(restart_dir / "CASE")]
 
@@ -50,7 +50,7 @@ def full_run_reader(tmp_path_factory, data_dir):
     # "SPE1CASE2" prefix would otherwise also match SPE1CASE2_RESTART_60's files.
     main_dir = tmp_path_factory.mktemp("full_run_data")
     for ext in (".SMSPEC", ".UNSMRY"):
-        shutil.copy(data_dir / f"SPE1CASE2{ext}", main_dir / f"CASE{ext}")
+        shutil.copy(data_dir / "SPE1CASE2" / f"SPE1CASE2{ext}", main_dir / f"CASE{ext}")
 
     return SummaryReader([str(main_dir / "CASE")])
 
@@ -69,11 +69,11 @@ def test_no_smspec_file_found_warns_and_skips_that_path(tmp_path, case1):
 
 def test_multiple_smspec_files_warns_and_loads_first(tmp_path, data_dir):
     for name in ("CASE1", "CASE2"):
-        shutil.copy(data_dir / "SPE1CASE1.SMSPEC", tmp_path / f"{name}.SMSPEC")
-        shutil.copy(data_dir / "SPE1CASE1.UNSMRY", tmp_path / f"{name}.UNSMRY")
+        shutil.copy(data_dir / "SPE1CASE1" / "SPE1CASE1.SMSPEC", tmp_path / f"{name}.SMSPEC")
+        shutil.copy(data_dir / "SPE1CASE1" / "SPE1CASE1.UNSMRY", tmp_path / f"{name}.UNSMRY")
 
     with pytest.warns(UserWarning, match="Multiple .SMSPEC files"):
-        sr = SummaryReader([str(tmp_path / "CASE")])
+        sr = SummaryReader([str(tmp_path)])
 
     assert len(sr.smry) == 1
 

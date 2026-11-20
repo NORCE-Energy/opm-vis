@@ -9,7 +9,7 @@ the x axis, so the time axis is only labelled along the bottom of each column.
 
 .. code-block:: bash
 
-   opm-vis-sum tests/data/SPE1CASE1 -K FOPR -K FGOR -K WBHP:PROD --subplots
+   opm-vis-sum -f tests/data/SPE1CASE1 -K FOPR -K FGOR -K WBHP:PROD --subplots
 
 This is the answer to vectors that do not share a unit. A single axes holding a rate and a
 pressure has no meaningful y label, and says so with a warning; one vector per subplot always
@@ -27,8 +27,8 @@ or four give a 2x2, five or six a 2x3.
 
 .. code-block:: bash
 
-   opm-vis-sum tests/data/SPE1CASE1 -K FOPR -K FGOR -K WBHP:PROD --subplots --layout 3 1
-   opm-vis-sum tests/data/SPE1CASE1 -K FOPR -K FGOR --subplots --layout 2 1
+   opm-vis-sum -f tests/data/SPE1CASE1 -K FOPR -K FGOR -K WBHP:PROD --subplots --layout 3 1
+   opm-vis-sum -f tests/data/SPE1CASE1 -K FOPR -K FGOR --subplots --layout 2 1
 
 A single column stacks the vectors above one another over a shared time axis, which is the usual
 way to read rates against each other. The grid may have room to spare - the unused cells are
@@ -45,8 +45,8 @@ subplot, up to 16 by 11 inches for a large one.
 
 .. code-block:: bash
 
-   opm-vis-sum tests/data/SPE1CASE1 -K FOPR --figsize 10 4
-   opm-vis-sum tests/data/SPE1CASE1 -K 'W*:PROD' --subplots --figsize 20 12
+   opm-vis-sum -f tests/data/SPE1CASE1 -K FOPR --figsize 10 4
+   opm-vis-sum -f tests/data/SPE1CASE1 -K 'W*:PROD' --subplots --figsize 20 12
 
 The scaling is what keeps a wildcard matching a dozen wells readable - one figure's worth of
 space shared between twelve subplots leaves each of them too small for its own axis labels.

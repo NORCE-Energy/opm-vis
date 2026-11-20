@@ -28,7 +28,7 @@ class CaseData:
         ----------
         paths : list[str]
             List of paths to OPM files. First entry considered to be the main folder; rest of
-            entries are folders with restart runs. Each entry is a filename prefix.
+            entries are restart runs. Each entry is a case path prefix, e.g. "run/CASE".
 
         Notes
         -----
@@ -59,7 +59,7 @@ class CaseData:
             self._wells = Wells(self._paths)
         return self._wells
 
-    def read(self, keyword: str, rstep: int) -> NDArray[Any]:
+    def read(self, keyword: str, rstep: int | None) -> NDArray[Any]:
         """
         Read a keyword at one report step
 
@@ -67,8 +67,9 @@ class CaseData:
         ----------
         keyword : str
             OPM keyword
-        rstep : int
-            Report step
+        rstep : int | None
+            Report step, or None to read the keyword from the .INIT file alone, e.g. for a
+            case with no restart files
 
         Returns
         -------
@@ -81,7 +82,7 @@ class CaseData:
         matters because a handful of mnemonics (PRESSURE, RS, SGAS, SWAT) appear in both,
         where the .INIT copy is only the initial state.
         """
-        if not self.is_static(keyword, rstep):
+        if rstep is not None and not self.is_static(keyword, rstep):
             return self.restart.read(keyword, rstep)
 
         if keyword in self.static.available_keywords():
@@ -172,7 +173,7 @@ class CaseData:
 
         return float(low), float(high)
 
-    def is_static(self, keyword: str, rstep: int) -> bool:
+    def is_static(self, keyword: str, rstep: int | None) -> bool:
         """
         Check whether a keyword has to come from the .INIT file
 
@@ -180,16 +181,17 @@ class CaseData:
         ----------
         keyword : str
             OPM keyword
-        rstep : int
-            Report step
+        rstep : int | None
+            Report step, or None for no report step at all, which only the .INIT file can
+            serve
 
         Returns
         -------
         bool
             True if the keyword is absent from the restart files at this report step, and so
-            does not vary with time
+            does not vary with time; always True for rstep None
         """
-        return keyword not in self.restart.available_keywords(rstep)
+        return rstep is None or keyword not in self.restart.available_keywords(rstep)
 
     def unit_convention(self) -> str:
         """

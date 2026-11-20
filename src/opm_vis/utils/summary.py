@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import datetime as dt
 import warnings
-from glob import glob
 
 import numpy as np
 from numpy.typing import NDArray
 from opm.io.ecl import ESmry
 
+from opm_vis.utils.cases import case_files
 from opm_vis.utils.timeline import DAYS_PER_YEAR
 
 # Summary files report at ministep resolution, so a timestep can land part way into a day; days
@@ -36,7 +36,7 @@ class SummaryReader:
         smry_path = []
         for path in paths:
             # Check if .SMSPEC file is in path and raise warning if not; else add to smry_path
-            smspec = glob(path + "*.SMSPEC")
+            smspec = case_files(path, ".SMSPEC")
             if not smspec:
                 warnings.warn(f"No .SMSPEC found in {path}! Skipping folder...")
             else:

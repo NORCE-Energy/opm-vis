@@ -3,11 +3,11 @@ opm-vis-rdates
 
 Lists the report steps in a case with their dates and the time since the simulation started,
 instead of plotting anything. Dates are read from the restart files (``.UNRST``/``.X``) at day
-resolution, so no summary file is needed. See :doc:`cli` for the shared ``PATHS`` convention.
+resolution, so no summary file is needed. See :doc:`cli` for the shared ``-f``/``--folder`` convention.
 
 .. code-block:: bash
 
-   opm-vis-rdates tests/data/SPE1CASE1
+   opm-vis-rdates -f tests/data/SPE1CASE1
 
 .. code-block:: text
 

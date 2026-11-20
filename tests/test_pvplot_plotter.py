@@ -1511,3 +1511,169 @@ def test_context_manager_closes_the_render_window(case1, offscreen):
 
     # PyVista marks a closed plotter's render window as gone
     assert gplot.plotter._closed is True
+
+
+# ---------------------------------------------------------------------------
+# add_polygons
+# ---------------------------------------------------------------------------
+
+
+def test_add_polygons_draws_outlines_at_the_top_of_the_grid(plotter, polygon_files):
+    name = plotter.add_polygons(polygon_files["outline"])
+
+    assert name == "polygons"
+    mesh = plotter._actors["polygons"].mesh
+    assert mesh.n_lines == 1
+    assert mesh.n_points == 5  # closed square
+    assert np.allclose(mesh.points[:, 2], plotter.grid.mesh.bounds[5])
+
+
+def test_add_polygons_flips_depth_to_pvplot_z(plotter, polygon_files):
+    plotter.add_polygons(polygon_files["line"])
+
+    assert np.allclose(plotter._actors["polygons"].mesh.points[:, 2], -8350.0)
+
+
+def test_add_polygons_without_outlines_skips_them_with_a_warning(plotter, polygon_files):
+    with pytest.warns(UserWarning, match="1 x,y-only polygon"):
+        plotter.add_polygons(
+            [polygon_files["outline"], polygon_files["line"]], outlines=False
+        )
+
+    assert plotter._actors["polygons"].mesh.n_lines == 1
+
+
+def test_add_polygons_with_nothing_to_draw_warns_and_returns_none(plotter, polygon_files):
+    with pytest.warns(UserWarning, match="No polygons to draw"):
+        assert plotter.add_polygons(polygon_files["outline"], outlines=False) is None
+
+
+def test_add_polygons_warns_about_a_polygon_outside_the_grid(plotter, tmp_path):
+    path = tmp_path / "km.npy"
+    np.save(path, np.array([[1.0, 1.0], [9.0, 1.0], [9.0, 9.0]]) + 100000)
+
+    with pytest.warns(UserWarning, match="entirely outside the plotted grid"):
+        plotter.add_polygons(str(path))
+
+
+def test_add_polygons_warns_about_a_line_at_the_wrong_depth(plotter, tmp_path):
+    path = tmp_path / "shallow.npy"
+    np.save(path, np.array([[1000, 1000, 2.7], [9000, 9000, 2.7]]))
+
+    with pytest.warns(UserWarning, match="entirely outside the plotted grid"):
+        plotter.add_polygons(str(path))
+
+
+def test_add_polygons_labels(plotter, polygon_files):
+    paths = [polygon_files["outline"], polygon_files["line"]]
+
+    plotter.add_polygons(paths, labels=["Licence", ""], name="relabelled")
+    plotter.add_polygons(paths, labels=False, name="unlabelled")
+
+    # add_point_labels suffixes the name it is given
+    actors = list(plotter.plotter.actors)
+    assert any(n.startswith("relabelled-labels") for n in actors)
+    assert not any(n.startswith("unlabelled-labels") for n in actors)
+
+
+# ---------------------------------------------------------------------------
+# font_scale
+# ---------------------------------------------------------------------------
+
+
+def test_font_scale_scales_the_theme_and_label_sizes(case1, offscreen):
+    del offscreen
+    base = pv.global_theme.font.size
+
+    with GridPlotter([case1], off_screen=True, window_size=(160, 120), font_scale=2.0) as gplot:
+        assert gplot.plotter.theme.font.size == round(base * 2.0)
+        assert gplot._label_font_size == 20
+
+    # The global theme other plotters start from is left alone
+    assert pv.global_theme.font.size == base
+
+
+# ---------------------------------------------------------------------------
+# camera / set_camera / show(camera_overlay=True)
+# ---------------------------------------------------------------------------
+
+
+def test_set_camera_round_trips_through_camera(plotter):
+    plotter.add_slice("k", 0)
+    plotter.view_3d()
+    plotter.plotter.camera.Azimuth(20)
+    found = plotter.camera()
+
+    plotter.view_3d()  # move it away again
+    plotter.set_camera(found)
+
+    camera = plotter.camera()
+    assert camera.position == pytest.approx(found.position)
+    assert camera.focal_point == pytest.approx(found.focal_point)
+    assert camera.view_up == pytest.approx(found.view_up)
+    assert camera.parallel_scale is None
+
+
+def test_set_camera_with_a_scale_uses_parallel_projection(plotter):
+    plotter.add_slice("k", 0)
+    plotter.view_3d()
+
+    plotter.set_camera("5000,5000,90000/5000,5000,-8350/0,1,0/2500")
+
+    camera = plotter.camera()
+    assert camera.parallel_scale == pytest.approx(2500)
+    assert camera.position == pytest.approx((5000, 5000, 90000))
+    assert camera.view_up == pytest.approx((0, 1, 0))
+
+
+def test_show_with_camera_overlay_returns_the_view(plotter):
+    plotter.add_slice("k", 0)
+    plotter.view_2d("k")
+    expected = plotter.camera()
+
+    shown = plotter.show(camera_overlay=True)
+
+    assert shown is not None
+    assert shown.camera.position == pytest.approx(expected.position)
+    assert shown.window_size == (160, 120)
+
+
+def test_set_scalars_scalar_bar_title_replaces_the_generated_one(plotter):
+    plotter.add_slice("k", 0)
+    plotter.set_scalars("PERMX", None, scalar_bar_title="$k_x$ [mD]")
+
+    assert list(plotter.plotter.scalar_bars.keys()) == ["$k_x$ [mD]"]
+
+
+def test_add_polygons_line_width_defaults_to_3_and_can_be_changed(plotter, polygon_files):
+    plotter.add_polygons(polygon_files["line"], name="default")
+    plotter.add_polygons(polygon_files["line"], name="thin", line_width=1.0)
+
+    assert plotter._actors["default"].actor.prop.line_width == 3.0
+    assert plotter._actors["thin"].actor.prop.line_width == 1.0
+
+
+def test_add_wells_names_draws_only_the_named_wells(plotter):
+    plotter.add_slice("k", 0)
+
+    plotter.add_wells(60, names=["PROD"])
+
+    assert plotter._actors["pvplot-wells-open"].mesh.n_cells == 1
+
+
+def test_add_wells_unknown_name_raises(plotter):
+    plotter.add_slice("k", 0)
+
+    with pytest.raises(KeyError, match="NOPE"):
+        plotter.add_wells(60, names=["NOPE"])
+
+
+def test_animate_checks_well_names_before_writing_anything(plotter, tmp_path):
+    plotter.add_slice("k", 0)
+    plotter.set_scalars("SGAS", 60)
+    output = tmp_path / "out.gif"
+
+    with pytest.raises(KeyError, match="NOPE"):
+        plotter.animate("SGAS", output, rsteps=[0, 60], wells=True, wells_names=["NOPE"])
+
+    assert not output.exists()

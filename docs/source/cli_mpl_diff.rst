@@ -8,7 +8,7 @@ Plots the difference from ``--diff-rstep`` instead of ``--keyword``'s own values
 
 .. code-block:: bash
 
-   opm-vis-mpl tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d
+   opm-vis-mpl -f tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d
 
 ``--diff-rstep``
 -------------------
@@ -17,7 +17,7 @@ Report step to difference against. Default: 0. Only used with ``--diff``.
 
 .. code-block:: bash
 
-   opm-vis-mpl tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d --diff-rstep 30
+   opm-vis-mpl -f tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d --diff-rstep 30
 
 ``--diff-kind``
 ------------------
@@ -27,4 +27,4 @@ magnitude) or ``relative`` (percent change from the reference). Only used with `
 
 .. code-block:: bash
 
-   opm-vis-mpl tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d --diff-kind relative
+   opm-vis-mpl -f tests/data/SPE1CASE1 -K PRESSURE -k 1 -r 60 -d --diff-kind relative

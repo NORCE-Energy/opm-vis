@@ -52,6 +52,7 @@ def well_paths(
     rstep: int,
     *,
     slices: Sequence[tuple[str, int]] | None = None,
+    names: Sequence[str] | None = None,
     apply_mapaxes: bool = False,
 ) -> WellPaths:
     """
@@ -68,6 +69,10 @@ def well_paths(
     slices : Sequence[tuple[str, int]] | None, optional
         Only include wells with a completion on at least one of these (dim, index) i-, j- or
         k-slices, by default None, which includes every well in the grid
+    names : Sequence[str] | None, optional
+        Only include wells with these names, by default None, which includes every well. Names
+        that are not wells at this report step are simply left out; see GridPlotter.add_wells
+        for checking them against the case
     apply_mapaxes : bool, optional
         Have OPM apply the grid's MAPAXES transform to well coordinates, by default False.
         Should match whatever the rest of the scene was built with, e.g. GridMesh.apply_mapaxes.
@@ -92,6 +97,9 @@ def well_paths(
     label_names: list[str] = []
 
     for name, info in wells[rstep].items():
+        if names is not None and name not in names:
+            continue
+
         # Well info is [i, j, k0, ..., kend, status], so anything shorter has no completion
         if len(info) < 4:
             continue

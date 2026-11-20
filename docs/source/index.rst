@@ -4,9 +4,12 @@ opm-vis
 Visualization tools for `OPM <https://opm-project.org/>`_ (Open Porous Media) reservoir
 simulation results — grids, restarts and summaries — from Python or the command line.
 
-Paths passed to opm-vis are **filename prefixes, not directories**: give it
-``/runs/case/SPE1CASE1`` and it finds ``SPE1CASE1.EGRID``, ``SPE1CASE1.UNRST`` and so on. The
-first path is the main run; any further paths are restart runs.
+The command line programs take the **folder** a case is in (``-f``/``--folder``, by default
+the current folder) and find the case, and any restarts of it, there. Paths passed to the
+Python API are **case path prefixes** instead: give it ``/runs/case/SPE1CASE1`` and it finds
+``SPE1CASE1.EGRID``, ``SPE1CASE1.UNRST`` and so on. The first path is the main run; any further
+paths are restart runs. :func:`opm_vis.utils.cases.find_cases` turns folders into those
+prefixes, the way the command line does.
 
 Features
 --------
@@ -18,6 +21,8 @@ Features
 - **Grid slicing.** Cut i-, j- or k-slices through the 3D grid, alone or several at once, coloured
   by any keyword (``SGAS``, ``PRESSURE``, ...).
 - **Wells.** Overlay wells with a completion on the chosen slice(s), or every well in the grid.
+- **Polygons.** Overlay outlines or 3D polylines (licence boundaries, plume outlines, seismic
+  lines) from NumPy, text or GeoJSON files.
 - **Vector glyphs.** Arrow overlays from three keyword components (e.g. a displacement vector),
   scaled by magnitude and comparable across report steps.
 - **Subsets.** Threshold or clip the grid to a region of interest (PyVista backend only, since a

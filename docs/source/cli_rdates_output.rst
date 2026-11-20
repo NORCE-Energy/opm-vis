@@ -1,7 +1,7 @@
 Output
 =======
 
-``-f``, ``--format``
+``-F``, ``--format``
 ----------------------
 
 Output format: ``table`` (the default), ``csv`` or ``json``. The table is aligned for reading
@@ -10,8 +10,8 @@ piping into other tools and use ISO-8601 dates instead.
 
 .. code-block:: bash
 
-   opm-vis-rdates tests/data/SPE1CASE1 -f csv
-   opm-vis-rdates tests/data/SPE1CASE1 -f json -r 120
+   opm-vis-rdates -f tests/data/SPE1CASE1 -F csv
+   opm-vis-rdates -f tests/data/SPE1CASE1 -F json -r 120
 
 .. code-block:: text
 
@@ -28,4 +28,4 @@ this one always needs a path - there is no keyword or slice to generate a name f
 
 .. code-block:: bash
 
-   opm-vis-rdates tests/data/SPE1CASE1 -f csv --save timeline.csv
+   opm-vis-rdates -f tests/data/SPE1CASE1 -F csv --save timeline.csv

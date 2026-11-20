@@ -9,7 +9,7 @@ neither needed nor allowed in this mode, and ``--animate`` is not supported with
 
 .. code-block:: bash
 
-   opm-vis-mpl tests/data/SPE1CASE1 -k 1 --grid-only --save grid_k1.png
+   opm-vis-mpl -f tests/data/SPE1CASE1 -k 1 --grid-only --save
 
 ``--grid-color``
 ------------------
@@ -19,11 +19,11 @@ fill colour. Only used with ``--grid-only``.
 
 .. code-block:: bash
 
-   opm-vis-mpl tests/data/SPE1CASE1 -k 1 --grid-only --grid-color lightgrey --save grid_k1.png
+   opm-vis-mpl -f tests/data/SPE1CASE1 -k 1 --grid-only --grid-color lightgrey --save
 
 Combined with ``--show-edges`` (see :doc:`cli_mpl_view`) to also draw cell outlines on top:
 
 .. code-block:: bash
 
-   opm-vis-mpl tests/data/SPE1CASE1 -k 1 --grid-only --grid-color lightgrey --show-edges \
-       --save grid_k1.png
+   opm-vis-mpl -f tests/data/SPE1CASE1 -k 1 --grid-only --grid-color lightgrey --show-edges \
+       --save

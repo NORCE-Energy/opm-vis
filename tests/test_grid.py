@@ -23,7 +23,7 @@ from opm_vis.utils.grid import (
 
 @pytest.fixture(scope="module")
 def real_egrid(data_dir):
-    return EGrid(str(data_dir / "SPE1CASE1.EGRID"))
+    return EGrid(str(data_dir / "SPE1CASE1" / "SPE1CASE1.EGRID"))
 
 
 def _bypass_init(cls, egrid, **attrs):
@@ -56,12 +56,12 @@ def test_missing_egrid_file_raises_file_not_found(tmp_path):
 
 
 def test_multiple_egrid_files_warns_and_still_validates(tmp_path, data_dir):
-    shutil.copy(data_dir / "SPE1CASE1.EGRID", tmp_path / "CASE1.EGRID")
-    shutil.copy(data_dir / "SPE1CASE1.EGRID", tmp_path / "CASE2.EGRID")
+    shutil.copy(data_dir / "SPE1CASE1" / "SPE1CASE1.EGRID", tmp_path / "CASE1.EGRID")
+    shutil.copy(data_dir / "SPE1CASE1" / "SPE1CASE1.EGRID", tmp_path / "CASE2.EGRID")
 
     with pytest.warns(UserWarning, match="Multiple .EGRID files"):
         with pytest.raises(TypeError):
-            GridSlice3D(str(tmp_path / "CASE"), "invalid", 0)
+            GridSlice3D(str(tmp_path), "invalid", 0)
 
 
 # ---------------------------------------------------------------------------
